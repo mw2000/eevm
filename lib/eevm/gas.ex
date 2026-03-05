@@ -154,6 +154,7 @@ defmodule EEVM.Gas do
   def static_cost(0x3A), do: @gas_base
   # RETURNDATASIZE
   def static_cost(0x3D), do: @gas_base
+  def static_cost(0x3E), do: @gas_very_low
   # BLOCKHASH
   def static_cost(0x40), do: @gas_blockhash
   # COINBASE

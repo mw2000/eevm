@@ -137,6 +137,45 @@ defmodule EEVM.Opcodes.Environment do
   def execute(0x3A, state), do: Helpers.push_value(state, state.tx.gasprice)
   def execute(0x3D, state), do: Helpers.push_value(state, byte_size(state.return_data))
 
+  def execute(0x3E, state) do
+    with {:ok, dest_offset, s1} <- Stack.pop(state.stack),
+         {:ok, data_offset, s2} <- Stack.pop(s1),
+         {:ok, length, s3} <- Stack.pop(s2) do
+      cond do
+        length == 0 ->
+          {:ok, MachineState.advance_pc(%{state | stack: s3})}
+
+        data_offset + length > byte_size(state.return_data) ->
+          {:ok, MachineState.halt(%{state | stack: s3}, :reverted)}
+
+        true ->
+          dynamic_cost =
+            Gas.copy_cost(length) +
+              Gas.memory_expansion_cost(Memory.size(state.memory), dest_offset, length)
+
+          case MachineState.consume_gas(%{state | stack: s3}, dynamic_cost) do
+            {:ok, s4} ->
+              bytes = binary_part(s4.return_data, data_offset, length)
+
+              new_memory =
+                bytes
+                |> :binary.bin_to_list()
+                |> Enum.with_index()
+                |> Enum.reduce(s4.memory, fn {byte, i}, mem ->
+                  Memory.store_byte(mem, dest_offset + i, byte)
+                end)
+
+              {:ok, MachineState.advance_pc(%{s4 | memory: new_memory})}
+
+            {:error, :out_of_gas, halted_state} ->
+              {:error, :out_of_gas, halted_state}
+          end
+      end
+    else
+      {:error, reason} -> {:error, reason, state}
+    end
+  end
+
   # BLOCKHASH — returns the hash of a past block by number.
   # Only the 256 most recent blocks are available. Anything older — or the
   # current block itself — returns 0. The lookup is delegated to Block.hash/2.

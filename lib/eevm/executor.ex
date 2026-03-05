@@ -121,7 +121,7 @@ defmodule EEVM.Executor do
   defp execute_opcode(op, state) when op in 0x10..0x15, do: Comparison.execute(op, state)
   defp execute_opcode(op, state) when op in 0x16..0x1D, do: Bitwise.execute(op, state)
   defp execute_opcode(0x20, state), do: Crypto.execute(0x20, state)
-  defp execute_opcode(op, state) when op in 0x30..0x3D, do: Environment.execute(op, state)
+  defp execute_opcode(op, state) when op in 0x30..0x3E, do: Environment.execute(op, state)
   defp execute_opcode(op, state) when op in 0x40..0x48, do: Environment.execute(op, state)
   defp execute_opcode(0x50, state), do: StackMemoryStorage.execute(0x50, state)
   defp execute_opcode(op, state) when op in 0x51..0x55, do: StackMemoryStorage.execute(op, state)
