@@ -47,6 +47,9 @@ defmodule EEVM.Gas do
   @gas_memory 3
   @gas_sload 200
   @gas_sstore 20_000
+  @gas_blockhash 20
+  @gas_balance 2600
+  @gas_selfbalance 5
 
   @doc """
   Returns the static gas cost for a given opcode byte.
@@ -126,6 +129,50 @@ defmodule EEVM.Gas do
 
   # KECCAK256 (0x20) — static + dynamic per word
   def static_cost(0x20), do: @gas_keccak256
+
+  # Environment opcodes (0x30–0x48)
+  # ADDRESS
+  def static_cost(0x30), do: @gas_base
+  # BALANCE (cold access, simplified)
+  def static_cost(0x31), do: @gas_balance
+  # ORIGIN
+  def static_cost(0x32), do: @gas_base
+  # CALLER
+  def static_cost(0x33), do: @gas_base
+  # CALLVALUE
+  def static_cost(0x34), do: @gas_base
+  # CALLDATALOAD
+  def static_cost(0x35), do: @gas_very_low
+  # CALLDATASIZE
+  def static_cost(0x36), do: @gas_base
+  # CALLDATACOPY (static part, + memory expansion)
+  def static_cost(0x37), do: @gas_very_low
+  # CODESIZE
+  def static_cost(0x38), do: @gas_base
+  # GASPRICE
+  def static_cost(0x3A), do: @gas_base
+  # RETURNDATASIZE
+  def static_cost(0x3D), do: @gas_base
+  # BLOCKHASH
+  def static_cost(0x40), do: @gas_blockhash
+  # COINBASE
+  def static_cost(0x41), do: @gas_base
+  # TIMESTAMP
+  def static_cost(0x42), do: @gas_base
+  # NUMBER
+  def static_cost(0x43), do: @gas_base
+  # PREVRANDAO
+  def static_cost(0x44), do: @gas_base
+  # GASLIMIT
+  def static_cost(0x45), do: @gas_base
+  # CHAINID
+  def static_cost(0x46), do: @gas_base
+  # SELFBALANCE
+  def static_cost(0x47), do: @gas_selfbalance
+  # BASEFEE
+  def static_cost(0x48), do: @gas_base
+  # GAS
+  def static_cost(0x5A), do: @gas_base
 
   # Stack, Memory, Control Flow (0x50–0x5B)
   # POP

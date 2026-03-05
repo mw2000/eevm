@@ -21,7 +21,7 @@ defmodule EEVM.MachineState do
   - The `alias` keyword lets us reference modules by their short name.
   """
 
-  alias EEVM.{Stack, Memory, Storage}
+  alias EEVM.{Stack, Memory, Storage, ExecutionContext}
 
   @type status :: :running | :stopped | :reverted | :invalid | :out_of_gas
 
@@ -30,6 +30,7 @@ defmodule EEVM.MachineState do
           stack: Stack.t(),
           memory: Memory.t(),
           storage: Storage.t(),
+          context: ExecutionContext.t(),
           gas: non_neg_integer(),
           status: status(),
           return_data: binary(),
@@ -41,6 +42,7 @@ defmodule EEVM.MachineState do
             stack: nil,
             memory: nil,
             storage: nil,
+            context: nil,
             gas: 1_000_000,
             status: :running,
             return_data: <<>>,
@@ -54,6 +56,7 @@ defmodule EEVM.MachineState do
     - `opts` — optional keyword list:
       - `:gas` — initial gas (default: 1,000,000)
       - `:storage` — initial storage (default: empty)
+      - `:context` — execution context (default: empty context)
 
   ## Example
 
@@ -68,6 +71,7 @@ defmodule EEVM.MachineState do
       stack: Stack.new(),
       memory: Memory.new(),
       storage: Keyword.get(opts, :storage, Storage.new()),
+      context: Keyword.get(opts, :context, ExecutionContext.new()),
       gas: Keyword.get(opts, :gas, 1_000_000)
     }
   end

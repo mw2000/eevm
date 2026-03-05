@@ -50,6 +50,29 @@ defmodule EEVM.Opcodes do
   @shr 0x1C
   @sar 0x1D
 
+  # Environment opcodes (0x30–0x48)
+  @address 0x30
+  @balance 0x31
+  @origin 0x32
+  @caller 0x33
+  @callvalue 0x34
+  @calldataload 0x35
+  @calldatasize 0x36
+  @calldatacopy 0x37
+  @codesize 0x38
+  @gasprice 0x3A
+  @returndatasize 0x3D
+  @blockhash 0x40
+  @coinbase 0x41
+  @timestamp 0x42
+  @number 0x43
+  @prevrandao 0x44
+  @gaslimit 0x45
+  @chainid 0x46
+  @selfbalance 0x47
+  @basefee 0x48
+  @gas_ 0x5A
+
   # Memory operations (0x5_)
   @pop 0x50
   @mload 0x51
@@ -117,6 +140,29 @@ defmodule EEVM.Opcodes do
   def info(@shl), do: {:ok, %{name: "SHL", inputs: 2, outputs: 1}}
   def info(@shr), do: {:ok, %{name: "SHR", inputs: 2, outputs: 1}}
   def info(@sar), do: {:ok, %{name: "SAR", inputs: 2, outputs: 1}}
+
+  # Environment opcodes
+  def info(@address), do: {:ok, %{name: "ADDRESS", inputs: 0, outputs: 1}}
+  def info(@balance), do: {:ok, %{name: "BALANCE", inputs: 1, outputs: 1}}
+  def info(@origin), do: {:ok, %{name: "ORIGIN", inputs: 0, outputs: 1}}
+  def info(@caller), do: {:ok, %{name: "CALLER", inputs: 0, outputs: 1}}
+  def info(@callvalue), do: {:ok, %{name: "CALLVALUE", inputs: 0, outputs: 1}}
+  def info(@calldataload), do: {:ok, %{name: "CALLDATALOAD", inputs: 1, outputs: 1}}
+  def info(@calldatasize), do: {:ok, %{name: "CALLDATASIZE", inputs: 0, outputs: 1}}
+  def info(@calldatacopy), do: {:ok, %{name: "CALLDATACOPY", inputs: 3, outputs: 0}}
+  def info(@codesize), do: {:ok, %{name: "CODESIZE", inputs: 0, outputs: 1}}
+  def info(@gasprice), do: {:ok, %{name: "GASPRICE", inputs: 0, outputs: 1}}
+  def info(@returndatasize), do: {:ok, %{name: "RETURNDATASIZE", inputs: 0, outputs: 1}}
+  def info(@blockhash), do: {:ok, %{name: "BLOCKHASH", inputs: 1, outputs: 1}}
+  def info(@coinbase), do: {:ok, %{name: "COINBASE", inputs: 0, outputs: 1}}
+  def info(@timestamp), do: {:ok, %{name: "TIMESTAMP", inputs: 0, outputs: 1}}
+  def info(@number), do: {:ok, %{name: "NUMBER", inputs: 0, outputs: 1}}
+  def info(@prevrandao), do: {:ok, %{name: "PREVRANDAO", inputs: 0, outputs: 1}}
+  def info(@gaslimit), do: {:ok, %{name: "GASLIMIT", inputs: 0, outputs: 1}}
+  def info(@chainid), do: {:ok, %{name: "CHAINID", inputs: 0, outputs: 1}}
+  def info(@selfbalance), do: {:ok, %{name: "SELFBALANCE", inputs: 0, outputs: 1}}
+  def info(@basefee), do: {:ok, %{name: "BASEFEE", inputs: 0, outputs: 1}}
+  def info(@gas_), do: {:ok, %{name: "GAS", inputs: 0, outputs: 1}}
 
   def info(@pop), do: {:ok, %{name: "POP", inputs: 1, outputs: 0}}
   def info(@mload), do: {:ok, %{name: "MLOAD", inputs: 1, outputs: 1}}
