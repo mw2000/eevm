@@ -45,6 +45,8 @@ defmodule EEVM.Gas do
   @gas_keccak256 30
   @gas_keccak256_word 6
   @gas_memory 3
+  @gas_sload 200
+  @gas_sstore 20_000
 
   @doc """
   Returns the static gas cost for a given opcode byte.
@@ -144,6 +146,12 @@ defmodule EEVM.Gas do
   def static_cost(0x59), do: @gas_base
   # JUMPDEST
   def static_cost(0x5B), do: @gas_jumpdest
+
+  # Storage (0x54–0x55)
+  # SLOAD
+  def static_cost(0x54), do: @gas_sload
+  # SSTORE
+  def static_cost(0x55), do: @gas_sstore
 
   # PUSH1–PUSH32 (0x60–0x7F)
   def static_cost(op) when op >= 0x60 and op <= 0x7F, do: @gas_very_low
