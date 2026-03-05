@@ -82,7 +82,13 @@ defmodule EEVM do
     case EEVM.Opcodes.info(opcode) do
       {:ok, %{push_bytes: n} = info} ->
         # PUSH instruction — read the immediate bytes
-        data = binary_part(bytecode, min(pc + 1, byte_size(bytecode)), min(n, byte_size(bytecode) - pc - 1))
+        data =
+          binary_part(
+            bytecode,
+            min(pc + 1, byte_size(bytecode)),
+            min(n, byte_size(bytecode) - pc - 1)
+          )
+
         hex = Base.encode16(data, case: :lower)
         disassemble_loop(bytecode, pc + 1 + n, [{pc, info.name, "0x" <> hex} | acc])
 
@@ -90,7 +96,9 @@ defmodule EEVM do
         disassemble_loop(bytecode, pc + 1, [{pc, info.name, nil} | acc])
 
       {:error, _} ->
-        disassemble_loop(bytecode, pc + 1, [{pc, "UNKNOWN(0x#{Integer.to_string(opcode, 16)})", nil} | acc])
+        disassemble_loop(bytecode, pc + 1, [
+          {pc, "UNKNOWN(0x#{Integer.to_string(opcode, 16)})", nil} | acc
+        ])
     end
   end
 
