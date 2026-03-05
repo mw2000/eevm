@@ -25,7 +25,7 @@ defmodule EEVM.Executor do
   - `import Bitwise` gives us operators like `band`, `bor`, `bxor`, `bnot`.
   """
 
-  alias EEVM.{MachineState, Stack, Memory, Storage, ExecutionContext, Opcodes, Gas}
+  alias EEVM.{MachineState, Stack, Memory, Storage, Block, Contract, Opcodes, Gas}
 
   import Bitwise
 
@@ -467,25 +467,25 @@ defmodule EEVM.Executor do
 
   # ── Environment Opcodes ──────────────────────────────────────────────
   #
-  # These opcodes read from the ExecutionContext — information about
+  # These opcodes read from the separated context modules (Transaction, Block, Contract) —
   # the current call, transaction, and block. They don't modify state,
   # just push values onto the stack.
   #
   # ## Elixir Learning Note
   #
   # These are all trivially simple: read a field, push it. The pattern
-  # `state.context.field` chains struct access. In Elixir, this is
+  # `state.tx.*`, `state.block.*`, and `state.contract.*` fields. In Elixir, this is
   # syntactic sugar for `Map.get(Map.get(state, :context), :field)`.
 
   # ADDRESS (0x30): push the executing contract's address
   defp execute_opcode(0x30, state) do
-    push_value(state, state.context.address)
+    push_value(state, state.contract.address)
   end
 
   # BALANCE (0x31): pop address, push its balance
   defp execute_opcode(0x31, state) do
     with {:ok, addr, s1} <- Stack.pop(state.stack),
-         balance = ExecutionContext.balance(state.context, addr),
+         balance = Contract.balance(state.contract, addr),
          {:ok, s2} <- Stack.push(s1, balance) do
       {:ok, %{state | stack: s2} |> MachineState.advance_pc()}
     else
@@ -495,23 +495,23 @@ defmodule EEVM.Executor do
 
   # ORIGIN (0x32): push the transaction sender (EOA, not the direct caller)
   defp execute_opcode(0x32, state) do
-    push_value(state, state.context.origin)
+    push_value(state, state.tx.origin)
   end
 
   # CALLER (0x33): push the direct caller of this call frame
   defp execute_opcode(0x33, state) do
-    push_value(state, state.context.caller)
+    push_value(state, state.contract.caller)
   end
 
   # CALLVALUE (0x34): push the ETH (in wei) sent with this call
   defp execute_opcode(0x34, state) do
-    push_value(state, state.context.callvalue)
+    push_value(state, state.contract.callvalue)
   end
 
   # CALLDATALOAD (0x35): pop offset, push 32 bytes of calldata
   defp execute_opcode(0x35, state) do
     with {:ok, offset, s1} <- Stack.pop(state.stack),
-         value = ExecutionContext.calldata_load(state.context, offset),
+         value = Contract.calldata_load(state.contract, offset),
          {:ok, s2} <- Stack.push(s1, value) do
       {:ok, %{state | stack: s2} |> MachineState.advance_pc()}
     else
@@ -521,7 +521,7 @@ defmodule EEVM.Executor do
 
   # CALLDATASIZE (0x36): push the byte length of calldata
   defp execute_opcode(0x36, state) do
-    push_value(state, byte_size(state.context.calldata))
+    push_value(state, byte_size(state.contract.calldata))
   end
 
   # CALLDATACOPY (0x37): copy calldata to memory
@@ -541,7 +541,7 @@ defmodule EEVM.Executor do
 
         case MachineState.consume_gas(%{state | stack: s3}, expansion_cost) do
           {:ok, state_after_gas} ->
-            calldata = state_after_gas.context.calldata
+            calldata = state_after_gas.contract.calldata
             cd_size = byte_size(calldata)
 
             # Extract bytes from calldata, zero-padding beyond its end
@@ -581,7 +581,7 @@ defmodule EEVM.Executor do
 
   # GASPRICE (0x3A): push the gas price of the transaction
   defp execute_opcode(0x3A, state) do
-    push_value(state, state.context.gasprice)
+    push_value(state, state.tx.gasprice)
   end
 
   # RETURNDATASIZE (0x3D): push the size of the last RETURN/REVERT data
@@ -592,7 +592,7 @@ defmodule EEVM.Executor do
   # BLOCKHASH (0x40): pop block number, push its hash
   defp execute_opcode(0x40, state) do
     with {:ok, block_num, s1} <- Stack.pop(state.stack),
-         hash = ExecutionContext.block_hash(state.context, block_num),
+         hash = Block.hash(state.block, block_num),
          {:ok, s2} <- Stack.push(s1, hash) do
       {:ok, %{state | stack: s2} |> MachineState.advance_pc()}
     else
@@ -602,43 +602,43 @@ defmodule EEVM.Executor do
 
   # COINBASE (0x41): push the block producer's address
   defp execute_opcode(0x41, state) do
-    push_value(state, state.context.block_coinbase)
+    push_value(state, state.block.coinbase)
   end
 
   # TIMESTAMP (0x42): push the block timestamp
   defp execute_opcode(0x42, state) do
-    push_value(state, state.context.block_timestamp)
+    push_value(state, state.block.timestamp)
   end
 
   # NUMBER (0x43): push the block number
   defp execute_opcode(0x43, state) do
-    push_value(state, state.context.block_number)
+    push_value(state, state.block.number)
   end
 
   # PREVRANDAO (0x44): push the previous block's RANDAO mix
   defp execute_opcode(0x44, state) do
-    push_value(state, state.context.block_prevrandao)
+    push_value(state, state.block.prevrandao)
   end
 
   # GASLIMIT (0x45): push the block gas limit
   defp execute_opcode(0x45, state) do
-    push_value(state, state.context.block_gaslimit)
+    push_value(state, state.block.gaslimit)
   end
 
   # CHAINID (0x46): push the chain ID (1 = mainnet)
   defp execute_opcode(0x46, state) do
-    push_value(state, state.context.block_chainid)
+    push_value(state, state.block.chain_id)
   end
 
   # SELFBALANCE (0x47): push the balance of the executing contract
   defp execute_opcode(0x47, state) do
-    balance = ExecutionContext.balance(state.context, state.context.address)
+    balance = Contract.balance(state.contract, state.contract.address)
     push_value(state, balance)
   end
 
   # BASEFEE (0x48): push the block's base fee (EIP-1559)
   defp execute_opcode(0x48, state) do
-    push_value(state, state.context.block_basefee)
+    push_value(state, state.block.basefee)
   end
 
   # GAS (0x5A): push remaining gas (after this opcode's cost)
