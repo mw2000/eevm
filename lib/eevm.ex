@@ -34,7 +34,7 @@ defmodule EEVM do
   - **Typespecs** — `@spec` annotations for documentation and Dialyzer
   """
 
-  alias EEVM.{Executor, Stack}
+  alias EEVM.{Executor, MachineState, Stack}
 
   @doc """
   Executes EVM bytecode and returns the final machine state.
@@ -62,6 +62,10 @@ defmodule EEVM do
   def stack_values(state) do
     Stack.to_list(state.stack)
   end
+
+  @doc "Returns the list of logs emitted during execution."
+  @spec logs(MachineState.t()) :: [map()]
+  def logs(%MachineState{} = state), do: state.logs
 
   @doc """
   Disassembles bytecode into a human-readable list of instructions.

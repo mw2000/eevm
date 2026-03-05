@@ -37,6 +37,7 @@ defmodule EEVM.MachineState do
           gas: non_neg_integer(),
           status: status(),
           return_data: binary(),
+          logs: [%{address: non_neg_integer(), data: binary(), topics: [non_neg_integer()]}],
           code: binary()
         }
 
@@ -51,6 +52,7 @@ defmodule EEVM.MachineState do
             gas: 1_000_000,
             status: :running,
             return_data: <<>>,
+            logs: [],
             code: <<>>
 
   @doc """
