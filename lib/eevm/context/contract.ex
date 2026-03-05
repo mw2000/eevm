@@ -1,4 +1,4 @@
-defmodule EEVM.Contract do
+defmodule EEVM.Context.Contract do
   @moduledoc """
   Contract/message-level context — the current call frame's environment.
 
@@ -24,7 +24,7 @@ defmodule EEVM.Contract do
 
   - `caller` (CALLER/msg.sender) = who directly called this contract.
     Changes with each nested CALL.
-  - `origin` (ORIGIN/tx.origin, in `EEVM.Transaction`) = the EOA that
+  - `origin` (ORIGIN/tx.origin, in `EEVM.Context.Transaction`) = the EOA that
     signed the transaction. Never changes.
 
   Example: EOA → Contract A → Contract B
@@ -62,7 +62,7 @@ defmodule EEVM.Contract do
 
   ## Example
 
-      iex> contract = EEVM.Contract.new(caller: 0xDEAD, callvalue: 1000)
+      iex> contract = EEVM.Context.Contract.new(caller: 0xDEAD, callvalue: 1000)
       iex> contract.caller
       0xDEAD
   """

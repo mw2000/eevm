@@ -21,7 +21,8 @@ defmodule EEVM.MachineState do
   - The `alias` keyword lets us reference modules by their short name.
   """
 
-  alias EEVM.{Stack, Memory, Storage, Transaction, Block, Contract}
+  alias EEVM.{Stack, Memory, Storage}
+  alias EEVM.Context.{Transaction, Block, Contract}
 
   @type status :: :running | :stopped | :reverted | :invalid | :out_of_gas
 
