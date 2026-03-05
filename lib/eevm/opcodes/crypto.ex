@@ -28,7 +28,6 @@ defmodule EEVM.Opcodes.Crypto do
   """
   alias EEVM.{Gas, MachineState, Memory, Stack}
 
-
   @doc """
   Hashes a region of memory with Keccak-256 and pushes the result.
 

@@ -27,7 +27,6 @@ defmodule EEVM.Opcodes.Comparison do
   alias EEVM.{MachineState, Stack}
   alias EEVM.Opcodes.Helpers
 
-
   @doc """
   Dispatches and executes a comparison opcode.
 

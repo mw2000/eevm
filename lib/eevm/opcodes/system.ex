@@ -38,7 +38,6 @@ defmodule EEVM.Opcodes.System do
 
   alias EEVM.{Gas, MachineState, Memory, Stack}
 
-
   @doc """
   Dispatches a system opcode to its implementation.
 
@@ -52,7 +51,6 @@ defmodule EEVM.Opcodes.System do
   # STOP — halt immediately. No stack interaction, no return data.
 
   def execute(0x00, state), do: {:ok, MachineState.halt(state, :stopped)}
-
 
   # RETURN — halt successfully and expose a memory slice as return data.
   # offset/length pop from the stack define the memory range to read.
@@ -75,7 +73,6 @@ defmodule EEVM.Opcodes.System do
     end
   end
 
-
   # REVERT — identical memory semantics to RETURN, but the halt status is
   # :reverted. The caller sees this as a failed sub-call and rolls back any
   # storage or balance changes made during this execution.
@@ -96,7 +93,6 @@ defmodule EEVM.Opcodes.System do
       {:error, :out_of_gas, halted_state} -> {:error, :out_of_gas, halted_state}
     end
   end
-
 
   # INVALID — marks an unreachable code path. Consumes all remaining gas.
   # The executor special-cases 0xFE to set static_cost = state.gas before

@@ -35,7 +35,6 @@ defmodule EEVM.Opcodes.Bitwise do
 
   @max_uint256 (1 <<< 256) - 1
 
-
   @doc """
   Dispatches and executes a bitwise opcode.
 

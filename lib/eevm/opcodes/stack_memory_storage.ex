@@ -58,7 +58,6 @@ defmodule EEVM.Opcodes.StackMemoryStorage do
     end
   end
 
-
   # MLOAD — read a 32-byte word from memory at `offset`.
   # Memory is zero-initialized, so reads beyond current bounds return 0.
   # The expansion cost is charged before the read — gas is deducted even if
@@ -78,7 +77,6 @@ defmodule EEVM.Opcodes.StackMemoryStorage do
     end
   end
 
-
   # MSTORE — write a 32-byte big-endian word to memory at `offset`.
   # The EVM stores all values big-endian, so the MSB is at the lowest address.
   # Memory expansion is charged before the write.
@@ -96,7 +94,6 @@ defmodule EEVM.Opcodes.StackMemoryStorage do
       {:error, :out_of_gas, halted_state} -> {:error, :out_of_gas, halted_state}
     end
   end
-
 
   # MSTORE8 — write only the least significant byte of the stack value to memory.
   # Unlike MSTORE, this touches a single byte, so expansion cost covers just 1 byte.
@@ -116,7 +113,6 @@ defmodule EEVM.Opcodes.StackMemoryStorage do
     end
   end
 
-
   # SLOAD — read a 256-bit value from persistent storage by key.
   # Storage costs 200 gas (static, charged by the executor).
   # Unset keys return 0.
@@ -130,7 +126,6 @@ defmodule EEVM.Opcodes.StackMemoryStorage do
       {:error, reason} -> {:error, reason, state}
     end
   end
-
 
   # SSTORE — write a 256-bit value to persistent storage.
   # This is one of the most expensive opcodes: 20,000 gas for a new slot, 2,900
@@ -146,7 +141,6 @@ defmodule EEVM.Opcodes.StackMemoryStorage do
       {:error, reason} -> {:error, reason, state}
     end
   end
-
 
   # MSIZE — return the size of the highest-accessed memory region.
   # The EVM tracks memory in 32-byte words, so MSIZE is always a multiple of 32.

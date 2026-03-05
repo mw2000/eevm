@@ -56,7 +56,6 @@ defmodule EEVM.Opcodes.Helpers do
     end
   end
 
-
   @doc """
   Same as `comparison_op/2` but interprets both values as signed 256-bit integers.
 
@@ -78,7 +77,6 @@ defmodule EEVM.Opcodes.Helpers do
     end
   end
 
-
   @doc """
   Pops two values, applies a bitwise function, and pushes the result.
 
@@ -97,7 +95,6 @@ defmodule EEVM.Opcodes.Helpers do
       {:error, reason} -> {:error, reason, state}
     end
   end
-
 
   @doc """
   Converts a uint256 value to a signed 256-bit integer (two's complement).
@@ -143,7 +140,6 @@ defmodule EEVM.Opcodes.Helpers do
     end
   end
 
-
   @doc """
   Pushes a value onto the stack and advances the program counter by 1.
 
@@ -156,7 +152,6 @@ defmodule EEVM.Opcodes.Helpers do
     {:ok, new_stack} = Stack.push(state.stack, value)
     {:ok, %{state | stack: new_stack} |> MachineState.advance_pc()}
   end
-
 
   @doc """
   Returns true if `dest` is a valid JUMPDEST in the given bytecode.

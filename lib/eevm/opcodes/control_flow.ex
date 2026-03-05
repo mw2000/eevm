@@ -41,7 +41,6 @@ defmodule EEVM.Opcodes.ControlFlow do
   alias EEVM.{MachineState, Opcodes, Stack}
   alias EEVM.Opcodes.Helpers
 
-
   @doc """
   Dispatches a control flow opcode to its implementation.
 
@@ -67,7 +66,6 @@ defmodule EEVM.Opcodes.ControlFlow do
     end
   end
 
-
   # JUMPI — conditional jump. Pops destination and condition.
   # If condition is non-zero, validates and jumps. If zero, falls through.
 
@@ -92,7 +90,6 @@ defmodule EEVM.Opcodes.ControlFlow do
   def execute(0x5B, state), do: {:ok, MachineState.advance_pc(state)}
   def execute(0x5F, state), do: Helpers.push_value(state, 0)
 
-
   # PUSH1-PUSH32 — read `n` bytes immediately following the current PC from
   # bytecode and push the value as a big-endian unsigned integer.
   # `Opcodes.push_bytes/1` derives the byte count from the opcode.
@@ -116,7 +113,6 @@ defmodule EEVM.Opcodes.ControlFlow do
     end
   end
 
-
   # DUP1-DUP16 — depth is 0-based relative to the top of stack.
   # DUP1 peeks at depth 0 (the top) and pushes a copy.
   # `op - 0x80` converts the opcode byte to the peek depth directly.
@@ -131,7 +127,6 @@ defmodule EEVM.Opcodes.ControlFlow do
       {:error, reason} -> {:error, reason, state}
     end
   end
-
 
   # SWAP1-SWAP16 — swaps top of stack with the element at `depth`.
   # `op - 0x90 + 1` gives the depth: SWAP1 → 1, SWAP2 → 2, SWAP16 → 16.

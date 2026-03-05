@@ -45,7 +45,6 @@ defmodule EEVM.Executor do
     System
   }
 
-
   @doc """
   Creates a `MachineState` from bytecode and options, then runs the execution loop.
 
@@ -67,7 +66,6 @@ defmodule EEVM.Executor do
     |> MachineState.new(opts)
     |> run_loop()
   end
-
 
   @doc """
   The main execution loop. Runs until execution terminates.
@@ -109,7 +107,6 @@ defmodule EEVM.Executor do
   end
 
   def run_loop(state), do: state
-
 
   # Dispatch table for execute_opcode/2.
   #

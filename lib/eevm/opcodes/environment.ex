@@ -45,7 +45,6 @@ defmodule EEVM.Opcodes.Environment do
   alias EEVM.Context.{Block, Contract}
   alias EEVM.Opcodes.Helpers
 
-
   @doc """
   Dispatches an environment opcode to its implementation.
 
@@ -72,7 +71,6 @@ defmodule EEVM.Opcodes.Environment do
   def execute(0x33, state), do: Helpers.push_value(state, state.contract.caller)
   def execute(0x34, state), do: Helpers.push_value(state, state.contract.callvalue)
 
-
   # CALLDATALOAD — read 32 bytes from calldata starting at `offset`.
   # If the offset is past the end of calldata, the remaining bytes are zero-padded.
   # This means CALLDATALOAD always pushes a full 32-byte value regardless of input size.
@@ -88,7 +86,6 @@ defmodule EEVM.Opcodes.Environment do
   end
 
   def execute(0x36, state), do: Helpers.push_value(state, byte_size(state.contract.calldata))
-
 
   # CALLDATACOPY — copy `length` bytes of calldata starting at `data_offset`
   # into memory at `dest_offset`. Out-of-bounds calldata bytes are filled with 0.
@@ -139,7 +136,6 @@ defmodule EEVM.Opcodes.Environment do
   def execute(0x38, state), do: Helpers.push_value(state, byte_size(state.code))
   def execute(0x3A, state), do: Helpers.push_value(state, state.tx.gasprice)
   def execute(0x3D, state), do: Helpers.push_value(state, byte_size(state.return_data))
-
 
   # BLOCKHASH — returns the hash of a past block by number.
   # Only the 256 most recent blocks are available. Anything older — or the
