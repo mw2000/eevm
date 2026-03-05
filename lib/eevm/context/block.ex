@@ -1,4 +1,4 @@
-defmodule EEVM.Block do
+defmodule EEVM.Context.Block do
   @moduledoc """
   Block-level context — information about the block being executed.
 
@@ -64,7 +64,7 @@ defmodule EEVM.Block do
 
   ## Example
 
-      iex> block = EEVM.Block.new(number: 18_000_000, chain_id: 1)
+      iex> block = EEVM.Context.Block.new(number: 18_000_000, chain_id: 1)
       iex> block.number
       18000000
   """

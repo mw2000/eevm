@@ -26,8 +26,11 @@ iex> EEVM.disassemble(<<0x60, 0x01, 0x60, 0x02, 0x01, 0x00>>)
 | **Arithmetic** | `ADD` `MUL` `SUB` `DIV` `SDIV` `MOD` `SMOD` `ADDMOD` `MULMOD` `EXP` `SIGNEXTEND` |
 | **Comparison** | `LT` `GT` `SLT` `SGT` `EQ` `ISZERO` |
 | **Bitwise** | `AND` `OR` `XOR` `NOT` `BYTE` `SHL` `SHR` `SAR` |
-| **Stack** | `POP` `PUSH1`–`PUSH32` `DUP1`–`DUP16` `SWAP1`–`SWAP16` |
+| **Crypto** | `KECCAK256` |
+| **Stack** | `POP` `PUSH0` `PUSH1`–`PUSH32` `DUP1`–`DUP16` `SWAP1`–`SWAP16` |
 | **Memory** | `MLOAD` `MSTORE` `MSTORE8` `MSIZE` |
+| **Storage** | `SLOAD` `SSTORE` |
+| **Environment** | `ADDRESS` `BALANCE` `ORIGIN` `CALLER` `CALLVALUE` `CALLDATALOAD` `CALLDATASIZE` `CALLDATACOPY` `CODESIZE` `GASPRICE` `RETURNDATASIZE` `BLOCKHASH` `COINBASE` `TIMESTAMP` `NUMBER` `PREVRANDAO` `GASLIMIT` `CHAINID` `SELFBALANCE` `BASEFEE` `GAS` |
 | **Control Flow** | `JUMP` `JUMPI` `JUMPDEST` `PC` |
 | **System** | `STOP` `RETURN` `REVERT` `INVALID` |
 
@@ -35,16 +38,32 @@ iex> EEVM.disassemble(<<0x60, 0x01, 0x60, 0x02, 0x01, 0x00>>)
 
 ```
 lib/
-├── eevm.ex              # Public API — execute, disassemble, inspect
+├── eevm.ex                    # Public API — execute, disassemble, inspect
 └── eevm/
-    ├── stack.ex          # LIFO stack (1024 depth, uint256 values)
-    ├── memory.ex         # Byte-addressable linear memory
-    ├── machine_state.ex  # Execution state (PC, stack, memory, gas)
-    ├── opcodes.ex        # Opcode byte → name + stack metadata
-    └── executor.ex       # Fetch-decode-execute loop
+    ├── executor.ex            # Thin dispatcher — fetch, decode, route to opcode modules
+    ├── machine_state.ex       # Execution state (PC, stack, memory, gas)
+    ├── stack.ex               # LIFO stack (1024 depth, uint256 values)
+    ├── memory.ex              # Byte-addressable linear memory
+    ├── storage.ex             # Persistent key-value storage
+    ├── gas.ex                 # Gas metering and per-opcode costs
+    ├── opcodes.ex             # Opcode byte → name + stack metadata
+    ├── context/
+    │   ├── transaction.ex     # Transaction context (origin, gas price)
+    │   ├── block.ex            # Block context (coinbase, timestamp, number)
+    │   └── contract.ex         # Contract context (address, caller, value, calldata)
+    └── opcodes/
+        ├── helpers.ex         # Shared utilities (signing, modular exponentiation)
+        ├── arithmetic.ex      # ADD, MUL, SUB, DIV, MOD, EXP, SIGNEXTEND
+        ├── comparison.ex      # LT, GT, SLT, SGT, EQ, ISZERO
+        ├── bitwise.ex         # AND, OR, XOR, NOT, BYTE, SHL, SHR, SAR
+        ├── crypto.ex          # KECCAK256
+        ├── stack_memory_storage.ex  # POP, MLOAD, MSTORE, SLOAD, SSTORE, MSIZE
+        ├── environment.ex     # ADDRESS, CALLER, CALLVALUE, CALLDATALOAD, ...
+        ├── control_flow.ex    # JUMP, JUMPI, PUSH0–PUSH32, DUP, SWAP
+        └── system.ex          # STOP, RETURN, REVERT, INVALID
 ```
 
-The EVM is a **stack machine**. The executor reads one opcode at a time from bytecode, pops operands from the stack, computes, and pushes results back. All values are unsigned 256-bit integers. Memory is a separate byte-addressable space that expands on demand.
+The EVM is a **stack machine**. The executor reads one opcode at a time from bytecode and dispatches to the appropriate opcode module. Each module pops operands from the stack, computes, and pushes results back. All values are unsigned 256-bit integers. Memory is a separate byte-addressable space that expands on demand.
 
 The architecture is intentionally flat — no processes, no GenServers, no OTP. Pure functions in, state out. This makes it easy to follow the execution flow and understand both the EVM and Elixir's functional style.
 
@@ -78,16 +97,6 @@ This project is designed as a learning tool. Each module demonstrates specific E
 - **Bitwise operations** — Working with arbitrary-precision integers
 - **Module attributes** — `@constants` and `@spec` type annotations
 - **Binary pattern matching** — Parsing raw bytecode with `<<>>` syntax
-
-## Roadmap
-
-- [ ] Gas metering (per-opcode costs)
-- [ ] Storage (`SLOAD` / `SSTORE`)
-- [ ] Environment opcodes (`CALLER`, `CALLVALUE`, `CALLDATA*`)
-- [ ] `LOG0`–`LOG4` events
-- [ ] Contract creation and `CALL`
-- [ ] Precompiled contracts
-- [ ] EVM test suite compatibility (ethereum/tests)
 
 ## License
 

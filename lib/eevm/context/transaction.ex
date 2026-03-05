@@ -1,4 +1,4 @@
-defmodule EEVM.Transaction do
+defmodule EEVM.Context.Transaction do
   @moduledoc """
   Transaction-level context — information about the original transaction.
 
@@ -20,7 +20,7 @@ defmodule EEVM.Transaction do
   ### Origin vs Caller
 
   `origin` is always the EOA that signed the transaction — it never changes,
-  even through nested contract calls. `caller` (in `EEVM.Contract`) is the
+  even through nested contract calls. `caller` (in `EEVM.Context.Contract`) is the
   *direct* caller of the current frame and changes with each CALL.
 
   ## Elixir Learning Notes
@@ -47,7 +47,7 @@ defmodule EEVM.Transaction do
 
   ## Example
 
-      iex> tx = EEVM.Transaction.new(origin: 0xDEAD, gasprice: 20_000_000_000)
+      iex> tx = EEVM.Context.Transaction.new(origin: 0xDEAD, gasprice: 20_000_000_000)
       iex> tx.origin
       0xDEAD
   """
