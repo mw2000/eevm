@@ -13,11 +13,14 @@ defmodule EEVM.MixProject do
 
   def application do
     [
-      extra_applications: [:logger]
+      extra_applications: [:logger, :crypto]
     ]
   end
 
   defp deps do
-    []
+    [
+      # Keccak-256 hash (Ethereum uses Keccak, not SHA3-256)
+      {:ex_keccak, "~> 0.7"}
+    ]
   end
 end

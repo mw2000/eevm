@@ -200,6 +200,9 @@ defmodule EEVM.Gas do
   # SSTORE
   def static_cost(0x55), do: @gas_sstore
 
+  # PUSH0 (0x5F) — EIP-3855
+  def static_cost(0x5F), do: @gas_base
+
   # PUSH1–PUSH32 (0x60–0x7F)
   def static_cost(op) when op >= 0x60 and op <= 0x7F, do: @gas_very_low
 
