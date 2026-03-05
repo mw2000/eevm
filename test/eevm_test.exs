@@ -458,6 +458,7 @@ defmodule EEVMTest do
       code = <<0x60, 1, 0x60, 0, 0x52, 0x60, 0, 0x51, 0x00>>
       result = EEVM.execute(code, gas: 100_000)
       assert result.status == :stopped
+
       # First MSTORE: 3(push)+3(push)+3(mstore)+3(mem 0→32)+3(push)+3(mload)+0(mem, already 32)+0(stop)
       mem_cost1 = Gas.memory_expansion_cost_word(0, 0)
       mem_cost2 = Gas.memory_expansion_cost_word(32, 0)

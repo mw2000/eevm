@@ -69,47 +69,81 @@ defmodule EEVM.Gas do
   def static_cost(0x00), do: @gas_zero
 
   # Arithmetic (0x01–0x0B)
-  def static_cost(0x01), do: @gas_very_low  # ADD
-  def static_cost(0x02), do: @gas_low       # MUL
-  def static_cost(0x03), do: @gas_very_low  # SUB
-  def static_cost(0x04), do: @gas_low       # DIV
-  def static_cost(0x05), do: @gas_low       # SDIV
-  def static_cost(0x06), do: @gas_low       # MOD
-  def static_cost(0x07), do: @gas_low       # SMOD
-  def static_cost(0x08), do: @gas_mid       # ADDMOD
-  def static_cost(0x09), do: @gas_mid       # MULMOD
-  def static_cost(0x0A), do: @gas_high      # EXP (+ dynamic)
-  def static_cost(0x0B), do: @gas_low       # SIGNEXTEND
+  # ADD
+  def static_cost(0x01), do: @gas_very_low
+  # MUL
+  def static_cost(0x02), do: @gas_low
+  # SUB
+  def static_cost(0x03), do: @gas_very_low
+  # DIV
+  def static_cost(0x04), do: @gas_low
+  # SDIV
+  def static_cost(0x05), do: @gas_low
+  # MOD
+  def static_cost(0x06), do: @gas_low
+  # SMOD
+  def static_cost(0x07), do: @gas_low
+  # ADDMOD
+  def static_cost(0x08), do: @gas_mid
+  # MULMOD
+  def static_cost(0x09), do: @gas_mid
+  # EXP (+ dynamic)
+  def static_cost(0x0A), do: @gas_high
+  # SIGNEXTEND
+  def static_cost(0x0B), do: @gas_low
 
   # Comparison & Bitwise Logic (0x10–0x1D)
-  def static_cost(0x10), do: @gas_very_low  # LT
-  def static_cost(0x11), do: @gas_very_low  # GT
-  def static_cost(0x12), do: @gas_very_low  # SLT
-  def static_cost(0x13), do: @gas_very_low  # SGT
-  def static_cost(0x14), do: @gas_very_low  # EQ
-  def static_cost(0x15), do: @gas_very_low  # ISZERO
-  def static_cost(0x16), do: @gas_very_low  # AND
-  def static_cost(0x17), do: @gas_very_low  # OR
-  def static_cost(0x18), do: @gas_very_low  # XOR
-  def static_cost(0x19), do: @gas_very_low  # NOT
-  def static_cost(0x1A), do: @gas_very_low  # BYTE
-  def static_cost(0x1B), do: @gas_very_low  # SHL
-  def static_cost(0x1C), do: @gas_very_low  # SHR
-  def static_cost(0x1D), do: @gas_very_low  # SAR
+  # LT
+  def static_cost(0x10), do: @gas_very_low
+  # GT
+  def static_cost(0x11), do: @gas_very_low
+  # SLT
+  def static_cost(0x12), do: @gas_very_low
+  # SGT
+  def static_cost(0x13), do: @gas_very_low
+  # EQ
+  def static_cost(0x14), do: @gas_very_low
+  # ISZERO
+  def static_cost(0x15), do: @gas_very_low
+  # AND
+  def static_cost(0x16), do: @gas_very_low
+  # OR
+  def static_cost(0x17), do: @gas_very_low
+  # XOR
+  def static_cost(0x18), do: @gas_very_low
+  # NOT
+  def static_cost(0x19), do: @gas_very_low
+  # BYTE
+  def static_cost(0x1A), do: @gas_very_low
+  # SHL
+  def static_cost(0x1B), do: @gas_very_low
+  # SHR
+  def static_cost(0x1C), do: @gas_very_low
+  # SAR
+  def static_cost(0x1D), do: @gas_very_low
 
   # KECCAK256 (0x20) — static + dynamic per word
   def static_cost(0x20), do: @gas_keccak256
 
   # Stack, Memory, Control Flow (0x50–0x5B)
-  def static_cost(0x50), do: @gas_base      # POP
-  def static_cost(0x51), do: @gas_very_low  # MLOAD (+ memory expansion)
-  def static_cost(0x52), do: @gas_very_low  # MSTORE (+ memory expansion)
-  def static_cost(0x53), do: @gas_very_low  # MSTORE8 (+ memory expansion)
-  def static_cost(0x56), do: @gas_mid       # JUMP
-  def static_cost(0x57), do: @gas_high      # JUMPI
-  def static_cost(0x58), do: @gas_base      # PC
-  def static_cost(0x59), do: @gas_base      # MSIZE
-  def static_cost(0x5B), do: @gas_jumpdest  # JUMPDEST
+  # POP
+  def static_cost(0x50), do: @gas_base
+  # MLOAD (+ memory expansion)
+  def static_cost(0x51), do: @gas_very_low
+  # MSTORE (+ memory expansion)
+  def static_cost(0x52), do: @gas_very_low
+  # MSTORE8 (+ memory expansion)
+  def static_cost(0x53), do: @gas_very_low
+  # JUMP
+  def static_cost(0x56), do: @gas_mid
+  # JUMPI
+  def static_cost(0x57), do: @gas_high
+  # PC
+  def static_cost(0x58), do: @gas_base
+  # MSIZE
+  def static_cost(0x59), do: @gas_base
+  # JUMPDEST
+  def static_cost(0x5B), do: @gas_jumpdest
 
   # PUSH1–PUSH32 (0x60–0x7F)
   def static_cost(op) when op >= 0x60 and op <= 0x7F, do: @gas_very_low
@@ -121,9 +155,12 @@ defmodule EEVM.Gas do
   def static_cost(op) when op >= 0x90 and op <= 0x9F, do: @gas_very_low
 
   # System (0xF3, 0xFD, 0xFE)
-  def static_cost(0xF3), do: @gas_zero      # RETURN (+ memory expansion)
-  def static_cost(0xFD), do: @gas_zero      # REVERT (+ memory expansion)
-  def static_cost(0xFE), do: @gas_zero      # INVALID (consumes ALL remaining gas)
+  # RETURN (+ memory expansion)
+  def static_cost(0xF3), do: @gas_zero
+  # REVERT (+ memory expansion)
+  def static_cost(0xFD), do: @gas_zero
+  # INVALID (consumes ALL remaining gas)
+  def static_cost(0xFE), do: @gas_zero
 
   # Unknown opcodes — treated as INVALID
   def static_cost(_), do: @gas_zero
