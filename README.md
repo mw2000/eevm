@@ -7,6 +7,10 @@
 
 A from-scratch EVM built for learning — both Ethereum internals and the Elixir language. Every module is documented with EVM concepts and idiomatic Elixir patterns side by side.
 
+<p align="center">
+  <img src="assets/banner.png" alt="eevm logo" />
+</p>
+
 ## Usage
 
 ```elixir
