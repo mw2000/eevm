@@ -103,6 +103,31 @@ defmodule EEVM.MachineState do
     %{state | pc: state.pc + n}
   end
 
+  @doc """
+  Deducts gas from the machine state.
+
+  Returns `{:ok, updated_state}` if sufficient gas remains, or
+  `{:error, :out_of_gas, state}` if the gas would go negative.
+
+  ## Elixir Learning Note
+
+  This uses a guard clause (`when cost <= gas`) to branch at the function
+  head level — no `if/else` needed. The first clause matches when we have
+  enough gas, the second is the fallback.
+  """
+  @spec consume_gas(t(), non_neg_integer()) :: {:ok, t()} | {:error, :out_of_gas, t()}
+  def consume_gas(%__MODULE__{gas: gas} = state, cost) when cost <= gas do
+    {:ok, %{state | gas: gas - cost}}
+  end
+
+  def consume_gas(state, _cost) do
+    {:error, :out_of_gas, halt(state, :out_of_gas)}
+  end
+
+  @doc "Returns the gas remaining."
+  @spec gas_remaining(t()) :: non_neg_integer()
+  def gas_remaining(%__MODULE__{gas: gas}), do: gas
+
   @doc "Halts execution with the given status."
   @spec halt(t(), status()) :: t()
   def halt(state, status) do
