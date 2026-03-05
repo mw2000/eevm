@@ -53,6 +53,9 @@ defmodule EEVM.Opcodes do
   # Environment opcodes (0x30–0x48)
   @address 0x30
   @balance 0x31
+  @keccak256 0x20
+  @push0 0x5F
+
   @origin 0x32
   @caller 0x33
   @callvalue 0x34
@@ -125,6 +128,7 @@ defmodule EEVM.Opcodes do
   def info(@mulmod), do: {:ok, %{name: "MULMOD", inputs: 3, outputs: 1}}
   def info(@exp), do: {:ok, %{name: "EXP", inputs: 2, outputs: 1}}
   def info(@signextend), do: {:ok, %{name: "SIGNEXTEND", inputs: 2, outputs: 1}}
+  def info(@keccak256), do: {:ok, %{name: "KECCAK256", inputs: 2, outputs: 1}}
 
   def info(@lt), do: {:ok, %{name: "LT", inputs: 2, outputs: 1}}
   def info(@gt), do: {:ok, %{name: "GT", inputs: 2, outputs: 1}}
@@ -163,6 +167,8 @@ defmodule EEVM.Opcodes do
   def info(@selfbalance), do: {:ok, %{name: "SELFBALANCE", inputs: 0, outputs: 1}}
   def info(@basefee), do: {:ok, %{name: "BASEFEE", inputs: 0, outputs: 1}}
   def info(@gas_), do: {:ok, %{name: "GAS", inputs: 0, outputs: 1}}
+
+  def info(@push0), do: {:ok, %{name: "PUSH0", inputs: 0, outputs: 1}}
 
   def info(@pop), do: {:ok, %{name: "POP", inputs: 1, outputs: 0}}
   def info(@mload), do: {:ok, %{name: "MLOAD", inputs: 1, outputs: 1}}

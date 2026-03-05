@@ -67,7 +67,8 @@ defmodule EEVM.Executor do
           {:ok, state_after_gas} ->
             case execute_opcode(opcode, state_after_gas) do
               {:ok, new_state} -> run_loop(new_state)
-              {:error, reason, state} -> MachineState.halt(state, {:error, reason})
+              {:error, :out_of_gas, halted_state} -> halted_state
+              {:error, reason, error_state} -> MachineState.halt(error_state, {:error, reason})
             end
 
           {:error, :out_of_gas, halted_state} ->
@@ -364,6 +365,67 @@ defmodule EEVM.Executor do
     else
       {:error, reason} -> {:error, reason, state}
     end
+  end
+
+  # KECCAK256 (0x20): compute Keccak-256 hash of memory region
+  #
+  # Pops offset and length from stack, reads `length` bytes from memory,
+  # hashes them with Keccak-256, and pushes the 256-bit hash.
+  #
+  # Gas: 30 (static) + 6 per 32-byte word (dynamic) + memory expansion.
+  #
+  # Elixir Learning Note: Ethereum uses Keccak-256, NOT SHA3-256 (NIST
+  # standardized a different padding). We use the `ex_keccak` library
+  # which provides a NIF binding. The result is a 32-byte binary.
+  defp execute_opcode(0x20, state) do
+    with {:ok, offset, s1} <- Stack.pop(state.stack),
+         {:ok, length, s2} <- Stack.pop(s1) do
+      # Charge dynamic gas: 6 per 32-byte word (rounded up)
+      _word_count = div(length + 31, 32)
+      dynamic_cost = Gas.keccak256_dynamic_cost(length)
+
+      # Charge memory expansion gas
+      mem_cost =
+        if length > 0 do
+          Gas.memory_expansion_cost(Memory.size(state.memory), offset, length)
+        else
+          0
+        end
+
+      case MachineState.consume_gas(state, dynamic_cost + mem_cost) do
+        {:ok, state_after_gas} ->
+          # Read bytes from memory
+          {data, updated_memory} =
+            if length > 0 do
+              Memory.read_bytes(state_after_gas.memory, offset, length)
+            else
+              {<<>>, state_after_gas.memory}
+            end
+
+          hash = ExKeccak.hash_256(data)
+          <<hash_int::unsigned-big-256>> = hash
+          {:ok, new_stack} = Stack.push(s2, hash_int)
+
+          {:ok,
+           %{state_after_gas | stack: new_stack, memory: updated_memory}
+           |> MachineState.advance_pc()}
+
+        {:error, :out_of_gas, halted} ->
+          {:error, :out_of_gas, halted}
+      end
+    else
+      {:error, reason} -> {:error, reason, state}
+    end
+  end
+
+  # PUSH0 (0x5F): push zero onto the stack — EIP-3855
+  #
+  # The simplest opcode added in the Shanghai upgrade. Saves gas vs
+  # PUSH1 0x00 (costs 2 instead of 3). Modern Solidity compilers emit
+  # this whenever they need a zero value on the stack.
+  defp execute_opcode(0x5F, state) do
+    {:ok, new_stack} = Stack.push(state.stack, 0)
+    {:ok, %{state | stack: new_stack} |> MachineState.advance_pc()}
   end
 
   # POP (0x50): discard top of stack
