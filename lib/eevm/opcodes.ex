@@ -84,6 +84,7 @@ defmodule EEVM.Opcodes do
   @sload 0x54
   @sstore 0x55
   @msize 0x59
+  @mcopy 0x5E
   @jump 0x56
   @jumpi 0x57
   @pc 0x58
@@ -177,6 +178,7 @@ defmodule EEVM.Opcodes do
   def info(@sload), do: {:ok, %{name: "SLOAD", inputs: 1, outputs: 1}}
   def info(@sstore), do: {:ok, %{name: "SSTORE", inputs: 2, outputs: 0}}
   def info(@msize), do: {:ok, %{name: "MSIZE", inputs: 0, outputs: 1}}
+  def info(@mcopy), do: {:ok, %{name: "MCOPY", inputs: 3, outputs: 0}}
   def info(@jump), do: {:ok, %{name: "JUMP", inputs: 1, outputs: 0}}
   def info(@jumpi), do: {:ok, %{name: "JUMPI", inputs: 2, outputs: 0}}
   def info(@pc), do: {:ok, %{name: "PC", inputs: 0, outputs: 1}}

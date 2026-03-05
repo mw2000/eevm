@@ -126,6 +126,7 @@ defmodule EEVM.Executor do
   defp execute_opcode(0x50, state), do: StackMemoryStorage.execute(0x50, state)
   defp execute_opcode(op, state) when op in 0x51..0x55, do: StackMemoryStorage.execute(op, state)
   defp execute_opcode(0x59, state), do: StackMemoryStorage.execute(0x59, state)
+  defp execute_opcode(0x5E, state), do: StackMemoryStorage.execute(0x5E, state)
   defp execute_opcode(0x5A, state), do: Environment.execute(0x5A, state)
   defp execute_opcode(op, state) when op in 0x56..0x5B, do: ControlFlow.execute(op, state)
   defp execute_opcode(0x5F, state), do: ControlFlow.execute(0x5F, state)

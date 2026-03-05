@@ -44,6 +44,7 @@ defmodule EEVM.Gas do
   @gas_exp_byte 50
   @gas_keccak256 30
   @gas_keccak256_word 6
+  @gas_copy 3
   @gas_memory 3
   @gas_sload 200
   @gas_sstore 20_000
@@ -191,6 +192,7 @@ defmodule EEVM.Gas do
   def static_cost(0x58), do: @gas_base
   # MSIZE
   def static_cost(0x59), do: @gas_base
+  def static_cost(0x5E), do: @gas_very_low
   # JUMPDEST
   def static_cost(0x5B), do: @gas_jumpdest
 
@@ -250,6 +252,10 @@ defmodule EEVM.Gas do
     words = word_count(size)
     @gas_keccak256_word * words
   end
+
+  @doc "Dynamic gas for copy operations: 3 gas per 32-byte word (ceiling)."
+  @spec copy_cost(non_neg_integer()) :: non_neg_integer()
+  def copy_cost(size), do: div(size + 31, 32) * @gas_copy
 
   @doc """
   Calculates the gas cost of memory expansion.

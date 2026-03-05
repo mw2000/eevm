@@ -151,5 +151,30 @@ defmodule EEVM.Opcodes.StackMemoryStorage do
     Helpers.push_value(state, size)
   end
 
+  def execute(0x5E, state) do
+    with {:ok, dst, s1} <- Stack.pop(state.stack),
+         {:ok, src, s2} <- Stack.pop(s1),
+         {:ok, length, s3} <- Stack.pop(s2) do
+      if length == 0 do
+        {:ok, MachineState.advance_pc(%{state | stack: s3})}
+      else
+        max_offset = max(src + length, dst + length)
+        expansion_cost = Gas.memory_expansion_cost(Memory.size(state.memory), 0, max_offset)
+        dynamic_cost = Gas.copy_cost(length) + expansion_cost
+
+        case MachineState.consume_gas(%{state | stack: s3}, dynamic_cost) do
+          {:ok, s4} ->
+            new_memory = Memory.copy(s4.memory, dst, src, length)
+            {:ok, MachineState.advance_pc(%{s4 | memory: new_memory})}
+
+          {:error, :out_of_gas, halted_state} ->
+            {:error, :out_of_gas, halted_state}
+        end
+      end
+    else
+      {:error, reason} -> {:error, reason, state}
+    end
+  end
+
   def execute(_opcode, state), do: {:ok, MachineState.halt(state, :invalid)}
 end

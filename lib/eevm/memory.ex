@@ -105,6 +105,26 @@ defmodule EEVM.Memory do
 
   def read_bytes(memory, _offset, 0), do: {<<>>, memory}
 
+  @doc """
+  Copies `length` bytes from `src` to `dst` within memory (memmove semantics).
+
+  This is the MCOPY operation (EIP-5656). Handles overlapping regions correctly
+  by reading all source bytes before writing — similar to C's `memmove`.
+  """
+  @spec copy(t(), non_neg_integer(), non_neg_integer(), non_neg_integer()) :: t()
+  def copy(memory, _dst, _src, 0), do: memory
+
+  def copy(%__MODULE__{} = memory, dst, src, length) do
+    {bytes, memory_after_read} = read_bytes(memory, src, length)
+
+    bytes
+    |> :binary.bin_to_list()
+    |> Enum.with_index()
+    |> Enum.reduce(memory_after_read, fn {byte, i}, acc ->
+      store_byte(acc, dst + i, byte)
+    end)
+  end
+
   @doc "Returns the current memory size in bytes (always a multiple of 32)."
   @spec size(t()) :: non_neg_integer()
   def size(%__MODULE__{size: size}), do: size
