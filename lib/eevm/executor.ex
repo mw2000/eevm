@@ -25,7 +25,7 @@ defmodule EEVM.Executor do
   - `import Bitwise` gives us operators like `band`, `bor`, `bxor`, `bnot`.
   """
 
-  alias EEVM.{MachineState, Stack, Memory, Opcodes, Gas}
+  alias EEVM.{MachineState, Stack, Memory, Storage, Opcodes, Gas}
 
   import Bitwise
 
@@ -422,6 +422,46 @@ defmodule EEVM.Executor do
     else
       {:error, reason} -> {:error, reason, state}
       {:error, :out_of_gas, halted_state} -> {:error, :out_of_gas, halted_state}
+    end
+  end
+
+  # SLOAD (0x54): load from storage
+  #
+  # Pops a key from the stack, looks it up in storage, and pushes the value.
+  # Uninitialized slots return 0.
+  #
+  # ## Elixir Learning Note
+  #
+  # `Storage.load/2` uses `Map.get/3` with a default of 0, so we never
+  # need to check if the key exists — missing keys just return 0.
+  defp execute_opcode(0x54, state) do
+    with {:ok, key, s1} <- Stack.pop(state.stack),
+         value = Storage.load(state.storage, key),
+         {:ok, s2} <- Stack.push(s1, value) do
+      {:ok, %{state | stack: s2} |> MachineState.advance_pc()}
+    else
+      {:error, reason} -> {:error, reason, state}
+    end
+  end
+
+  # SSTORE (0x55): store to storage
+  #
+  # Pops a key and value from the stack, writes the value to storage.
+  # This is the most expensive common opcode (20,000 gas) because it
+  # modifies persistent blockchain state.
+  #
+  # ## Elixir Learning Note
+  #
+  # `Storage.store/3` returns a *new* storage struct — it doesn't mutate
+  # the old one. This is functional programming: every "write" creates a
+  # new version of the data structure.
+  defp execute_opcode(0x55, state) do
+    with {:ok, key, s1} <- Stack.pop(state.stack),
+         {:ok, value, s2} <- Stack.pop(s1) do
+      new_storage = Storage.store(state.storage, key, value)
+      {:ok, %{state | stack: s2, storage: new_storage} |> MachineState.advance_pc()}
+    else
+      {:error, reason} -> {:error, reason, state}
     end
   end
 

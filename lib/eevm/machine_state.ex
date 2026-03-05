@@ -21,14 +21,15 @@ defmodule EEVM.MachineState do
   - The `alias` keyword lets us reference modules by their short name.
   """
 
-  alias EEVM.{Stack, Memory}
+  alias EEVM.{Stack, Memory, Storage}
 
-  @type status :: :running | :stopped | :reverted | :invalid
+  @type status :: :running | :stopped | :reverted | :invalid | :out_of_gas
 
   @type t :: %__MODULE__{
           pc: non_neg_integer(),
           stack: Stack.t(),
           memory: Memory.t(),
+          storage: Storage.t(),
           gas: non_neg_integer(),
           status: status(),
           return_data: binary(),
@@ -39,6 +40,7 @@ defmodule EEVM.MachineState do
   defstruct pc: 0,
             stack: nil,
             memory: nil,
+            storage: nil,
             gas: 1_000_000,
             status: :running,
             return_data: <<>>,
@@ -51,6 +53,7 @@ defmodule EEVM.MachineState do
     - `code` — the raw EVM bytecode as an Elixir binary
     - `opts` — optional keyword list:
       - `:gas` — initial gas (default: 1,000,000)
+      - `:storage` — initial storage (default: empty)
 
   ## Example
 
@@ -64,6 +67,7 @@ defmodule EEVM.MachineState do
       code: code,
       stack: Stack.new(),
       memory: Memory.new(),
+      storage: Keyword.get(opts, :storage, Storage.new()),
       gas: Keyword.get(opts, :gas, 1_000_000)
     }
   end
