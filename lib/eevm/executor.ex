@@ -25,7 +25,7 @@ defmodule EEVM.Executor do
   - `import Bitwise` gives us operators like `band`, `bor`, `bxor`, `bnot`.
   """
 
-  alias EEVM.{MachineState, Stack, Memory, Opcodes}
+  alias EEVM.{MachineState, Stack, Memory, Opcodes, Gas}
 
   import Bitwise
 
@@ -61,9 +61,17 @@ defmodule EEVM.Executor do
         MachineState.halt(state, :stopped)
 
       opcode ->
-        case execute_opcode(opcode, state) do
-          {:ok, new_state} -> run_loop(new_state)
-          {:error, reason, state} -> MachineState.halt(state, {:error, reason})
+        static_cost = if opcode == 0xFE, do: state.gas, else: Gas.static_cost(opcode)
+
+        case MachineState.consume_gas(state, static_cost) do
+          {:ok, state_after_gas} ->
+            case execute_opcode(opcode, state_after_gas) do
+              {:ok, new_state} -> run_loop(new_state)
+              {:error, reason, state} -> MachineState.halt(state, {:error, reason})
+            end
+
+          {:error, :out_of_gas, halted_state} ->
+            halted_state
         end
     end
   end
@@ -207,12 +215,15 @@ defmodule EEVM.Executor do
   # EXP (0x0A): a ** b (mod 2^256)
   defp execute_opcode(0x0A, state) do
     with {:ok, a, s1} <- Stack.pop(state.stack),
-         {:ok, b, s2} <- Stack.pop(s1) do
+         {:ok, b, s2} <- Stack.pop(s1),
+         {:ok, state_after_gas} <-
+           MachineState.consume_gas(%{state | stack: s2}, Gas.exp_dynamic_cost(b)) do
       result = mod_pow(a, b, @max_uint256 + 1)
-      {:ok, s3} = Stack.push(s2, result)
-      {:ok, %{state | stack: s3} |> MachineState.advance_pc()}
+      {:ok, s3} = Stack.push(state_after_gas.stack, result)
+      {:ok, %{state_after_gas | stack: s3} |> MachineState.advance_pc()}
     else
       {:error, reason} -> {:error, reason, state}
+      {:error, :out_of_gas, halted_state} -> {:error, :out_of_gas, halted_state}
     end
   end
 
@@ -368,34 +379,49 @@ defmodule EEVM.Executor do
 
   # MLOAD (0x51): load word from memory
   defp execute_opcode(0x51, state) do
-    with {:ok, offset, s1} <- Stack.pop(state.stack) do
-      {value, new_memory} = Memory.load(state.memory, offset)
-      {:ok, s2} = Stack.push(s1, value)
-      {:ok, %{state | stack: s2, memory: new_memory} |> MachineState.advance_pc()}
+    with {:ok, offset, s1} <- Stack.pop(state.stack),
+         expansion_cost =
+           Gas.memory_expansion_cost_word(Memory.size(state.memory), offset),
+         {:ok, state_after_gas} <-
+           MachineState.consume_gas(%{state | stack: s1}, expansion_cost) do
+      {value, new_memory} = Memory.load(state_after_gas.memory, offset)
+      {:ok, s2} = Stack.push(state_after_gas.stack, value)
+      {:ok, %{state_after_gas | stack: s2, memory: new_memory} |> MachineState.advance_pc()}
     else
       {:error, reason} -> {:error, reason, state}
+      {:error, :out_of_gas, halted_state} -> {:error, :out_of_gas, halted_state}
     end
   end
 
   # MSTORE (0x52): store word to memory
   defp execute_opcode(0x52, state) do
     with {:ok, offset, s1} <- Stack.pop(state.stack),
-         {:ok, value, s2} <- Stack.pop(s1) do
-      new_memory = Memory.store(state.memory, offset, value)
-      {:ok, %{state | stack: s2, memory: new_memory} |> MachineState.advance_pc()}
+         {:ok, value, s2} <- Stack.pop(s1),
+         expansion_cost =
+           Gas.memory_expansion_cost_word(Memory.size(state.memory), offset),
+         {:ok, state_after_gas} <-
+           MachineState.consume_gas(%{state | stack: s2}, expansion_cost) do
+      new_memory = Memory.store(state_after_gas.memory, offset, value)
+      {:ok, %{state_after_gas | stack: s2, memory: new_memory} |> MachineState.advance_pc()}
     else
       {:error, reason} -> {:error, reason, state}
+      {:error, :out_of_gas, halted_state} -> {:error, :out_of_gas, halted_state}
     end
   end
 
   # MSTORE8 (0x53): store byte to memory
   defp execute_opcode(0x53, state) do
     with {:ok, offset, s1} <- Stack.pop(state.stack),
-         {:ok, value, s2} <- Stack.pop(s1) do
-      new_memory = Memory.store_byte(state.memory, offset, value)
-      {:ok, %{state | stack: s2, memory: new_memory} |> MachineState.advance_pc()}
+         {:ok, value, s2} <- Stack.pop(s1),
+         expansion_cost =
+           Gas.memory_expansion_cost_byte(Memory.size(state.memory), offset),
+         {:ok, state_after_gas} <-
+           MachineState.consume_gas(%{state | stack: s2}, expansion_cost) do
+      new_memory = Memory.store_byte(state_after_gas.memory, offset, value)
+      {:ok, %{state_after_gas | stack: s2, memory: new_memory} |> MachineState.advance_pc()}
     else
       {:error, reason} -> {:error, reason, state}
+      {:error, :out_of_gas, halted_state} -> {:error, :out_of_gas, halted_state}
     end
   end
 
@@ -508,28 +534,38 @@ defmodule EEVM.Executor do
   # RETURN (0xF3): halt and return data
   defp execute_opcode(0xF3, state) do
     with {:ok, offset, s1} <- Stack.pop(state.stack),
-         {:ok, length, s2} <- Stack.pop(s1) do
-      {return_data, new_memory} = Memory.read_bytes(state.memory, offset, length)
+         {:ok, length, s2} <- Stack.pop(s1),
+         expansion_cost =
+           Gas.memory_expansion_cost(Memory.size(state.memory), offset, length),
+         {:ok, state_after_gas} <-
+           MachineState.consume_gas(%{state | stack: s2}, expansion_cost) do
+      {return_data, new_memory} = Memory.read_bytes(state_after_gas.memory, offset, length)
 
       {:ok,
-       %{state | stack: s2, memory: new_memory, return_data: return_data}
+       %{state_after_gas | stack: s2, memory: new_memory, return_data: return_data}
        |> MachineState.halt(:stopped)}
     else
       {:error, reason} -> {:error, reason, state}
+      {:error, :out_of_gas, halted_state} -> {:error, :out_of_gas, halted_state}
     end
   end
 
   # REVERT (0xFD): halt, revert, and return data
   defp execute_opcode(0xFD, state) do
     with {:ok, offset, s1} <- Stack.pop(state.stack),
-         {:ok, length, s2} <- Stack.pop(s1) do
-      {return_data, new_memory} = Memory.read_bytes(state.memory, offset, length)
+         {:ok, length, s2} <- Stack.pop(s1),
+         expansion_cost =
+           Gas.memory_expansion_cost(Memory.size(state.memory), offset, length),
+         {:ok, state_after_gas} <-
+           MachineState.consume_gas(%{state | stack: s2}, expansion_cost) do
+      {return_data, new_memory} = Memory.read_bytes(state_after_gas.memory, offset, length)
 
       {:ok,
-       %{state | stack: s2, memory: new_memory, return_data: return_data}
+       %{state_after_gas | stack: s2, memory: new_memory, return_data: return_data}
        |> MachineState.halt(:reverted)}
     else
       {:error, reason} -> {:error, reason, state}
+      {:error, :out_of_gas, halted_state} -> {:error, :out_of_gas, halted_state}
     end
   end
 
