@@ -103,6 +103,12 @@ defmodule EEVM.Opcodes do
   @swap1 0x90
   @swap16 0x9F
 
+  @log0 0xA0
+  @log1 0xA1
+  @log2 0xA2
+  @log3 0xA3
+  @log4 0xA4
+
   # System operations
   @return_ 0xF3
   @revert 0xFD
@@ -185,6 +191,12 @@ defmodule EEVM.Opcodes do
   def info(@jumpi), do: {:ok, %{name: "JUMPI", inputs: 2, outputs: 0}}
   def info(@pc), do: {:ok, %{name: "PC", inputs: 0, outputs: 1}}
   def info(@jumpdest), do: {:ok, %{name: "JUMPDEST", inputs: 0, outputs: 0}}
+
+  def info(@log0), do: {:ok, %{name: "LOG0", inputs: 2, outputs: 0}}
+  def info(@log1), do: {:ok, %{name: "LOG1", inputs: 3, outputs: 0}}
+  def info(@log2), do: {:ok, %{name: "LOG2", inputs: 4, outputs: 0}}
+  def info(@log3), do: {:ok, %{name: "LOG3", inputs: 5, outputs: 0}}
+  def info(@log4), do: {:ok, %{name: "LOG4", inputs: 6, outputs: 0}}
 
   def info(@return_), do: {:ok, %{name: "RETURN", inputs: 2, outputs: 0}}
   def info(@revert), do: {:ok, %{name: "REVERT", inputs: 2, outputs: 0}}

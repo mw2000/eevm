@@ -51,6 +51,9 @@ defmodule EEVM.Gas do
   @gas_blockhash 20
   @gas_balance 2600
   @gas_selfbalance 5
+  @gas_log 375
+  @gas_log_topic 375
+  @gas_log_data 8
 
   @doc """
   Returns the static gas cost for a given opcode byte.
@@ -215,6 +218,8 @@ defmodule EEVM.Gas do
   # SWAP1–SWAP16 (0x90–0x9F)
   def static_cost(op) when op >= 0x90 and op <= 0x9F, do: @gas_very_low
 
+  def static_cost(op) when op in 0xA0..0xA4, do: @gas_log
+
   # System (0xF3, 0xFD, 0xFE)
   # RETURN (+ memory expansion)
   def static_cost(0xF3), do: @gas_zero
@@ -257,6 +262,11 @@ defmodule EEVM.Gas do
   @doc "Dynamic gas for copy operations: 3 gas per 32-byte word (ceiling)."
   @spec copy_cost(non_neg_integer()) :: non_neg_integer()
   def copy_cost(size), do: div(size + 31, 32) * @gas_copy
+
+  @doc "Dynamic gas for LOGn: base + per-topic + per-byte-of-data."
+  @spec log_cost(non_neg_integer(), non_neg_integer()) :: non_neg_integer()
+  def log_cost(topic_count, data_size),
+    do: @gas_log + @gas_log_topic * topic_count + @gas_log_data * data_size
 
   @doc """
   Calculates the gas cost of memory expansion.
