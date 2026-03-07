@@ -81,6 +81,7 @@ defmodule EEVM.MachineState do
       tx: Keyword.get(opts, :tx, Transaction.new()),
       block: Keyword.get(opts, :block, Block.new()),
       contract: Keyword.get(opts, :contract, Contract.new()),
+      return_data: Keyword.get(opts, :return_data, <<>>),
       gas: Keyword.get(opts, :gas, 1_000_000)
     }
   end

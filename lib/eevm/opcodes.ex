@@ -65,6 +65,7 @@ defmodule EEVM.Opcodes do
   @codesize 0x38
   @gasprice 0x3A
   @returndatasize 0x3D
+  @returndatacopy 0x3E
   @blockhash 0x40
   @coinbase 0x41
   @timestamp 0x42
@@ -155,6 +156,7 @@ defmodule EEVM.Opcodes do
   def info(@calldataload), do: {:ok, %{name: "CALLDATALOAD", inputs: 1, outputs: 1}}
   def info(@calldatasize), do: {:ok, %{name: "CALLDATASIZE", inputs: 0, outputs: 1}}
   def info(@calldatacopy), do: {:ok, %{name: "CALLDATACOPY", inputs: 3, outputs: 0}}
+  def info(@returndatacopy), do: {:ok, %{name: "RETURNDATACOPY", inputs: 3, outputs: 0}}
   def info(@codesize), do: {:ok, %{name: "CODESIZE", inputs: 0, outputs: 1}}
   def info(@gasprice), do: {:ok, %{name: "GASPRICE", inputs: 0, outputs: 1}}
   def info(@returndatasize), do: {:ok, %{name: "RETURNDATASIZE", inputs: 0, outputs: 1}}

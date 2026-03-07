@@ -2,6 +2,7 @@ defmodule EEVM.Opcodes.EnvironmentTest do
   use ExUnit.Case, async: true
 
   alias EEVM.Context.{Transaction, Block, Contract}
+  alias EEVM.Gas
 
   describe "Environment Opcodes" do
     test "ADDRESS pushes current contract address" do
@@ -232,6 +233,74 @@ defmodule EEVM.Opcodes.EnvironmentTest do
       code = <<0x47, 0x00>>
       result = EEVM.execute(code, gas: 1000)
       assert result.gas == 1000 - 5
+    end
+  end
+
+  describe "RETURNDATACOPY (0x3E)" do
+    test "copies return data to memory" do
+      return_data = <<0xAA, 0xBB, 0xCC, 0xDD>>
+      code = <<0x60, 4, 0x60, 0, 0x60, 0, 0x3E, 0x60, 0, 0x51, 0x00>>
+
+      result = EEVM.execute(code, return_data: return_data)
+
+      expected = 0xAABBCCDD00000000000000000000000000000000000000000000000000000000
+      assert EEVM.stack_values(result) == [expected]
+    end
+
+    test "reverts on out-of-bounds read" do
+      return_data = <<0xAA, 0xBB>>
+      code = <<0x60, 2, 0x60, 1, 0x60, 0, 0x3E, 0x00>>
+
+      result = EEVM.execute(code, return_data: return_data)
+
+      assert result.status == :reverted
+    end
+
+    test "zero-length copy is a no-op" do
+      return_data = <<0xAA, 0xBB>>
+      code = <<0x60, 0, 0x60, 250, 0x60, 10, 0x3E, 0x59, 0x00>>
+
+      result = EEVM.execute(code, return_data: return_data)
+
+      assert result.status == :stopped
+      assert EEVM.stack_values(result) == [0]
+    end
+
+    test "copies from middle of return data" do
+      return_data = <<0x11, 0x22, 0x33, 0x44, 0x55>>
+      code = <<0x60, 2, 0x60, 2, 0x60, 0, 0x3E, 0x60, 0, 0x51, 0x00>>
+
+      result = EEVM.execute(code, return_data: return_data)
+
+      expected = :binary.decode_unsigned(<<0x33, 0x44, 0::240>>)
+      assert EEVM.stack_values(result) == [expected]
+    end
+
+    test "gas calculation includes static, copy, and memory expansion" do
+      return_data = <<0xAA, 0xBB, 0xCC, 0xDD>>
+      code = <<0x60, 4, 0x60, 0, 0x60, 0, 0x3E, 0x60, 0, 0x51, 0x00>>
+      initial_gas = 1_000
+
+      result = EEVM.execute(code, gas: initial_gas, return_data: return_data)
+
+      expected_spent =
+        Gas.static_cost(0x60) * 4 +
+          Gas.static_cost(0x3E) +
+          Gas.copy_cost(4) +
+          Gas.memory_expansion_cost(0, 0, 4) +
+          Gas.static_cost(0x51)
+
+      assert result.gas == initial_gas - expected_spent
+    end
+
+    test "partial copy with destination offset" do
+      return_data = <<0xAA, 0xBB>>
+      code = <<0x60, 2, 0x60, 0, 0x60, 1, 0x3E, 0x60, 0, 0x51, 0x00>>
+
+      result = EEVM.execute(code, return_data: return_data)
+
+      expected = :binary.decode_unsigned(<<0x00, 0xAA, 0xBB, 0::232>>)
+      assert EEVM.stack_values(result) == [expected]
     end
   end
 end
