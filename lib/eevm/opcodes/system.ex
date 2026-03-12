@@ -284,7 +284,10 @@ defmodule EEVM.Opcodes.System do
 
       forwarded_gas = Gas.call_forwarded_gas(state_after_cost.gas, gas_requested)
 
-      case MachineState.consume_gas(%{state_after_cost | memory: memory_after_read}, forwarded_gas) do
+      case MachineState.consume_gas(
+             %{state_after_cost | memory: memory_after_read},
+             forwarded_gas
+           ) do
         {:ok, state_after_forward} ->
           target_code = WorldState.get_code(world_state_after_transfer, address)
 
