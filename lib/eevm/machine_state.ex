@@ -9,6 +9,9 @@ defmodule EEVM.MachineState do
   - **stack**: the operand stack (max 1024 elements)
   - **memory**: byte-addressable linear memory
   - **world_state**: account/code state used for external account lookups
+  - **call_stack**: suspended parent frames during nested execution
+  - **frame return metadata**: parent memory write-back offset and size
+  - **is_static/depth**: execution mode and current call depth
   - **gas**: remaining gas for execution
   - **status**: whether the machine is running, stopped, or reverted
 
@@ -80,6 +83,11 @@ defmodule EEVM.MachineState do
       - `:block` — block context (default: empty)
       - `:contract` — contract/message context (default: empty)
       - `:world_state` — external account state (default: empty)
+      - `:call_stack` — internal frame stack (default: `[]`)
+      - `:frame_return_offset` — parent memory write-back offset (default: `0`)
+      - `:frame_return_size` — parent memory write-back size (default: `0`)
+      - `:is_static` — static context flag for this frame (default: `false`)
+      - `:depth` — current call depth (default: `0`)
 
   ## Example
 

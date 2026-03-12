@@ -1,4 +1,30 @@
 defmodule EEVM.CallFrame do
+  @moduledoc """
+  Execution frame snapshot used for nested EVM calls.
+
+  ## EVM Concepts
+
+  Each CALL-like opcode creates a new execution context while suspending the
+  parent context. This struct captures the parent frame so execution can return
+  correctly after the child frame halts.
+
+  A frame stores:
+
+  - code and program counter
+  - stack and memory
+  - available gas for that frame
+  - contract context (`msg.sender`, `msg.value`, `address`)
+  - return write-back metadata (`return_offset`, `return_size`)
+  - static-call mode and depth
+
+  ## Elixir Learning Notes
+
+  - This struct is a plain value object; frame transitions are handled in
+    `EEVM.MachineState` and `EEVM.Executor`.
+  - `from_state/2` acts as a focused constructor that copies only the fields
+    needed to suspend and restore execution.
+  """
+
   alias EEVM.{Memory, Stack}
   alias EEVM.Context.Contract
 
