@@ -55,6 +55,9 @@ defmodule EEVM.Gas do
   @gas_log_topic 375
   @gas_log_data 8
   @gas_warm_access 100
+  @gas_create 32_000
+  @gas_create2_word 6
+  @gas_code_deposit 200
 
   @doc """
   Returns the static gas cost for a given opcode byte.
@@ -226,8 +229,10 @@ defmodule EEVM.Gas do
   def static_cost(op) when op in 0xA0..0xA4, do: @gas_log
 
   # System (0xF3, 0xFD, 0xFE)
+  def static_cost(0xF0), do: @gas_create
   # RETURN (+ memory expansion)
   def static_cost(0xF3), do: @gas_zero
+  def static_cost(0xF5), do: @gas_create
   # REVERT (+ memory expansion)
   def static_cost(0xFD), do: @gas_zero
   # INVALID (consumes ALL remaining gas)
@@ -272,6 +277,15 @@ defmodule EEVM.Gas do
   @spec log_cost(non_neg_integer(), non_neg_integer()) :: non_neg_integer()
   def log_cost(topic_count, data_size),
     do: @gas_log + @gas_log_topic * topic_count + @gas_log_data * data_size
+
+  @spec create2_hash_cost(non_neg_integer()) :: non_neg_integer()
+  def create2_hash_cost(init_code_size) do
+    words = word_count(init_code_size)
+    words * @gas_create2_word
+  end
+
+  @spec code_deposit_cost(non_neg_integer()) :: non_neg_integer()
+  def code_deposit_cost(code_size), do: code_size * @gas_code_deposit
 
   @doc """
   Calculates the gas cost of memory expansion.
