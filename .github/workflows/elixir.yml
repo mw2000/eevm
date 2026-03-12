@@ -32,12 +32,22 @@ jobs:
         path: deps
         key: ${{ runner.os }}-mix-${{ hashFiles('**/mix.lock') }}
         restore-keys: ${{ runner.os }}-mix-
+    - name: Restore build cache
+      uses: actions/cache@v4
+      with:
+        path: _build
+        key: ${{ runner.os }}-build-${{ hashFiles('**/mix.lock') }}
+        restore-keys: ${{ runner.os }}-build-
     - name: Install dependencies
       run: mix deps.get
     - name: Check formatting
       run: mix format --check-formatted
     - name: Compile (warnings as errors)
       run: mix compile --warnings-as-errors
+    - name: Run Credo
+      run: mix credo --strict
+    - name: Run Dialyzer
+      run: mix dialyzer
 
   test:
     name: Test
@@ -56,6 +66,12 @@ jobs:
         path: deps
         key: ${{ runner.os }}-mix-${{ hashFiles('**/mix.lock') }}
         restore-keys: ${{ runner.os }}-mix-
+    - name: Restore build cache
+      uses: actions/cache@v4
+      with:
+        path: _build
+        key: ${{ runner.os }}-build-${{ hashFiles('**/mix.lock') }}
+        restore-keys: ${{ runner.os }}-build-
     - name: Install dependencies
       run: mix deps.get
     - name: Run tests

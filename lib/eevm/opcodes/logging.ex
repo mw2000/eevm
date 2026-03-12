@@ -17,7 +17,9 @@ defmodule EEVM.Opcodes.Logging do
   - `binary_part/3` extracts a slice from a binary — used to read log data from memory bytes.
   """
 
-  alias EEVM.{Gas, MachineState, Memory, Stack}
+  alias EEVM.{MachineState, Memory, Stack}
+  alias EEVM.Gas.Dynamic
+  alias EEVM.Gas.Memory, as: GasMemory
 
   @doc """
   Dispatches a LOG opcode (LOG0–LOG4) to the matching topic-count handler.
@@ -37,8 +39,8 @@ defmodule EEVM.Opcodes.Logging do
          {:ok, size, s2} <- Stack.pop(s1),
          {:ok, topics, s3} <- pop_topics(s2, topic_count, []) do
       dynamic_cost =
-        Gas.log_cost(topic_count, size) +
-          Gas.memory_expansion_cost(Memory.size(state.memory), offset, size)
+        Dynamic.log_cost(topic_count, size) +
+          GasMemory.memory_expansion_cost(Memory.size(state.memory), offset, size)
 
       case MachineState.consume_gas(%{state | stack: s3}, dynamic_cost) do
         {:ok, s4} ->

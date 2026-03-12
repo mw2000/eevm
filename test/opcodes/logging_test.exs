@@ -2,7 +2,7 @@ defmodule EEVM.Opcodes.LoggingTest do
   use ExUnit.Case, async: true
 
   alias EEVM.Context.Contract
-  alias EEVM.Gas
+  alias EEVM.Gas.Dynamic
 
   describe "LOG opcodes" do
     # ── LOG0–LOG4 Tests ──────
@@ -120,9 +120,9 @@ defmodule EEVM.Opcodes.LoggingTest do
     end
 
     test "gas calculation for LOGn is 375 + 375*N + 8*size" do
-      assert Gas.log_cost(0, 0) == 375
-      assert Gas.log_cost(2, 10) == 375 + 375 * 2 + 8 * 10
-      assert Gas.log_cost(4, 64) == 375 + 375 * 4 + 8 * 64
+      assert Dynamic.log_cost(0, 0) == 375
+      assert Dynamic.log_cost(2, 10) == 375 + 375 * 2 + 8 * 10
+      assert Dynamic.log_cost(4, 64) == 375 + 375 * 4 + 8 * 64
     end
 
     test "memory expansion is triggered by LOG data reads beyond current memory" do

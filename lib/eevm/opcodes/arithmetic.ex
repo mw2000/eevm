@@ -32,7 +32,8 @@ defmodule EEVM.Opcodes.Arithmetic do
   """
   import Bitwise
 
-  alias EEVM.{Gas, MachineState, Stack}
+  alias EEVM.{MachineState, Stack}
+  alias EEVM.Gas.Dynamic
   alias EEVM.Opcodes.Helpers
 
   @max_uint256 (1 <<< 256) - 1
@@ -186,7 +187,7 @@ defmodule EEVM.Opcodes.Arithmetic do
     with {:ok, a, s1} <- Stack.pop(state.stack),
          {:ok, b, s2} <- Stack.pop(s1),
          {:ok, state_after_gas} <-
-           MachineState.consume_gas(%{state | stack: s2}, Gas.exp_dynamic_cost(b)) do
+           MachineState.consume_gas(%{state | stack: s2}, Dynamic.exp_dynamic_cost(b)) do
       result = Helpers.mod_pow(a, b, @max_uint256 + 1)
       {:ok, s3} = Stack.push(state_after_gas.stack, result)
       {:ok, %{state_after_gas | stack: s3} |> MachineState.advance_pc()}

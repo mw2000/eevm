@@ -26,7 +26,9 @@ defmodule EEVM.Opcodes.Crypto do
   - The binary pattern `<<hash_int::unsigned-big-256>>` decodes the raw 32-byte
     hash binary into a single 256-bit unsigned integer in one step.
   """
-  alias EEVM.{Gas, MachineState, Memory, Stack}
+  alias EEVM.{MachineState, Memory, Stack}
+  alias EEVM.Gas.Dynamic
+  alias EEVM.Gas.Memory, as: GasMemory
 
   @doc """
   Hashes a region of memory with Keccak-256 and pushes the result.
@@ -42,14 +44,14 @@ defmodule EEVM.Opcodes.Crypto do
   def execute(0x20, state) do
     with {:ok, offset, s1} <- Stack.pop(state.stack),
          {:ok, length, s2} <- Stack.pop(s1) do
-      dynamic_cost = Gas.keccak256_dynamic_cost(length)
+      dynamic_cost = Dynamic.keccak256_dynamic_cost(length)
 
       # Only charge memory expansion when there's actual input to read.
       # A zero-length hash still costs the static + dynamic gas, but reads
       # no memory and therefore never triggers expansion.
       mem_cost =
         if length > 0 do
-          Gas.memory_expansion_cost(Memory.size(state.memory), offset, length)
+          GasMemory.memory_expansion_cost(Memory.size(state.memory), offset, length)
         else
           0
         end

@@ -1,7 +1,7 @@
 defmodule EEVM.GasTest do
   use ExUnit.Case, async: true
 
-  alias EEVM.Gas
+  alias EEVM.Gas.{Dynamic, Memory, Static}
 
   describe "Gas Metering" do
     test "gas is consumed by arithmetic opcodes" do
@@ -99,7 +99,7 @@ defmodule EEVM.GasTest do
       code = <<0x60, 0xFF, 0x60, 0, 0x52, 0x00>>
       result = EEVM.execute(code, gas: 1000)
       assert result.status == :stopped
-      expected_gas = 3 + 3 + 3 + Gas.memory_expansion_cost_word(0, 0) + 0
+      expected_gas = 3 + 3 + 3 + Memory.memory_expansion_cost_word(0, 0) + 0
       assert result.gas == 1000 - expected_gas
     end
 
@@ -110,7 +110,7 @@ defmodule EEVM.GasTest do
       result = EEVM.execute(code, gas: 100_000)
       assert result.status == :stopped
       # Memory expanded from 0 to cover offset 1024+32 = 1056 → 33 words
-      mem_cost = Gas.memory_expansion_cost_word(0, 1024)
+      mem_cost = Memory.memory_expansion_cost_word(0, 1024)
       expected_gas = 3 + 3 + 3 + mem_cost + 0
       assert result.gas == 100_000 - expected_gas
     end
@@ -123,8 +123,8 @@ defmodule EEVM.GasTest do
       assert result.status == :stopped
 
       # First MSTORE: 3(push)+3(push)+3(mstore)+3(mem 0→32)+3(push)+3(mload)+0(mem, already 32)+0(stop)
-      mem_cost1 = Gas.memory_expansion_cost_word(0, 0)
-      mem_cost2 = Gas.memory_expansion_cost_word(32, 0)
+      mem_cost1 = Memory.memory_expansion_cost_word(0, 0)
+      mem_cost2 = Memory.memory_expansion_cost_word(32, 0)
       expected = 3 + 3 + 3 + mem_cost1 + 3 + 3 + mem_cost2 + 0
       assert result.gas == 100_000 - expected
     end
@@ -145,32 +145,33 @@ defmodule EEVM.GasTest do
     end
 
     test "CREATE and CREATE2 static costs are 32000" do
-      assert Gas.static_cost(0xF0) == 32_000
-      assert Gas.static_cost(0xF5) == 32_000
+      assert Static.static_cost(0xF0) == 32_000
+      assert Static.static_cost(0xF5) == 32_000
     end
 
     test "CREATE2 hashing cost charges 6 gas per word" do
-      assert Gas.create2_hash_cost(1) == 6
-      assert Gas.create2_hash_cost(32) == 6
-      assert Gas.create2_hash_cost(33) == 12
+      assert Dynamic.create2_hash_cost(1) == 6
+      assert Dynamic.create2_hash_cost(32) == 6
+      assert Dynamic.create2_hash_cost(33) == 12
     end
 
     test "code deposit cost is 200 gas per byte" do
-      assert Gas.code_deposit_cost(0) == 0
-      assert Gas.code_deposit_cost(3) == 600
+      assert Dynamic.code_deposit_cost(0) == 0
+      assert Dynamic.code_deposit_cost(3) == 600
+    end
 
     test "CALL static gas is warm access cost" do
-      assert Gas.static_cost(0xF1) == 100
+      assert Static.static_cost(0xF1) == 100
     end
 
     test "CALL forwarded gas follows EIP-150 63/64 rule" do
-      assert Gas.call_forwarded_gas(6400, 6400) == 6300
-      assert Gas.call_forwarded_gas(6400, 1000) == 1000
+      assert Dynamic.call_forwarded_gas(6400, 6400) == 6300
+      assert Dynamic.call_forwarded_gas(6400, 1000) == 1000
     end
 
     test "CALL stipend applies only when value is non-zero" do
-      assert Gas.call_stipend(0) == 0
-      assert Gas.call_stipend(1) == 2300
+      assert Dynamic.call_stipend(0) == 0
+      assert Dynamic.call_stipend(1) == 2300
     end
   end
 end

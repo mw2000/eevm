@@ -1,7 +1,7 @@
 defmodule EEVM.Opcodes.StackMemoryTest do
   use ExUnit.Case, async: true
 
-  alias EEVM.Gas
+  alias EEVM.Gas.{Dynamic, Memory, Static}
 
   describe "Executor - Memory" do
     test "MSTORE and MLOAD" do
@@ -93,8 +93,8 @@ defmodule EEVM.Opcodes.StackMemoryTest do
       result = EEVM.execute(code, gas: 100_000)
 
       expected =
-        3 + 3 + 3 + Gas.static_cost(0x5E) + Gas.copy_cost(33) +
-          Gas.memory_expansion_cost(0, 0, 97)
+        3 + 3 + 3 + Static.static_cost(0x5E) + Dynamic.copy_cost(33) +
+          Memory.memory_expansion_cost(0, 0, 97)
 
       assert result.status == :stopped
       assert result.gas == 100_000 - expected

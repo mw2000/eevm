@@ -28,7 +28,7 @@ defmodule EEVM.MachineState do
   alias EEVM.{CallFrame, Memory, Stack, Storage, WorldState}
   alias EEVM.Context.{Block, Contract, Transaction}
 
-  @type status :: :running | :stopped | :reverted | :invalid | :out_of_gas
+  @type status :: :running | :stopped | :reverted | :invalid | :out_of_gas | {:error, atom()}
 
   @type t :: %__MODULE__{
           pc: non_neg_integer(),

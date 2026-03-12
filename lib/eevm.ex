@@ -20,7 +20,7 @@ defmodule EEVM do
   - `EEVM.Stack` — LIFO stack (max 1024, uint256 values)
   - `EEVM.Memory` — Byte-addressable linear memory
   - `EEVM.MachineState` — Combined execution state
-  - `EEVM.Opcodes` — Opcode definitions and metadata
+  - `EEVM.Opcodes.Registry` — Opcode definitions and metadata
   - `EEVM.Executor` — The fetch-decode-execute loop
 
   ## Elixir Concepts Demonstrated
@@ -83,7 +83,7 @@ defmodule EEVM do
   defp disassemble_loop(bytecode, pc, acc) when pc < byte_size(bytecode) do
     opcode = :binary.at(bytecode, pc)
 
-    case EEVM.Opcodes.info(opcode) do
+    case EEVM.Opcodes.Registry.info(opcode) do
       {:ok, %{push_bytes: n} = info} ->
         # PUSH instruction — read the immediate bytes
         data =
