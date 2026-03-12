@@ -158,6 +158,19 @@ defmodule EEVM.GasTest do
     test "code deposit cost is 200 gas per byte" do
       assert Gas.code_deposit_cost(0) == 0
       assert Gas.code_deposit_cost(3) == 600
+
+    test "CALL static gas is warm access cost" do
+      assert Gas.static_cost(0xF1) == 100
+    end
+
+    test "CALL forwarded gas follows EIP-150 63/64 rule" do
+      assert Gas.call_forwarded_gas(6400, 6400) == 6300
+      assert Gas.call_forwarded_gas(6400, 1000) == 1000
+    end
+
+    test "CALL stipend applies only when value is non-zero" do
+      assert Gas.call_stipend(0) == 0
+      assert Gas.call_stipend(1) == 2300
     end
   end
 end
