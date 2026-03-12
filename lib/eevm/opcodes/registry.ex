@@ -89,6 +89,7 @@ defmodule EEVM.Opcodes.Registry do
   @call 0xF1
   @return_ 0xF3
   @create2 0xF5
+  @staticcall 0xFA
   @revert 0xFD
   @invalid 0xFE
 
@@ -167,6 +168,7 @@ defmodule EEVM.Opcodes.Registry do
     @create => %{name: "CREATE", inputs: 3, outputs: 1},
     @call => %{name: "CALL", inputs: 7, outputs: 1},
     @create2 => %{name: "CREATE2", inputs: 4, outputs: 1},
+    @staticcall => %{name: "STATICCALL", inputs: 6, outputs: 1},
     @return_ => %{name: "RETURN", inputs: 2, outputs: 0},
     @revert => %{name: "REVERT", inputs: 2, outputs: 0},
     @invalid => %{name: "INVALID", inputs: 0, outputs: 0}

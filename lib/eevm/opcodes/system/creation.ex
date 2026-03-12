@@ -62,6 +62,33 @@ defmodule EEVM.Opcodes.System.Creation do
     end
   end
 
+  def execute(0xFA, state) do
+    with {:ok, gas_requested, s1} <- Stack.pop(state.stack),
+         {:ok, address, s2} <- Stack.pop(s1),
+         {:ok, args_offset, s3} <- Stack.pop(s2),
+         {:ok, args_size, s4} <- Stack.pop(s3),
+         {:ok, ret_offset, s5} <- Stack.pop(s4),
+         {:ok, ret_size, s6} <- Stack.pop(s5) do
+      if state.depth >= 1024 do
+        call_failed(state, s6)
+      else
+        execute_call(
+          %{state | is_static: true},
+          s6,
+          gas_requested,
+          address,
+          0,
+          args_offset,
+          args_size,
+          ret_offset,
+          ret_size
+        )
+      end
+    else
+      {:error, reason} -> {:error, reason, state}
+    end
+  end
+
   def execute(_opcode, state), do: {:ok, MachineState.halt(state, :invalid)}
 
   defp execute_create(state, stack, value, offset, size, salt) do

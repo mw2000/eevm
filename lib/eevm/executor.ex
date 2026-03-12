@@ -129,6 +129,15 @@ defmodule EEVM.Executor do
   # range to ensure it is caught by its dedicated StackMemoryStorage clause.
   # The fallback clause treats unknown opcodes as INVALID (halt, no gas refund).
 
+  defp execute_opcode(0x55, %{is_static: true} = state),
+    do: {:ok, MachineState.halt(state, :reverted)}
+
+  defp execute_opcode(op, %{is_static: true} = state) when op in 0xA0..0xA4,
+    do: {:ok, MachineState.halt(state, :reverted)}
+
+  defp execute_opcode(op, %{is_static: true} = state) when op in [0xF0, 0xF5],
+    do: {:ok, MachineState.halt(state, :reverted)}
+
   defp execute_opcode(0x00, state), do: Termination.execute(0x00, state)
   defp execute_opcode(op, state) when op in 0x01..0x0B, do: Arithmetic.execute(op, state)
   defp execute_opcode(op, state) when op in 0x10..0x15, do: Comparison.execute(op, state)
@@ -158,7 +167,10 @@ defmodule EEVM.Executor do
   defp execute_opcode(0x5F, state), do: ControlFlow.execute(0x5F, state)
   defp execute_opcode(op, state) when op in 0x60..0x9F, do: ControlFlow.execute(op, state)
   defp execute_opcode(op, state) when op in 0xA0..0xA4, do: Logging.execute(op, state)
-  defp execute_opcode(op, state) when op in [0xF0, 0xF1, 0xF5], do: Creation.execute(op, state)
+
+  defp execute_opcode(op, state) when op in [0xF0, 0xF1, 0xF5, 0xFA],
+    do: Creation.execute(op, state)
+
   defp execute_opcode(op, state) when op in [0xF3, 0xFD, 0xFE], do: Termination.execute(op, state)
   defp execute_opcode(_op, state), do: {:ok, MachineState.halt(state, :invalid)}
 end
