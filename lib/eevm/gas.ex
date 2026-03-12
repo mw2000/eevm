@@ -153,6 +153,7 @@ defmodule EEVM.Gas do
   def static_cost(0x37), do: @gas_very_low
   # CODESIZE
   def static_cost(0x38), do: @gas_base
+  def static_cost(0x39), do: @gas_very_low
   # GASPRICE
   def static_cost(0x3A), do: @gas_base
   # RETURNDATASIZE

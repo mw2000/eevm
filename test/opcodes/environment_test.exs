@@ -236,6 +236,51 @@ defmodule EEVM.Opcodes.EnvironmentTest do
     end
   end
 
+  describe "CODECOPY (0x39)" do
+    test "copies code bytes to memory" do
+      code = <<0x60, 4, 0x60, 11, 0x60, 0, 0x39, 0x60, 0, 0x51, 0x00, 0xAA, 0xBB, 0xCC, 0xDD>>
+
+      result = EEVM.execute(code)
+
+      expected = 0xAABBCCDD00000000000000000000000000000000000000000000000000000000
+      assert EEVM.stack_values(result) == [expected]
+    end
+
+    test "zero-pads when reading beyond code length" do
+      code = <<0x60, 4, 0x60, 13, 0x60, 0, 0x39, 0x60, 0, 0x51, 0x00, 0xAA, 0xBB, 0xCC, 0xDD>>
+
+      result = EEVM.execute(code)
+
+      expected = :binary.decode_unsigned(<<0xCC, 0xDD, 0x00, 0x00, 0::224>>)
+      assert EEVM.stack_values(result) == [expected]
+    end
+
+    test "zero-length copy is a no-op" do
+      code = <<0x60, 0, 0x60, 200, 0x60, 10, 0x39, 0x59, 0x00>>
+
+      result = EEVM.execute(code)
+
+      assert result.status == :stopped
+      assert EEVM.stack_values(result) == [0]
+    end
+
+    test "gas calculation includes static, copy, and memory expansion" do
+      code = <<0x60, 4, 0x60, 11, 0x60, 0, 0x39, 0x60, 0, 0x51, 0x00, 0xAA, 0xBB, 0xCC, 0xDD>>
+      initial_gas = 1_000
+
+      result = EEVM.execute(code, gas: initial_gas)
+
+      expected_spent =
+        Gas.static_cost(0x60) * 4 +
+          Gas.static_cost(0x39) +
+          Gas.copy_cost(4) +
+          Gas.memory_expansion_cost(0, 0, 4) +
+          Gas.static_cost(0x51)
+
+      assert result.gas == initial_gas - expected_spent
+    end
+  end
+
   describe "RETURNDATACOPY (0x3E)" do
     test "copies return data to memory" do
       return_data = <<0xAA, 0xBB, 0xCC, 0xDD>>
