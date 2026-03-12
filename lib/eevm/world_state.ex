@@ -49,7 +49,8 @@ defmodule EEVM.WorldState do
   def get_account(%__MODULE__{accounts: accounts}, address), do: Map.get(accounts, address)
 
   @spec account_exists?(t(), non_neg_integer()) :: boolean()
-  def account_exists?(%__MODULE__{accounts: accounts}, address), do: Map.has_key?(accounts, address)
+  def account_exists?(%__MODULE__{accounts: accounts}, address),
+    do: Map.has_key?(accounts, address)
 
   @spec get_code(t(), non_neg_integer()) :: binary()
   def get_code(world_state, address) do
