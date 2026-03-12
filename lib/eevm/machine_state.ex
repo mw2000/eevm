@@ -21,7 +21,7 @@ defmodule EEVM.MachineState do
   - The `alias` keyword lets us reference modules by their short name.
   """
 
-  alias EEVM.{Stack, Memory, Storage}
+  alias EEVM.{Stack, Memory, Storage, WorldState}
   alias EEVM.Context.{Transaction, Block, Contract}
 
   @type status :: :running | :stopped | :reverted | :invalid | :out_of_gas
@@ -34,6 +34,7 @@ defmodule EEVM.MachineState do
           tx: Transaction.t(),
           block: Block.t(),
           contract: Contract.t(),
+          world_state: WorldState.t(),
           gas: non_neg_integer(),
           status: status(),
           return_data: binary(),
@@ -49,6 +50,7 @@ defmodule EEVM.MachineState do
             tx: nil,
             block: nil,
             contract: nil,
+            world_state: nil,
             gas: 1_000_000,
             status: :running,
             return_data: <<>>,
@@ -83,6 +85,7 @@ defmodule EEVM.MachineState do
       tx: Keyword.get(opts, :tx, Transaction.new()),
       block: Keyword.get(opts, :block, Block.new()),
       contract: Keyword.get(opts, :contract, Contract.new()),
+      world_state: Keyword.get(opts, :world_state, WorldState.new()),
       return_data: Keyword.get(opts, :return_data, <<>>),
       gas: Keyword.get(opts, :gas, 1_000_000)
     }

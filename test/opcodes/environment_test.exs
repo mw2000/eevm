@@ -2,6 +2,7 @@ defmodule EEVM.Opcodes.EnvironmentTest do
   use ExUnit.Case, async: true
 
   alias EEVM.Context.{Transaction, Block, Contract}
+  alias EEVM.WorldState
   alias EEVM.Gas
 
   describe "Environment Opcodes" do
@@ -345,6 +346,88 @@ defmodule EEVM.Opcodes.EnvironmentTest do
       result = EEVM.execute(code, return_data: return_data)
 
       expected = :binary.decode_unsigned(<<0x00, 0xAA, 0xBB, 0::232>>)
+      assert EEVM.stack_values(result) == [expected]
+    end
+  end
+
+  describe "EXTCODE* opcodes" do
+    test "EXTCODESIZE returns external code size" do
+      world_state = WorldState.new(%{1 => %{code: <<0xAA, 0xBB, 0xCC, 0xDD>>}})
+      code = <<0x60, 1, 0x3B, 0x00>>
+
+      result = EEVM.execute(code, world_state: world_state)
+
+      assert EEVM.stack_values(result) == [4]
+    end
+
+    test "EXTCODESIZE returns 0 for non-existent account" do
+      code = <<0x60, 9, 0x3B, 0x00>>
+      result = EEVM.execute(code)
+
+      assert EEVM.stack_values(result) == [0]
+    end
+
+    test "EXTCODECOPY copies external code to memory" do
+      world_state = WorldState.new(%{1 => %{code: <<0xAA, 0xBB, 0xCC, 0xDD>>}})
+      code = <<0x60, 4, 0x60, 0, 0x60, 0, 0x60, 1, 0x3C, 0x60, 0, 0x51, 0x00>>
+
+      result = EEVM.execute(code, world_state: world_state)
+
+      expected = 0xAABBCCDD00000000000000000000000000000000000000000000000000000000
+      assert EEVM.stack_values(result) == [expected]
+    end
+
+    test "EXTCODECOPY zero-pads beyond code length" do
+      world_state = WorldState.new(%{1 => %{code: <<0xAA, 0xBB, 0xCC, 0xDD>>}})
+      code = <<0x60, 4, 0x60, 2, 0x60, 0, 0x60, 1, 0x3C, 0x60, 0, 0x51, 0x00>>
+
+      result = EEVM.execute(code, world_state: world_state)
+
+      expected = :binary.decode_unsigned(<<0xCC, 0xDD, 0x00, 0x00, 0::224>>)
+      assert EEVM.stack_values(result) == [expected]
+    end
+
+    test "EXTCODECOPY gas includes static, copy, and memory expansion" do
+      world_state = WorldState.new(%{1 => %{code: <<0xAA, 0xBB, 0xCC, 0xDD>>}})
+      code = <<0x60, 4, 0x60, 0, 0x60, 0, 0x60, 1, 0x3C, 0x60, 0, 0x51, 0x00>>
+      initial_gas = 1_000
+
+      result = EEVM.execute(code, gas: initial_gas, world_state: world_state)
+
+      expected_spent =
+        Gas.static_cost(0x60) * 5 +
+          Gas.static_cost(0x3C) +
+          Gas.copy_cost(4) +
+          Gas.memory_expansion_cost(0, 0, 4) +
+          Gas.static_cost(0x51)
+
+      assert result.gas == initial_gas - expected_spent
+    end
+
+    test "EXTCODEHASH returns 0 for non-existent account" do
+      code = <<0x60, 2, 0x3F, 0x00>>
+      result = EEVM.execute(code)
+
+      assert EEVM.stack_values(result) == [0]
+    end
+
+    test "EXTCODEHASH returns keccak256 of empty code for existing empty account" do
+      world_state = WorldState.new(%{1 => %{code: <<>>}})
+      code = <<0x60, 1, 0x3F, 0x00>>
+
+      result = EEVM.execute(code, world_state: world_state)
+
+      <<expected::unsigned-big-256>> = ExKeccak.hash_256(<<>>)
+      assert EEVM.stack_values(result) == [expected]
+    end
+
+    test "EXTCODEHASH returns keccak256 of account code" do
+      world_state = WorldState.new(%{1 => %{code: <<0xAA, 0xBB, 0xCC>>}})
+      code = <<0x60, 1, 0x3F, 0x00>>
+
+      result = EEVM.execute(code, world_state: world_state)
+
+      <<expected::unsigned-big-256>> = ExKeccak.hash_256(<<0xAA, 0xBB, 0xCC>>)
       assert EEVM.stack_values(result) == [expected]
     end
   end
