@@ -232,8 +232,12 @@ defmodule EEVM.Opcodes.System do
     account = WorldState.get_account(world_state, address)
 
     case account do
-      nil -> true
-      _ -> WorldState.get_nonce(world_state, address) == 0 and WorldState.get_code(world_state, address) == <<>>
+      nil ->
+        true
+
+      _ ->
+        WorldState.get_nonce(world_state, address) == 0 and
+          WorldState.get_code(world_state, address) == <<>>
     end
   end
 
