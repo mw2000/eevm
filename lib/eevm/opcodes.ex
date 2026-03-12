@@ -115,6 +115,7 @@ defmodule EEVM.Opcodes do
 
   # System operations
   @create 0xF0
+  @call 0xF1
   @create2 0xF5
   @return_ 0xF3
   @revert 0xFD
@@ -209,6 +210,7 @@ defmodule EEVM.Opcodes do
   def info(@log4), do: {:ok, %{name: "LOG4", inputs: 6, outputs: 0}}
 
   def info(@create), do: {:ok, %{name: "CREATE", inputs: 3, outputs: 1}}
+  def info(@call), do: {:ok, %{name: "CALL", inputs: 7, outputs: 1}}
   def info(@create2), do: {:ok, %{name: "CREATE2", inputs: 4, outputs: 1}}
   def info(@return_), do: {:ok, %{name: "RETURN", inputs: 2, outputs: 0}}
   def info(@revert), do: {:ok, %{name: "REVERT", inputs: 2, outputs: 0}}

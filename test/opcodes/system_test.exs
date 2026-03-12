@@ -1,11 +1,10 @@
 defmodule EEVM.Opcodes.SystemTest do
   use ExUnit.Case, async: true
 
-  alias EEVM.WorldState
+  alias EEVM.{Memory, WorldState}
 
   describe "Executor - Return & Halt" do
     test "RETURN returns data from memory" do
-      # PUSH1 0xAB, PUSH1 0, MSTORE8, PUSH1 1, PUSH1 0, RETURN
       code = <<0x60, 0xAB, 0x60, 0, 0x53, 0x60, 1, 0x60, 0, 0xF3>>
       result = EEVM.execute(code)
       assert result.status == :stopped
@@ -13,7 +12,6 @@ defmodule EEVM.Opcodes.SystemTest do
     end
 
     test "REVERT halts with :reverted" do
-      # PUSH1 0, PUSH1 0, REVERT
       code = <<0x60, 0, 0x60, 0, 0xFD>>
       result = EEVM.execute(code)
       assert result.status == :reverted
@@ -26,7 +24,6 @@ defmodule EEVM.Opcodes.SystemTest do
     end
 
     test "implicit STOP at end of code" do
-      # PUSH1 5 (no explicit STOP)
       code = <<0x60, 5>>
       result = EEVM.execute(code)
       assert result.status == :stopped
@@ -86,6 +83,81 @@ defmodule EEVM.Opcodes.SystemTest do
     end
   end
 
+  describe "CALL (0xF1)" do
+    test "calls external code and pushes success flag" do
+      child_code = <<0x60, 0x2A, 0x60, 0x00, 0x53, 0x60, 0x01, 0x60, 0x00, 0xF3>>
+
+      world_state =
+        WorldState.new(%{
+          0 => %{balance: 10},
+          1 => %{balance: 0, code: child_code}
+        })
+
+      code =
+        <<0x60, 0x01, 0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x01, 0x60, 0x64,
+          0xF1, 0x00>>
+
+      result = EEVM.execute(code, world_state: world_state)
+
+      assert result.status == :stopped
+      assert EEVM.stack_values(result) == [1]
+      assert result.return_data == <<0x2A>>
+      {mem, _} = Memory.read_bytes(result.memory, 0, 1)
+      assert mem == <<0x2A>>
+    end
+
+    test "pushes failure flag when caller has insufficient balance" do
+      world_state = WorldState.new(%{0 => %{balance: 0}, 1 => %{balance: 0, code: <<0x00>>}})
+
+      code =
+        <<0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x01, 0x60, 0x01, 0x60, 0x64,
+          0xF1, 0x00>>
+
+      result = EEVM.execute(code, world_state: world_state)
+
+      assert result.status == :stopped
+      assert EEVM.stack_values(result) == [0]
+      assert WorldState.get_balance(result.world_state, 0) == 0
+      assert WorldState.get_balance(result.world_state, 1) == 0
+    end
+
+    test "transfers value on successful call" do
+      world_state = WorldState.new(%{0 => %{balance: 9}, 1 => %{balance: 0, code: <<0x00>>}})
+
+      code =
+        <<0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x03, 0x60, 0x01, 0x60, 0x64,
+          0xF1, 0x00>>
+
+      result = EEVM.execute(code, world_state: world_state)
+
+      assert EEVM.stack_values(result) == [1]
+      assert WorldState.get_balance(result.world_state, 0) == 6
+      assert WorldState.get_balance(result.world_state, 1) == 3
+    end
+
+    test "failed child call pushes 0 and restores balances" do
+      child_code = <<0x60, 0x00, 0x60, 0x00, 0xFD>>
+
+      world_state =
+        WorldState.new(%{
+          0 => %{balance: 8},
+          1 => %{balance: 1, code: child_code}
+        })
+
+      code =
+        <<0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x02, 0x60, 0x01, 0x60, 0x64,
+          0xF1, 0x00>>
+
+      result = EEVM.execute(code, world_state: world_state)
+
+      assert result.status == :stopped
+      assert EEVM.stack_values(result) == [0]
+      assert WorldState.get_balance(result.world_state, 0) == 8
+      assert WorldState.get_balance(result.world_state, 1) == 1
+      assert result.return_data == <<>>
+    end
+  end
+
   defp build_create_program(init_code, 0xF0, value) do
     init_writer =
       init_code
@@ -95,7 +167,7 @@ defmodule EEVM.Opcodes.SystemTest do
 
     create_part =
       [byte_size(init_code), 0x00, value]
-      |> Enum.flat_map(fn value -> [0x60, value] end)
+      |> Enum.flat_map(fn item -> [0x60, item] end)
 
     :erlang.list_to_binary(init_writer ++ create_part ++ [0xF0, 0x00])
   end

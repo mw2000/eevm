@@ -118,6 +118,35 @@ defmodule EEVM.Opcodes.System do
          {:ok, size, s3} <- Stack.pop(s2),
          {:ok, salt, s4} <- Stack.pop(s3) do
       execute_create(state, s4, value, offset, size, salt)
+
+  def execute(0xF1, state) do
+    with {:ok, gas_requested, s1} <- Stack.pop(state.stack),
+         {:ok, address, s2} <- Stack.pop(s1),
+         {:ok, value, s3} <- Stack.pop(s2),
+         {:ok, args_offset, s4} <- Stack.pop(s3),
+         {:ok, args_size, s5} <- Stack.pop(s4),
+         {:ok, ret_offset, s6} <- Stack.pop(s5),
+         {:ok, ret_size, s7} <- Stack.pop(s6) do
+      cond do
+        state.depth >= 1024 ->
+          call_failed(state, s7)
+
+        state.is_static and value > 0 ->
+          call_failed(state, s7)
+
+        true ->
+          execute_call(
+            state,
+            s7,
+            gas_requested,
+            address,
+            value,
+            args_offset,
+            args_size,
+            ret_offset,
+            ret_size
+          )
+      end
     else
       {:error, reason} -> {:error, reason, state}
     end
@@ -223,6 +252,107 @@ defmodule EEVM.Opcodes.System do
           create_failed(%{state_after_cost | world_state: world_state_after_nonce}, stack)
         end
 
+  defp execute_call(
+         state,
+         stack,
+         gas_requested,
+         address,
+         value,
+         args_offset,
+         args_size,
+         ret_offset,
+         ret_size
+       ) do
+    world_state = state.world_state
+    account_exists = WorldState.account_exists?(world_state, address)
+
+    call_cost =
+      Gas.call_value_cost(value) +
+        Gas.call_new_account_cost(account_exists, value) +
+        call_memory_expansion_cost(state.memory, args_offset, args_size, ret_offset, ret_size)
+
+    with {:ok, state_after_cost} <- MachineState.consume_gas(%{state | stack: stack}, call_cost),
+         {:ok, world_state_after_transfer} <-
+           WorldState.transfer(
+             state_after_cost.world_state,
+             state_after_cost.contract.address,
+             address,
+             value
+           ) do
+      {calldata, memory_after_read} =
+        Memory.read_bytes(state_after_cost.memory, args_offset, args_size)
+
+      forwarded_gas = Gas.call_forwarded_gas(state_after_cost.gas, gas_requested)
+
+      case MachineState.consume_gas(%{state_after_cost | memory: memory_after_read}, forwarded_gas) do
+        {:ok, state_after_forward} ->
+          target_code = WorldState.get_code(world_state_after_transfer, address)
+
+          child_contract =
+            Contract.new(
+              address: address,
+              caller: state_after_forward.contract.address,
+              callvalue: value,
+              calldata: calldata,
+              balances: state_after_forward.contract.balances
+            )
+
+          child_gas = forwarded_gas + Gas.call_stipend(value)
+
+          child_state =
+            MachineState.new(target_code,
+              gas: child_gas,
+              storage: state_after_forward.storage,
+              tx: state_after_forward.tx,
+              block: state_after_forward.block,
+              contract: child_contract,
+              world_state: world_state_after_transfer,
+              is_static: state_after_forward.is_static,
+              depth: state_after_forward.depth + 1
+            )
+
+          child_result = Executor.run_loop(child_state)
+          call_succeeded = child_result.status == :stopped
+
+          world_state_result =
+            if call_succeeded,
+              do: child_result.world_state,
+              else: state_after_forward.world_state
+
+          storage_result =
+            if call_succeeded,
+              do: child_result.storage,
+              else: state_after_forward.storage
+
+          logs_result =
+            if call_succeeded,
+              do: state_after_forward.logs ++ child_result.logs,
+              else: state_after_forward.logs
+
+          memory_result =
+            write_return_data(memory_after_read, ret_offset, ret_size, child_result.return_data)
+
+          result_flag = if(call_succeeded, do: 1, else: 0)
+          {:ok, stack_after_call} = Stack.push(state_after_forward.stack, result_flag)
+
+          {:ok,
+           state_after_forward
+           |> Map.put(:stack, stack_after_call)
+           |> Map.put(:memory, memory_result)
+           |> Map.put(:return_data, child_result.return_data)
+           |> Map.put(:world_state, world_state_result)
+           |> Map.put(:storage, storage_result)
+           |> Map.put(:logs, logs_result)
+           |> Map.put(:gas, state_after_forward.gas + child_result.gas)
+           |> MachineState.advance_pc()}
+
+        {:error, :out_of_gas, _halted_state} ->
+          call_failed(state_after_cost, stack)
+      end
+    else
+      {:error, :insufficient_balance} ->
+        call_failed(%{state | stack: stack, gas: state.gas - call_cost}, stack)
+
       {:error, :out_of_gas, halted_state} ->
         {:error, :out_of_gas, halted_state}
     end
@@ -296,5 +426,39 @@ defmodule EEVM.Opcodes.System do
   defp create_failed(state, stack) do
     {:ok, stack_after_create} = Stack.push(stack, 0)
     {:ok, %{state | stack: stack_after_create} |> MachineState.advance_pc()}
+
+  defp call_memory_expansion_cost(memory, args_offset, args_size, ret_offset, ret_size) do
+    current_size = Memory.size(memory)
+
+    args_end = args_offset + args_size
+    ret_end = ret_offset + ret_size
+    needed = max(args_end, ret_end)
+
+    if needed == 0 do
+      0
+    else
+      Gas.memory_expansion_cost(current_size, 0, needed)
+    end
+  end
+
+  defp write_return_data(memory, _offset, 0, _return_data), do: memory
+
+  defp write_return_data(memory, offset, size, return_data) do
+    bytes =
+      for i <- 0..(size - 1), into: <<>> do
+        if i < byte_size(return_data), do: <<:binary.at(return_data, i)>>, else: <<0>>
+      end
+
+    bytes
+    |> :binary.bin_to_list()
+    |> Enum.with_index()
+    |> Enum.reduce(memory, fn {byte, i}, mem ->
+      Memory.store_byte(mem, offset + i, byte)
+    end)
+  end
+
+  defp call_failed(state, stack) do
+    {:ok, stack_after_call} = Stack.push(stack, 0)
+    {:ok, %{state | stack: stack_after_call} |> MachineState.advance_pc()}
   end
 end

@@ -58,6 +58,8 @@ defmodule EEVM.Gas do
   @gas_create 32_000
   @gas_create2_word 6
   @gas_code_deposit 200
+  @gas_call_value 9000
+  @gas_new_account 25_000
 
   @doc """
   Returns the static gas cost for a given opcode byte.
@@ -230,6 +232,7 @@ defmodule EEVM.Gas do
 
   # System (0xF3, 0xFD, 0xFE)
   def static_cost(0xF0), do: @gas_create
+  def static_cost(0xF1), do: @gas_warm_access
   # RETURN (+ memory expansion)
   def static_cost(0xF3), do: @gas_zero
   def static_cost(0xF5), do: @gas_create
@@ -286,6 +289,25 @@ defmodule EEVM.Gas do
 
   @spec code_deposit_cost(non_neg_integer()) :: non_neg_integer()
   def code_deposit_cost(code_size), do: code_size * @gas_code_deposit
+
+  @spec call_value_cost(non_neg_integer()) :: non_neg_integer()
+  def call_value_cost(0), do: 0
+  def call_value_cost(_value), do: @gas_call_value
+
+  @spec call_new_account_cost(boolean(), non_neg_integer()) :: non_neg_integer()
+  def call_new_account_cost(_exists?, 0), do: 0
+  def call_new_account_cost(true, _value), do: 0
+  def call_new_account_cost(false, _value), do: @gas_new_account
+
+  @spec call_forwarded_gas(non_neg_integer(), non_neg_integer()) :: non_neg_integer()
+  def call_forwarded_gas(available_gas, requested_gas) do
+    max_forward = available_gas - div(available_gas, 64)
+    min(requested_gas, max_forward)
+  end
+
+  @spec call_stipend(non_neg_integer()) :: non_neg_integer()
+  def call_stipend(0), do: 0
+  def call_stipend(_value), do: 2300
 
   @doc """
   Calculates the gas cost of memory expansion.
