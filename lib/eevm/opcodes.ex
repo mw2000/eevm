@@ -63,6 +63,7 @@ defmodule EEVM.Opcodes do
   @calldatasize 0x36
   @calldatacopy 0x37
   @codesize 0x38
+  @codecopy 0x39
   @gasprice 0x3A
   @returndatasize 0x3D
   @returndatacopy 0x3E
@@ -162,6 +163,7 @@ defmodule EEVM.Opcodes do
   def info(@calldataload), do: {:ok, %{name: "CALLDATALOAD", inputs: 1, outputs: 1}}
   def info(@calldatasize), do: {:ok, %{name: "CALLDATASIZE", inputs: 0, outputs: 1}}
   def info(@calldatacopy), do: {:ok, %{name: "CALLDATACOPY", inputs: 3, outputs: 0}}
+  def info(@codecopy), do: {:ok, %{name: "CODECOPY", inputs: 3, outputs: 0}}
   def info(@returndatacopy), do: {:ok, %{name: "RETURNDATACOPY", inputs: 3, outputs: 0}}
   def info(@codesize), do: {:ok, %{name: "CODESIZE", inputs: 0, outputs: 1}}
   def info(@gasprice), do: {:ok, %{name: "GASPRICE", inputs: 0, outputs: 1}}

@@ -134,6 +134,41 @@ defmodule EEVM.Opcodes.Environment do
   end
 
   def execute(0x38, state), do: Helpers.push_value(state, byte_size(state.code))
+
+  def execute(0x39, state) do
+    with {:ok, dest_offset, s1} <- Stack.pop(state.stack),
+         {:ok, code_offset, s2} <- Stack.pop(s1),
+         {:ok, length, s3} <- Stack.pop(s2) do
+      if length == 0 do
+        {:ok, %{state | stack: s3} |> MachineState.advance_pc()}
+      else
+        dynamic_cost =
+          Gas.copy_cost(length) +
+            Gas.memory_expansion_cost(Memory.size(state.memory), dest_offset, length)
+
+        case MachineState.consume_gas(%{state | stack: s3}, dynamic_cost) do
+          {:ok, state_after_gas} ->
+            bytes = MachineState.read_code(state_after_gas, code_offset, length)
+
+            new_memory =
+              bytes
+              |> :binary.bin_to_list()
+              |> Enum.with_index()
+              |> Enum.reduce(state_after_gas.memory, fn {byte, i}, mem ->
+                Memory.store_byte(mem, dest_offset + i, byte)
+              end)
+
+            {:ok, %{state_after_gas | memory: new_memory} |> MachineState.advance_pc()}
+
+          {:error, :out_of_gas, halted_state} ->
+            {:error, :out_of_gas, halted_state}
+        end
+      end
+    else
+      {:error, reason} -> {:error, reason, state}
+    end
+  end
+
   def execute(0x3A, state), do: Helpers.push_value(state, state.tx.gasprice)
   def execute(0x3D, state), do: Helpers.push_value(state, byte_size(state.return_data))
 
