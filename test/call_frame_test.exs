@@ -30,6 +30,7 @@ defmodule EEVM.CallFrameTest do
 
   test "push_frame enforces max call depth of 1024" do
     state = MachineState.new(<<0x00>>, depth: 1024)
+
     frame = %CallFrame{
       code: <<0x00>>,
       stack: Stack.new(),
