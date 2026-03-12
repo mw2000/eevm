@@ -161,7 +161,8 @@ defmodule EEVM.MachineState do
       )
 
     {:ok,
-     %{state
+     %{
+       state
        | call_stack: [parent_frame | state.call_stack],
          code: new_frame.code,
          pc: new_frame.pc,
@@ -174,7 +175,8 @@ defmodule EEVM.MachineState do
          is_static: new_frame.is_static,
          depth: new_frame.depth,
          status: :running,
-         return_data: <<>>}}
+         return_data: <<>>
+     }}
   end
 
   @spec pop_frame(t()) :: {:ok, t()} | {:error, :empty_call_stack, t()}
@@ -192,7 +194,8 @@ defmodule EEVM.MachineState do
       )
 
     restored_state =
-      %{state
+      %{
+        state
         | call_stack: rest,
           code: parent.code,
           pc: parent.pc,
@@ -205,7 +208,8 @@ defmodule EEVM.MachineState do
           is_static: parent.is_static,
           depth: parent.depth,
           status: :running,
-          return_data: child_return_data}
+          return_data: child_return_data
+      }
 
     {:ok, restored_state}
   end
