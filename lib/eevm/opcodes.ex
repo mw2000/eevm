@@ -64,9 +64,12 @@ defmodule EEVM.Opcodes do
   @calldatacopy 0x37
   @codesize 0x38
   @codecopy 0x39
+  @extcodesize 0x3B
+  @extcodecopy 0x3C
   @gasprice 0x3A
   @returndatasize 0x3D
   @returndatacopy 0x3E
+  @extcodehash 0x3F
   @blockhash 0x40
   @coinbase 0x41
   @timestamp 0x42
@@ -164,10 +167,13 @@ defmodule EEVM.Opcodes do
   def info(@calldatasize), do: {:ok, %{name: "CALLDATASIZE", inputs: 0, outputs: 1}}
   def info(@calldatacopy), do: {:ok, %{name: "CALLDATACOPY", inputs: 3, outputs: 0}}
   def info(@codecopy), do: {:ok, %{name: "CODECOPY", inputs: 3, outputs: 0}}
+  def info(@extcodecopy), do: {:ok, %{name: "EXTCODECOPY", inputs: 4, outputs: 0}}
   def info(@returndatacopy), do: {:ok, %{name: "RETURNDATACOPY", inputs: 3, outputs: 0}}
   def info(@codesize), do: {:ok, %{name: "CODESIZE", inputs: 0, outputs: 1}}
+  def info(@extcodesize), do: {:ok, %{name: "EXTCODESIZE", inputs: 1, outputs: 1}}
   def info(@gasprice), do: {:ok, %{name: "GASPRICE", inputs: 0, outputs: 1}}
   def info(@returndatasize), do: {:ok, %{name: "RETURNDATASIZE", inputs: 0, outputs: 1}}
+  def info(@extcodehash), do: {:ok, %{name: "EXTCODEHASH", inputs: 1, outputs: 1}}
   def info(@blockhash), do: {:ok, %{name: "BLOCKHASH", inputs: 1, outputs: 1}}
   def info(@coinbase), do: {:ok, %{name: "COINBASE", inputs: 0, outputs: 1}}
   def info(@timestamp), do: {:ok, %{name: "TIMESTAMP", inputs: 0, outputs: 1}}

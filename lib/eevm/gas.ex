@@ -54,6 +54,7 @@ defmodule EEVM.Gas do
   @gas_log 375
   @gas_log_topic 375
   @gas_log_data 8
+  @gas_warm_access 100
 
   @doc """
   Returns the static gas cost for a given opcode byte.
@@ -154,11 +155,14 @@ defmodule EEVM.Gas do
   # CODESIZE
   def static_cost(0x38), do: @gas_base
   def static_cost(0x39), do: @gas_very_low
+  def static_cost(0x3B), do: @gas_warm_access
+  def static_cost(0x3C), do: @gas_warm_access
   # GASPRICE
   def static_cost(0x3A), do: @gas_base
   # RETURNDATASIZE
   def static_cost(0x3D), do: @gas_base
   def static_cost(0x3E), do: @gas_very_low
+  def static_cost(0x3F), do: @gas_warm_access
   # BLOCKHASH
   def static_cost(0x40), do: @gas_blockhash
   # COINBASE
