@@ -1,4 +1,31 @@
 defmodule EEVM.WorldState do
+  @moduledoc """
+  Minimal world/account state used for external account lookups.
+
+  ## EVM Concepts
+
+  The EVM distinguishes between the current execution frame and global account state.
+  `EEVM.MachineState` stores frame-local execution data (pc, stack, memory), while
+  this module stores account-level data used by external inspection opcodes:
+
+  - `EXTCODESIZE` (0x3B)
+  - `EXTCODECOPY` (0x3C)
+  - `EXTCODEHASH` (0x3F)
+
+  The state is intentionally minimal for this learning implementation. Each account
+  can include `:balance`, `:nonce`, `:code`, and `:storage`. Missing accounts behave
+  like non-existent EVM accounts: no code and zero balance.
+
+  ## Elixir Learning Notes
+
+  - The world state is represented as a struct wrapping a map keyed by numeric
+    addresses.
+  - Optional map keys let account records stay lightweight while preserving a
+    clear shape via typespecs.
+  - `Map.get/3` gives spec-friendly defaults (`<<>>` for code, `0` for balance)
+    without introducing special sentinel values.
+  """
+
   alias EEVM.Storage
 
   @type account :: %{

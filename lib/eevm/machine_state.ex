@@ -8,6 +8,7 @@ defmodule EEVM.MachineState do
   - **pc** (program counter): points to the current instruction
   - **stack**: the operand stack (max 1024 elements)
   - **memory**: byte-addressable linear memory
+  - **world_state**: account/code state used for external account lookups
   - **gas**: remaining gas for execution
   - **status**: whether the machine is running, stopped, or reverted
 
@@ -68,6 +69,7 @@ defmodule EEVM.MachineState do
       - `:tx` — transaction context (default: empty)
       - `:block` — block context (default: empty)
       - `:contract` — contract/message context (default: empty)
+      - `:world_state` — external account state (default: empty)
 
   ## Example
 
