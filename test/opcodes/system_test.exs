@@ -159,4 +159,106 @@ defmodule EEVM.Opcodes.SystemTest do
       assert result.return_data == <<>>
     end
   end
+
+  describe "STATICCALL (0xFA)" do
+    test "calls external code in static mode and pushes success flag" do
+      child_code = <<0x60, 0x2A, 0x60, 0x00, 0x53, 0x60, 0x01, 0x60, 0x00, 0xF3>>
+
+      world_state =
+        WorldState.new(%{
+          0 => %{balance: 10},
+          1 => %{balance: 0, code: child_code}
+        })
+
+      code =
+        <<0x60, 0x01, 0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x01, 0x60, 0x64, 0xFA, 0x00>>
+
+      result = EEVM.execute(code, world_state: world_state)
+
+      assert result.status == :stopped
+      assert EEVM.stack_values(result) == [1]
+      assert result.return_data == <<0x2A>>
+      {mem, _} = Memory.read_bytes(result.memory, 0, 1)
+      assert mem == <<0x2A>>
+    end
+
+    test "pushes failure flag when child attempts SSTORE in static context" do
+      child_code = <<0x60, 0x01, 0x60, 0x00, 0x55, 0x00>>
+
+      world_state =
+        WorldState.new(%{
+          0 => %{balance: 10},
+          1 => %{balance: 0, code: child_code}
+        })
+
+      code =
+        <<0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x01, 0x60, 0x64, 0xFA, 0x00>>
+
+      result = EEVM.execute(code, world_state: world_state)
+
+      assert result.status == :stopped
+      assert EEVM.stack_values(result) == [0]
+      assert EEVM.Storage.load(result.storage, 0) == 0
+    end
+
+    test "pushes failure flag when child attempts LOG in static context" do
+      child_code = <<0x60, 0x00, 0x60, 0x00, 0xA0, 0x00>>
+
+      world_state =
+        WorldState.new(%{
+          0 => %{balance: 10},
+          1 => %{balance: 0, code: child_code}
+        })
+
+      code =
+        <<0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x01, 0x60, 0x64, 0xFA, 0x00>>
+
+      result = EEVM.execute(code, world_state: world_state)
+
+      assert result.status == :stopped
+      assert EEVM.stack_values(result) == [0]
+    end
+
+    test "propagates static mode to nested calls" do
+      grandchild_code = <<0x60, 0x01, 0x60, 0x00, 0x55, 0x00>>
+
+      child_code =
+        <<0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x02, 0x61, 0x75,
+          0x30, 0xF1, 0x60, 0x00, 0x53, 0x60, 0x01, 0x60, 0x00, 0xF3>>
+
+      world_state =
+        WorldState.new(%{
+          0 => %{balance: 10},
+          1 => %{balance: 0, code: child_code},
+          2 => %{balance: 0, code: grandchild_code}
+        })
+
+      code =
+        <<0x60, 0x01, 0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x01, 0x61, 0xC3, 0x50, 0xFA,
+          0x00>>
+
+      result = EEVM.execute(code, world_state: world_state)
+
+      assert result.status == :stopped
+      assert EEVM.stack_values(result) == [1]
+      assert result.return_data == <<0x00>>
+      {mem, _} = Memory.read_bytes(result.memory, 0, 1)
+      assert mem == <<0x00>>
+      assert EEVM.Storage.load(result.storage, 0) == 0
+    end
+
+    test "does not transfer value" do
+      world_state = WorldState.new(%{0 => %{balance: 9}, 1 => %{balance: 0, code: <<0x00>>}})
+
+      code =
+        <<0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x01, 0x60, 0x64, 0xFA, 0x00>>
+
+      result = EEVM.execute(code, world_state: world_state)
+
+      assert result.status == :stopped
+      assert EEVM.stack_values(result) == [1]
+      assert WorldState.get_balance(result.world_state, 0) == 9
+      assert WorldState.get_balance(result.world_state, 1) == 0
+    end
+  end
 end
