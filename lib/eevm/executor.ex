@@ -168,7 +168,7 @@ defmodule EEVM.Executor do
   defp execute_opcode(op, state) when op in 0x60..0x9F, do: ControlFlow.execute(op, state)
   defp execute_opcode(op, state) when op in 0xA0..0xA4, do: Logging.execute(op, state)
 
-  defp execute_opcode(op, state) when op in [0xF0, 0xF1, 0xF5, 0xFA],
+  defp execute_opcode(op, state) when op in [0xF0, 0xF1, 0xF2, 0xF4, 0xF5, 0xFA],
     do: Creation.execute(op, state)
 
   defp execute_opcode(op, state) when op in [0xF3, 0xFD, 0xFE], do: Termination.execute(op, state)

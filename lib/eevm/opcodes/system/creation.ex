@@ -62,6 +62,72 @@ defmodule EEVM.Opcodes.System.Creation do
     end
   end
 
+  def execute(0xF2, state) do
+    with {:ok, gas_requested, s1} <- Stack.pop(state.stack),
+         {:ok, address, s2} <- Stack.pop(s1),
+         {:ok, value, s3} <- Stack.pop(s2),
+         {:ok, args_offset, s4} <- Stack.pop(s3),
+         {:ok, args_size, s5} <- Stack.pop(s4),
+         {:ok, ret_offset, s6} <- Stack.pop(s5),
+         {:ok, ret_size, s7} <- Stack.pop(s6) do
+      cond do
+        state.depth >= 1024 ->
+          call_failed(state, s7)
+
+        state.is_static and value > 0 ->
+          call_failed(state, s7)
+
+        true ->
+          execute_delegatecall(
+            state,
+            s7,
+            gas_requested,
+            address,
+            value,
+            args_offset,
+            args_size,
+            ret_offset,
+            ret_size,
+            state.contract.address,
+            true,
+            true
+          )
+      end
+    else
+      {:error, reason} -> {:error, reason, state}
+    end
+  end
+
+  def execute(0xF4, state) do
+    with {:ok, gas_requested, s1} <- Stack.pop(state.stack),
+         {:ok, address, s2} <- Stack.pop(s1),
+         {:ok, args_offset, s3} <- Stack.pop(s2),
+         {:ok, args_size, s4} <- Stack.pop(s3),
+         {:ok, ret_offset, s5} <- Stack.pop(s4),
+         {:ok, ret_size, s6} <- Stack.pop(s5) do
+      if state.depth >= 1024 do
+        call_failed(state, s6)
+      else
+        execute_delegatecall(
+          state,
+          s6,
+          gas_requested,
+          address,
+          state.contract.callvalue,
+          args_offset,
+          args_size,
+          ret_offset,
+          ret_size,
+          state.contract.caller,
+          false,
+          false
+        )
+      end
+    else
+      {:error, reason} -> {:error, reason, state}
+    end
+  end
+
   def execute(0xFA, state) do
     with {:ok, gas_requested, s1} <- Stack.pop(state.stack),
          {:ok, address, s2} <- Stack.pop(s1),
@@ -367,6 +433,105 @@ defmodule EEVM.Opcodes.System.Creation do
       {:error, :insufficient_balance} ->
         call_failed(%{state | stack: stack, gas: state.gas - call_cost}, stack)
 
+      {:error, :out_of_gas, halted_state} ->
+        {:error, :out_of_gas, halted_state}
+    end
+  end
+
+  defp execute_delegatecall(
+         state,
+         stack,
+         gas_requested,
+         address,
+         callvalue,
+         args_offset,
+         args_size,
+         ret_offset,
+         ret_size,
+         caller,
+         charge_value_cost?,
+         add_stipend?
+       ) do
+    call_cost =
+      if(charge_value_cost?, do: Dynamic.call_value_cost(callvalue), else: 0) +
+        call_memory_expansion_cost(state.memory, args_offset, args_size, ret_offset, ret_size)
+
+    with {:ok, state_after_cost} <- MachineState.consume_gas(%{state | stack: stack}, call_cost) do
+      {calldata, memory_after_read} =
+        Memory.read_bytes(state_after_cost.memory, args_offset, args_size)
+
+      forwarded_gas = Dynamic.call_forwarded_gas(state_after_cost.gas, gas_requested)
+
+      case MachineState.consume_gas(
+             %{state_after_cost | memory: memory_after_read},
+             forwarded_gas
+           ) do
+        {:ok, state_after_forward} ->
+          target_code = WorldState.get_code(state_after_forward.world_state, address)
+
+          child_contract =
+            Contract.new(
+              address: state_after_forward.contract.address,
+              caller: caller,
+              callvalue: callvalue,
+              calldata: calldata,
+              balances: state_after_forward.contract.balances
+            )
+
+          child_gas =
+            forwarded_gas + if(add_stipend?, do: Dynamic.call_stipend(callvalue), else: 0)
+
+          child_state =
+            MachineState.new(target_code,
+              gas: child_gas,
+              storage: state_after_forward.storage,
+              tx: state_after_forward.tx,
+              block: state_after_forward.block,
+              contract: child_contract,
+              world_state: state_after_forward.world_state,
+              is_static: state_after_forward.is_static,
+              depth: state_after_forward.depth + 1
+            )
+
+          child_result = Executor.run_loop(child_state)
+          call_succeeded = child_result.status == :stopped
+
+          world_state_result =
+            if call_succeeded,
+              do: child_result.world_state,
+              else: state_after_forward.world_state
+
+          storage_result =
+            if call_succeeded,
+              do: child_result.storage,
+              else: state_after_forward.storage
+
+          logs_result =
+            if call_succeeded,
+              do: state_after_forward.logs ++ child_result.logs,
+              else: state_after_forward.logs
+
+          memory_result =
+            write_return_data(memory_after_read, ret_offset, ret_size, child_result.return_data)
+
+          result_flag = if(call_succeeded, do: 1, else: 0)
+          {:ok, stack_after_call} = Stack.push(state_after_forward.stack, result_flag)
+
+          {:ok,
+           state_after_forward
+           |> Map.put(:stack, stack_after_call)
+           |> Map.put(:memory, memory_result)
+           |> Map.put(:return_data, child_result.return_data)
+           |> Map.put(:world_state, world_state_result)
+           |> Map.put(:storage, storage_result)
+           |> Map.put(:logs, logs_result)
+           |> Map.put(:gas, state_after_forward.gas + child_result.gas)
+           |> MachineState.advance_pc()}
+
+        {:error, :out_of_gas, _halted_state} ->
+          call_failed(state_after_cost, stack)
+      end
+    else
       {:error, :out_of_gas, halted_state} ->
         {:error, :out_of_gas, halted_state}
     end

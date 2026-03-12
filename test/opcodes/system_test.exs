@@ -3,7 +3,8 @@ defmodule EEVM.Opcodes.SystemTest do
 
   import EEVM.TestSupport.BytecodeHelpers
 
-  alias EEVM.{Memory, WorldState}
+  alias EEVM.{Memory, Storage, WorldState}
+  alias EEVM.Context.Contract
 
   describe "Executor - Return & Halt" do
     test "RETURN returns data from memory" do
@@ -259,6 +260,135 @@ defmodule EEVM.Opcodes.SystemTest do
       assert EEVM.stack_values(result) == [1]
       assert WorldState.get_balance(result.world_state, 0) == 9
       assert WorldState.get_balance(result.world_state, 1) == 0
+    end
+  end
+
+  describe "DELEGATECALL (0xF4)" do
+    test "runs target code in caller's storage context" do
+      child_code = <<0x60, 0x01, 0x30, 0x55, 0x00>>
+
+      world_state =
+        WorldState.new(%{
+          1 => %{code: child_code}
+        })
+
+      code =
+        <<0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x01, 0x61, 0xFF, 0xFF, 0xF4,
+          0x00>>
+
+      contract = Contract.new(address: 0xAA, caller: 0xBEEF, callvalue: 999)
+      result = EEVM.execute(code, world_state: world_state, contract: contract)
+
+      assert EEVM.stack_values(result) == [1]
+      assert Storage.load(result.storage, 0xAA) == 1
+      assert Storage.load(result.storage, 0x01) == 0
+    end
+
+    test "preserves caller (msg.sender)" do
+      child_code = <<0x33, 0x60, 0x00, 0x55, 0x00>>
+      world_state = WorldState.new(%{1 => %{code: child_code}})
+
+      code =
+        <<0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x01, 0x61, 0xFF, 0xFF, 0xF4,
+          0x00>>
+
+      contract = Contract.new(address: 0xAA, caller: 0xBEEF, callvalue: 999)
+      result = EEVM.execute(code, world_state: world_state, contract: contract)
+
+      assert EEVM.stack_values(result) == [1]
+      assert Storage.load(result.storage, 0) == 0xBEEF
+    end
+
+    test "preserves callvalue (msg.value)" do
+      child_code = <<0x34, 0x60, 0x00, 0x55, 0x00>>
+      world_state = WorldState.new(%{1 => %{code: child_code}})
+
+      code =
+        <<0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x01, 0x61, 0xFF, 0xFF, 0xF4,
+          0x00>>
+
+      contract = Contract.new(address: 0xAA, caller: 0xBEEF, callvalue: 999)
+      result = EEVM.execute(code, world_state: world_state, contract: contract)
+
+      assert EEVM.stack_values(result) == [1]
+      assert Storage.load(result.storage, 0) == 999
+    end
+
+    test "ADDRESS returns parent's address" do
+      child_code = <<0x30, 0x60, 0x00, 0x55, 0x00>>
+      world_state = WorldState.new(%{1 => %{code: child_code}})
+
+      code =
+        <<0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x01, 0x61, 0xFF, 0xFF, 0xF4,
+          0x00>>
+
+      contract = Contract.new(address: 0xAA, caller: 0xBEEF, callvalue: 999)
+      result = EEVM.execute(code, world_state: world_state, contract: contract)
+
+      assert EEVM.stack_values(result) == [1]
+      assert Storage.load(result.storage, 0) == 0xAA
+    end
+
+    test "pushes 0 on failure" do
+      child_code = <<0x60, 0x00, 0x60, 0x00, 0xFD>>
+      world_state = WorldState.new(%{1 => %{code: child_code}})
+
+      code =
+        <<0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x01, 0x60, 0x64, 0xF4, 0x00>>
+
+      result = EEVM.execute(code, world_state: world_state)
+
+      assert result.status == :stopped
+      assert EEVM.stack_values(result) == [0]
+      assert result.return_data == <<>>
+    end
+  end
+
+  describe "CALLCODE (0xF2)" do
+    test "runs target code in caller's storage context" do
+      child_code = <<0x60, 0x01, 0x30, 0x55, 0x00>>
+      world_state = WorldState.new(%{1 => %{code: child_code}})
+
+      code =
+        <<0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x01, 0x61, 0xFF,
+          0xFF, 0xF2, 0x00>>
+
+      contract = Contract.new(address: 0xAA, caller: 0xBEEF)
+      result = EEVM.execute(code, world_state: world_state, contract: contract)
+
+      assert EEVM.stack_values(result) == [1]
+      assert Storage.load(result.storage, 0xAA) == 1
+      assert Storage.load(result.storage, 0x01) == 0
+    end
+
+    test "CALLER returns current contract address" do
+      child_code = <<0x33, 0x60, 0x00, 0x55, 0x00>>
+      world_state = WorldState.new(%{1 => %{code: child_code}})
+
+      code =
+        <<0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x01, 0x61, 0xFF,
+          0xFF, 0xF2, 0x00>>
+
+      contract = Contract.new(address: 0xAAAA, caller: 0xBBBB)
+      result = EEVM.execute(code, world_state: world_state, contract: contract)
+
+      assert EEVM.stack_values(result) == [1]
+      assert Storage.load(result.storage, 0) == 0xAAAA
+    end
+
+    test "pushes 0 on failure" do
+      child_code = <<0x60, 0x00, 0x60, 0x00, 0xFD>>
+      world_state = WorldState.new(%{1 => %{code: child_code}})
+
+      code =
+        <<0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x01, 0x60, 0x64,
+          0xF2, 0x00>>
+
+      result = EEVM.execute(code, world_state: world_state)
+
+      assert result.status == :stopped
+      assert EEVM.stack_values(result) == [0]
+      assert result.return_data == <<>>
     end
   end
 end
