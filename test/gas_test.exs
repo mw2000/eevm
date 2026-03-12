@@ -143,5 +143,21 @@ defmodule EEVM.GasTest do
       # PUSH1=3, JUMP=8, JUMPDEST=1, STOP=0 → 12
       assert result.gas == 1000 - 12
     end
+
+    test "CREATE and CREATE2 static costs are 32000" do
+      assert Gas.static_cost(0xF0) == 32_000
+      assert Gas.static_cost(0xF5) == 32_000
+    end
+
+    test "CREATE2 hashing cost charges 6 gas per word" do
+      assert Gas.create2_hash_cost(1) == 6
+      assert Gas.create2_hash_cost(32) == 6
+      assert Gas.create2_hash_cost(33) == 12
+    end
+
+    test "code deposit cost is 200 gas per byte" do
+      assert Gas.code_deposit_cost(0) == 0
+      assert Gas.code_deposit_cost(3) == 600
+    end
   end
 end

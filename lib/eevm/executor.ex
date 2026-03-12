@@ -139,7 +139,9 @@ defmodule EEVM.Executor do
   defp execute_opcode(0x5F, state), do: ControlFlow.execute(0x5F, state)
   defp execute_opcode(op, state) when op in 0x60..0x9F, do: ControlFlow.execute(op, state)
   defp execute_opcode(op, state) when op in 0xA0..0xA4, do: Logging.execute(op, state)
+  defp execute_opcode(0xF0, state), do: System.execute(0xF0, state)
   defp execute_opcode(0xF3, state), do: System.execute(0xF3, state)
+  defp execute_opcode(0xF5, state), do: System.execute(0xF5, state)
   defp execute_opcode(0xFD, state), do: System.execute(0xFD, state)
   defp execute_opcode(0xFE, state), do: System.execute(0xFE, state)
   defp execute_opcode(_op, state), do: {:ok, MachineState.halt(state, :invalid)}

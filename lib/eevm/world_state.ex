@@ -67,4 +67,70 @@ defmodule EEVM.WorldState do
       account -> Map.get(account, :balance, 0)
     end
   end
+
+  @spec get_nonce(t(), non_neg_integer()) :: non_neg_integer()
+  def get_nonce(world_state, address) do
+    case get_account(world_state, address) do
+      nil -> 0
+      account -> Map.get(account, :nonce, 0)
+    end
+  end
+
+  @spec put_account(t(), non_neg_integer(), account()) :: t()
+  def put_account(%__MODULE__{accounts: accounts} = world_state, address, account)
+      when is_map(account) do
+    %{world_state | accounts: Map.put(accounts, address, account)}
+  end
+
+  @spec put_code(t(), non_neg_integer(), binary()) :: t()
+  def put_code(world_state, address, code) when is_binary(code) do
+    update_account(world_state, address, fn account -> Map.put(account, :code, code) end)
+  end
+
+  @spec set_balance(t(), non_neg_integer(), non_neg_integer()) :: t()
+  def set_balance(world_state, address, balance) do
+    update_account(world_state, address, fn account -> Map.put(account, :balance, balance) end)
+  end
+
+  @spec set_nonce(t(), non_neg_integer(), non_neg_integer()) :: t()
+  def set_nonce(world_state, address, nonce) do
+    update_account(world_state, address, fn account -> Map.put(account, :nonce, nonce) end)
+  end
+
+  @spec increment_nonce(t(), non_neg_integer()) :: t()
+  def increment_nonce(world_state, address) do
+    update_account(world_state, address, fn account ->
+      Map.put(account, :nonce, Map.get(account, :nonce, 0) + 1)
+    end)
+  end
+
+  @spec transfer(t(), non_neg_integer(), non_neg_integer(), non_neg_integer()) ::
+          {:ok, t()} | {:error, :insufficient_balance}
+  def transfer(world_state, _from, _to, 0), do: {:ok, world_state}
+
+  def transfer(world_state, from, to, amount) do
+    from_balance = get_balance(world_state, from)
+
+    if from_balance < amount do
+      {:error, :insufficient_balance}
+    else
+      updated_state =
+        world_state
+        |> set_balance(from, from_balance - amount)
+        |> set_balance(to, get_balance(world_state, to) + amount)
+
+      {:ok, updated_state}
+    end
+  end
+
+  @spec update_account(t(), non_neg_integer(), (account() -> account())) :: t()
+  def update_account(world_state, address, updater) when is_function(updater, 1) do
+    existing =
+      case get_account(world_state, address) do
+        nil -> %{}
+        account -> account
+      end
+
+    put_account(world_state, address, updater.(existing))
+  end
 end
