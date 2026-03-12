@@ -107,6 +107,12 @@ defmodule EEVM.Executor do
     end
   end
 
+  def run_loop(%MachineState{status: status, call_stack: [_ | _]} = state)
+      when status in [:stopped, :reverted, :invalid, :out_of_gas] do
+    {:ok, resumed_state} = MachineState.pop_frame(state)
+    run_loop(resumed_state)
+  end
+
   def run_loop(state), do: state
 
   # Dispatch table for execute_opcode/2.

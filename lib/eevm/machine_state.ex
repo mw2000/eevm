@@ -9,6 +9,9 @@ defmodule EEVM.MachineState do
   - **stack**: the operand stack (max 1024 elements)
   - **memory**: byte-addressable linear memory
   - **world_state**: account/code state used for external account lookups
+  - **call_stack**: suspended parent frames during nested execution
+  - **frame return metadata**: parent memory write-back offset and size
+  - **is_static/depth**: execution mode and current call depth
   - **gas**: remaining gas for execution
   - **status**: whether the machine is running, stopped, or reverted
 
@@ -22,8 +25,8 @@ defmodule EEVM.MachineState do
   - The `alias` keyword lets us reference modules by their short name.
   """
 
-  alias EEVM.{Stack, Memory, Storage, WorldState}
-  alias EEVM.Context.{Transaction, Block, Contract}
+  alias EEVM.{CallFrame, Memory, Stack, Storage, WorldState}
+  alias EEVM.Context.{Block, Contract, Transaction}
 
   @type status :: :running | :stopped | :reverted | :invalid | :out_of_gas
 
@@ -36,6 +39,11 @@ defmodule EEVM.MachineState do
           block: Block.t(),
           contract: Contract.t(),
           world_state: WorldState.t(),
+          call_stack: [CallFrame.t()],
+          frame_return_offset: non_neg_integer(),
+          frame_return_size: non_neg_integer(),
+          is_static: boolean(),
+          depth: non_neg_integer(),
           gas: non_neg_integer(),
           status: status(),
           return_data: binary(),
@@ -52,6 +60,11 @@ defmodule EEVM.MachineState do
             block: nil,
             contract: nil,
             world_state: nil,
+            call_stack: [],
+            frame_return_offset: 0,
+            frame_return_size: 0,
+            is_static: false,
+            depth: 0,
             gas: 1_000_000,
             status: :running,
             return_data: <<>>,
@@ -70,6 +83,11 @@ defmodule EEVM.MachineState do
       - `:block` — block context (default: empty)
       - `:contract` — contract/message context (default: empty)
       - `:world_state` — external account state (default: empty)
+      - `:call_stack` — internal frame stack (default: `[]`)
+      - `:frame_return_offset` — parent memory write-back offset (default: `0`)
+      - `:frame_return_size` — parent memory write-back size (default: `0`)
+      - `:is_static` — static context flag for this frame (default: `false`)
+      - `:depth` — current call depth (default: `0`)
 
   ## Example
 
@@ -88,6 +106,11 @@ defmodule EEVM.MachineState do
       block: Keyword.get(opts, :block, Block.new()),
       contract: Keyword.get(opts, :contract, Contract.new()),
       world_state: Keyword.get(opts, :world_state, WorldState.new()),
+      call_stack: Keyword.get(opts, :call_stack, []),
+      frame_return_offset: Keyword.get(opts, :frame_return_offset, 0),
+      frame_return_size: Keyword.get(opts, :frame_return_size, 0),
+      is_static: Keyword.get(opts, :is_static, false),
+      depth: Keyword.get(opts, :depth, 0),
       return_data: Keyword.get(opts, :return_data, <<>>),
       gas: Keyword.get(opts, :gas, 1_000_000)
     }
@@ -128,6 +151,77 @@ defmodule EEVM.MachineState do
     %{state | pc: state.pc + n}
   end
 
+  @spec current_depth(t()) :: non_neg_integer()
+  def current_depth(%__MODULE__{depth: depth}), do: depth
+
+  @spec push_frame(t(), CallFrame.t()) :: {:ok, t()} | {:error, :max_call_depth, t()}
+  def push_frame(%__MODULE__{depth: depth} = state, _new_frame) when depth >= 1024 do
+    {:error, :max_call_depth, state}
+  end
+
+  def push_frame(%__MODULE__{} = state, %CallFrame{} = new_frame) do
+    parent_frame =
+      CallFrame.from_state(state,
+        return_offset: state.frame_return_offset,
+        return_size: state.frame_return_size,
+        is_static: state.is_static,
+        depth: state.depth
+      )
+
+    {:ok,
+     %{
+       state
+       | call_stack: [parent_frame | state.call_stack],
+         code: new_frame.code,
+         pc: new_frame.pc,
+         stack: new_frame.stack,
+         memory: new_frame.memory,
+         gas: new_frame.gas,
+         contract: new_frame.contract,
+         frame_return_offset: new_frame.return_offset,
+         frame_return_size: new_frame.return_size,
+         is_static: new_frame.is_static,
+         depth: new_frame.depth,
+         status: :running,
+         return_data: <<>>
+     }}
+  end
+
+  @spec pop_frame(t()) :: {:ok, t()} | {:error, :empty_call_stack, t()}
+  def pop_frame(%__MODULE__{call_stack: []} = state), do: {:error, :empty_call_stack, state}
+
+  def pop_frame(%__MODULE__{call_stack: [parent | rest]} = state) do
+    child_return_data = state.return_data
+
+    {parent_memory, _} =
+      write_return_data(
+        parent.memory,
+        state.frame_return_offset,
+        state.frame_return_size,
+        child_return_data
+      )
+
+    restored_state =
+      %{
+        state
+        | call_stack: rest,
+          code: parent.code,
+          pc: parent.pc,
+          stack: parent.stack,
+          memory: parent_memory,
+          gas: parent.gas + state.gas,
+          contract: parent.contract,
+          frame_return_offset: parent.return_offset,
+          frame_return_size: parent.return_size,
+          is_static: parent.is_static,
+          depth: parent.depth,
+          status: :running,
+          return_data: child_return_data
+      }
+
+    {:ok, restored_state}
+  end
+
   @doc """
   Deducts gas from the machine state.
 
@@ -157,5 +251,24 @@ defmodule EEVM.MachineState do
   @spec halt(t(), status()) :: t()
   def halt(state, status) do
     %{state | status: status}
+  end
+
+  defp write_return_data(memory, _offset, 0, return_data), do: {memory, return_data}
+
+  defp write_return_data(memory, offset, size, return_data) do
+    bytes =
+      for i <- 0..(size - 1), into: <<>> do
+        if i < byte_size(return_data), do: <<:binary.at(return_data, i)>>, else: <<0>>
+      end
+
+    new_memory =
+      bytes
+      |> :binary.bin_to_list()
+      |> Enum.with_index()
+      |> Enum.reduce(memory, fn {byte, i}, mem ->
+        Memory.store_byte(mem, offset + i, byte)
+      end)
+
+    {new_memory, return_data}
   end
 end
