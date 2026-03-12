@@ -109,10 +109,8 @@ defmodule EEVM.Executor do
 
   def run_loop(%MachineState{status: status, call_stack: [_ | _]} = state)
       when status in [:stopped, :reverted, :invalid, :out_of_gas] do
-    case MachineState.pop_frame(state) do
-      {:ok, resumed_state} -> run_loop(resumed_state)
-      {:error, :empty_call_stack, halted_state} -> halted_state
-    end
+    {:ok, resumed_state} = MachineState.pop_frame(state)
+    run_loop(resumed_state)
   end
 
   def run_loop(state), do: state
