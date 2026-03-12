@@ -1,7 +1,9 @@
 defmodule EEVM.Opcodes.Environment.Data do
   @moduledoc false
 
-  alias EEVM.{Gas, MachineState, Memory, Stack}
+  alias EEVM.{MachineState, Memory, Stack}
+  alias EEVM.Gas.Dynamic
+  alias EEVM.Gas.Memory, as: GasMemory
   alias EEVM.Context.Contract
 
   @spec execute(non_neg_integer(), MachineState.t()) ::
@@ -23,7 +25,8 @@ defmodule EEVM.Opcodes.Environment.Data do
       if length == 0 do
         {:ok, %{state | stack: s3} |> MachineState.advance_pc()}
       else
-        expansion_cost = Gas.memory_expansion_cost(Memory.size(state.memory), dest_offset, length)
+        expansion_cost =
+          GasMemory.memory_expansion_cost(Memory.size(state.memory), dest_offset, length)
 
         case MachineState.consume_gas(%{state | stack: s3}, expansion_cost) do
           {:ok, state_after_gas} ->
@@ -66,8 +69,8 @@ defmodule EEVM.Opcodes.Environment.Data do
         {:ok, %{state | stack: s3} |> MachineState.advance_pc()}
       else
         dynamic_cost =
-          Gas.copy_cost(length) +
-            Gas.memory_expansion_cost(Memory.size(state.memory), dest_offset, length)
+          Dynamic.copy_cost(length) +
+            GasMemory.memory_expansion_cost(Memory.size(state.memory), dest_offset, length)
 
         case MachineState.consume_gas(%{state | stack: s3}, dynamic_cost) do
           {:ok, state_after_gas} ->
@@ -105,8 +108,8 @@ defmodule EEVM.Opcodes.Environment.Data do
 
         true ->
           dynamic_cost =
-            Gas.copy_cost(length) +
-              Gas.memory_expansion_cost(Memory.size(state.memory), dest_offset, length)
+            Dynamic.copy_cost(length) +
+              GasMemory.memory_expansion_cost(Memory.size(state.memory), dest_offset, length)
 
           case MachineState.consume_gas(%{state | stack: s3}, dynamic_cost) do
             {:ok, s4} ->

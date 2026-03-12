@@ -3,7 +3,7 @@ defmodule EEVM.Opcodes.EnvironmentTest do
 
   alias EEVM.Context.{Transaction, Block, Contract}
   alias EEVM.WorldState
-  alias EEVM.Gas
+  alias EEVM.Gas.{Dynamic, Memory, Static}
 
   describe "Environment Opcodes" do
     test "ADDRESS pushes current contract address" do
@@ -272,11 +272,11 @@ defmodule EEVM.Opcodes.EnvironmentTest do
       result = EEVM.execute(code, gas: initial_gas)
 
       expected_spent =
-        Gas.static_cost(0x60) * 4 +
-          Gas.static_cost(0x39) +
-          Gas.copy_cost(4) +
-          Gas.memory_expansion_cost(0, 0, 4) +
-          Gas.static_cost(0x51)
+        Static.static_cost(0x60) * 4 +
+          Static.static_cost(0x39) +
+          Dynamic.copy_cost(4) +
+          Memory.memory_expansion_cost(0, 0, 4) +
+          Static.static_cost(0x51)
 
       assert result.gas == initial_gas - expected_spent
     end
@@ -330,11 +330,11 @@ defmodule EEVM.Opcodes.EnvironmentTest do
       result = EEVM.execute(code, gas: initial_gas, return_data: return_data)
 
       expected_spent =
-        Gas.static_cost(0x60) * 4 +
-          Gas.static_cost(0x3E) +
-          Gas.copy_cost(4) +
-          Gas.memory_expansion_cost(0, 0, 4) +
-          Gas.static_cost(0x51)
+        Static.static_cost(0x60) * 4 +
+          Static.static_cost(0x3E) +
+          Dynamic.copy_cost(4) +
+          Memory.memory_expansion_cost(0, 0, 4) +
+          Static.static_cost(0x51)
 
       assert result.gas == initial_gas - expected_spent
     end
@@ -395,11 +395,11 @@ defmodule EEVM.Opcodes.EnvironmentTest do
       result = EEVM.execute(code, gas: initial_gas, world_state: world_state)
 
       expected_spent =
-        Gas.static_cost(0x60) * 5 +
-          Gas.static_cost(0x3C) +
-          Gas.copy_cost(4) +
-          Gas.memory_expansion_cost(0, 0, 4) +
-          Gas.static_cost(0x51)
+        Static.static_cost(0x60) * 5 +
+          Static.static_cost(0x3C) +
+          Dynamic.copy_cost(4) +
+          Memory.memory_expansion_cost(0, 0, 4) +
+          Static.static_cost(0x51)
 
       assert result.gas == initial_gas - expected_spent
     end

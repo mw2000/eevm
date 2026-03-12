@@ -1,7 +1,9 @@
 defmodule EEVM.Opcodes.System.Creation do
   @moduledoc false
 
-  alias EEVM.{Executor, Gas, MachineState, Memory, Stack, WorldState}
+  alias EEVM.{Executor, MachineState, Memory, Stack, WorldState}
+  alias EEVM.Gas.Dynamic
+  alias EEVM.Gas.Memory, as: GasMemory
   alias EEVM.Context.Contract
 
   @spec execute(non_neg_integer(), MachineState.t()) ::
@@ -77,8 +79,8 @@ defmodule EEVM.Opcodes.System.Creation do
 
   defp execute_create_inner(state, stack, value, offset, size, salt) do
     extra_cost =
-      Gas.memory_expansion_cost(Memory.size(state.memory), offset, size) +
-        if(salt == nil, do: 0, else: Gas.create2_hash_cost(size))
+      GasMemory.memory_expansion_cost(Memory.size(state.memory), offset, size) +
+        if(salt == nil, do: 0, else: Dynamic.create2_hash_cost(size))
 
     case MachineState.consume_gas(%{state | stack: stack}, extra_cost) do
       {:ok, state_after_cost} ->
@@ -126,7 +128,7 @@ defmodule EEVM.Opcodes.System.Creation do
 
               if deployment_success do
                 runtime_code = child_result.return_data
-                deposit_cost = Gas.code_deposit_cost(byte_size(runtime_code))
+                deposit_cost = Dynamic.code_deposit_cost(byte_size(runtime_code))
 
                 if child_result.gas >= deposit_cost do
                   world_state_after_deploy =
@@ -249,8 +251,8 @@ defmodule EEVM.Opcodes.System.Creation do
     account_exists = WorldState.account_exists?(world_state, address)
 
     call_cost =
-      Gas.call_value_cost(value) +
-        Gas.call_new_account_cost(account_exists, value) +
+      Dynamic.call_value_cost(value) +
+        Dynamic.call_new_account_cost(account_exists, value) +
         call_memory_expansion_cost(state.memory, args_offset, args_size, ret_offset, ret_size)
 
     with {:ok, state_after_cost} <- MachineState.consume_gas(%{state | stack: stack}, call_cost),
@@ -264,7 +266,7 @@ defmodule EEVM.Opcodes.System.Creation do
       {calldata, memory_after_read} =
         Memory.read_bytes(state_after_cost.memory, args_offset, args_size)
 
-      forwarded_gas = Gas.call_forwarded_gas(state_after_cost.gas, gas_requested)
+      forwarded_gas = Dynamic.call_forwarded_gas(state_after_cost.gas, gas_requested)
 
       case MachineState.consume_gas(
              %{state_after_cost | memory: memory_after_read},
@@ -282,7 +284,7 @@ defmodule EEVM.Opcodes.System.Creation do
               balances: state_after_forward.contract.balances
             )
 
-          child_gas = forwarded_gas + Gas.call_stipend(value)
+          child_gas = forwarded_gas + Dynamic.call_stipend(value)
 
           child_state =
             MachineState.new(target_code,
@@ -353,7 +355,7 @@ defmodule EEVM.Opcodes.System.Creation do
     if needed == 0 do
       0
     else
-      Gas.memory_expansion_cost(current_size, 0, needed)
+      GasMemory.memory_expansion_cost(current_size, 0, needed)
     end
   end
 

@@ -1,7 +1,9 @@
 defmodule EEVM.Opcodes.Environment.External do
   @moduledoc false
 
-  alias EEVM.{Gas, MachineState, Memory, Stack, WorldState}
+  alias EEVM.{MachineState, Memory, Stack, WorldState}
+  alias EEVM.Gas.Dynamic
+  alias EEVM.Gas.Memory, as: GasMemory
   alias EEVM.Context.Contract
   alias EEVM.Opcodes.Helpers
 
@@ -36,8 +38,8 @@ defmodule EEVM.Opcodes.Environment.External do
         {:ok, %{state | stack: s4} |> MachineState.advance_pc()}
       else
         dynamic_cost =
-          Gas.copy_cost(length) +
-            Gas.memory_expansion_cost(Memory.size(state.memory), dest_offset, length)
+          Dynamic.copy_cost(length) +
+            GasMemory.memory_expansion_cost(Memory.size(state.memory), dest_offset, length)
 
         case MachineState.consume_gas(%{state | stack: s4}, dynamic_cost) do
           {:ok, state_after_gas} ->

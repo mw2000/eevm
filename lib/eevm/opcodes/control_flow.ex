@@ -38,7 +38,8 @@ defmodule EEVM.Opcodes.ControlFlow do
     SWAP depth adds 1 (`op - 0x90 + 1`) to include the top-of-stack position.
   """
 
-  alias EEVM.{MachineState, Opcodes, Stack}
+  alias EEVM.{MachineState, Stack}
+  alias EEVM.Opcodes.Registry
   alias EEVM.Opcodes.Helpers
 
   @doc """
@@ -92,11 +93,11 @@ defmodule EEVM.Opcodes.ControlFlow do
 
   # PUSH1-PUSH32 — read `n` bytes immediately following the current PC from
   # bytecode and push the value as a big-endian unsigned integer.
-  # `Opcodes.push_bytes/1` derives the byte count from the opcode.
+  # `Registry.push_bytes/1` derives the byte count from the opcode.
   # The PC advances by 1 (opcode) + n (push data) in one step.
 
   def execute(op, state) when op >= 0x60 and op <= 0x7F do
-    n = Opcodes.push_bytes(op)
+    n = Registry.push_bytes(op)
     bytes = MachineState.read_code(state, state.pc + 1, n)
 
     value =

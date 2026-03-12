@@ -1,7 +1,8 @@
 defmodule EEVM.Opcodes.System.Termination do
   @moduledoc false
 
-  alias EEVM.{Gas, MachineState, Memory, Stack}
+  alias EEVM.{MachineState, Memory, Stack}
+  alias EEVM.Gas.Memory, as: GasMemory
 
   @spec execute(non_neg_integer(), MachineState.t()) ::
           {:ok, MachineState.t()} | {:error, atom(), MachineState.t()}
@@ -10,7 +11,8 @@ defmodule EEVM.Opcodes.System.Termination do
   def execute(0xF3, state) do
     with {:ok, offset, s1} <- Stack.pop(state.stack),
          {:ok, length, s2} <- Stack.pop(s1),
-         expansion_cost = Gas.memory_expansion_cost(Memory.size(state.memory), offset, length),
+         expansion_cost =
+           GasMemory.memory_expansion_cost(Memory.size(state.memory), offset, length),
          {:ok, state_after_gas} <-
            MachineState.consume_gas(%{state | stack: s2}, expansion_cost) do
       {return_data, new_memory} = Memory.read_bytes(state_after_gas.memory, offset, length)
@@ -27,7 +29,8 @@ defmodule EEVM.Opcodes.System.Termination do
   def execute(0xFD, state) do
     with {:ok, offset, s1} <- Stack.pop(state.stack),
          {:ok, length, s2} <- Stack.pop(s1),
-         expansion_cost = Gas.memory_expansion_cost(Memory.size(state.memory), offset, length),
+         expansion_cost =
+           GasMemory.memory_expansion_cost(Memory.size(state.memory), offset, length),
          {:ok, state_after_gas} <-
            MachineState.consume_gas(%{state | stack: s2}, expansion_cost) do
       {return_data, new_memory} = Memory.read_bytes(state_after_gas.memory, offset, length)

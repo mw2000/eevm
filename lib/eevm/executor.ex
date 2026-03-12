@@ -32,7 +32,8 @@ defmodule EEVM.Executor do
     their semantics.
   """
 
-  alias EEVM.{Gas, MachineState}
+  alias EEVM.MachineState
+  alias EEVM.Gas.Static
 
   alias EEVM.Opcodes.{
     Arithmetic,
@@ -40,10 +41,15 @@ defmodule EEVM.Executor do
     Comparison,
     ControlFlow,
     Crypto,
-    Environment,
+    Environment.Data,
+    Environment.External,
+    Environment.Simple,
     Logging,
-    StackMemoryStorage,
-    System
+    StackMemoryStorage.MemoryOps,
+    StackMemoryStorage.StackOps,
+    StackMemoryStorage.StorageOps,
+    System.Creation,
+    System.Termination
   }
 
   @doc """
@@ -91,7 +97,7 @@ defmodule EEVM.Executor do
         MachineState.halt(state, :stopped)
 
       opcode ->
-        static_cost = if opcode == 0xFE, do: state.gas, else: Gas.static_cost(opcode)
+        static_cost = if opcode == 0xFE, do: state.gas, else: Static.static_cost(opcode)
 
         case MachineState.consume_gas(state, static_cost) do
           {:ok, state_after_gas} ->
@@ -123,27 +129,36 @@ defmodule EEVM.Executor do
   # range to ensure it is caught by its dedicated StackMemoryStorage clause.
   # The fallback clause treats unknown opcodes as INVALID (halt, no gas refund).
 
-  defp execute_opcode(0x00, state), do: System.execute(0x00, state)
+  defp execute_opcode(0x00, state), do: Termination.execute(0x00, state)
   defp execute_opcode(op, state) when op in 0x01..0x0B, do: Arithmetic.execute(op, state)
   defp execute_opcode(op, state) when op in 0x10..0x15, do: Comparison.execute(op, state)
   defp execute_opcode(op, state) when op in 0x16..0x1D, do: Bitwise.execute(op, state)
   defp execute_opcode(0x20, state), do: Crypto.execute(0x20, state)
-  defp execute_opcode(op, state) when op in 0x30..0x3F, do: Environment.execute(op, state)
-  defp execute_opcode(op, state) when op in 0x40..0x48, do: Environment.execute(op, state)
-  defp execute_opcode(0x50, state), do: StackMemoryStorage.execute(0x50, state)
-  defp execute_opcode(op, state) when op in 0x51..0x55, do: StackMemoryStorage.execute(op, state)
-  defp execute_opcode(0x59, state), do: StackMemoryStorage.execute(0x59, state)
-  defp execute_opcode(0x5E, state), do: StackMemoryStorage.execute(0x5E, state)
-  defp execute_opcode(0x5A, state), do: Environment.execute(0x5A, state)
+
+  defp execute_opcode(op, state) when op in [0x30, 0x32, 0x33, 0x34, 0x36, 0x38, 0x3A, 0x3D],
+    do: Simple.execute(op, state)
+
+  defp execute_opcode(op, state) when op in [0x35, 0x37, 0x39, 0x3E], do: Data.execute(op, state)
+
+  defp execute_opcode(op, state) when op in [0x31, 0x3B, 0x3C, 0x3F],
+    do: External.execute(op, state)
+
+  defp execute_opcode(op, state) when op in [0x40, 0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x48],
+    do: Simple.execute(op, state)
+
+  defp execute_opcode(0x47, state), do: External.execute(0x47, state)
+  defp execute_opcode(0x50, state), do: StackOps.execute(0x50, state)
+
+  defp execute_opcode(op, state) when op in [0x51, 0x52, 0x53, 0x59, 0x5E],
+    do: MemoryOps.execute(op, state)
+
+  defp execute_opcode(op, state) when op in [0x54, 0x55], do: StorageOps.execute(op, state)
+  defp execute_opcode(0x5A, state), do: Simple.execute(0x5A, state)
   defp execute_opcode(op, state) when op in 0x56..0x5B, do: ControlFlow.execute(op, state)
   defp execute_opcode(0x5F, state), do: ControlFlow.execute(0x5F, state)
   defp execute_opcode(op, state) when op in 0x60..0x9F, do: ControlFlow.execute(op, state)
   defp execute_opcode(op, state) when op in 0xA0..0xA4, do: Logging.execute(op, state)
-  defp execute_opcode(0xF0, state), do: System.execute(0xF0, state)
-  defp execute_opcode(0xF1, state), do: System.execute(0xF1, state)
-  defp execute_opcode(0xF3, state), do: System.execute(0xF3, state)
-  defp execute_opcode(0xF5, state), do: System.execute(0xF5, state)
-  defp execute_opcode(0xFD, state), do: System.execute(0xFD, state)
-  defp execute_opcode(0xFE, state), do: System.execute(0xFE, state)
+  defp execute_opcode(op, state) when op in [0xF0, 0xF1, 0xF5], do: Creation.execute(op, state)
+  defp execute_opcode(op, state) when op in [0xF3, 0xFD, 0xFE], do: Termination.execute(op, state)
   defp execute_opcode(_op, state), do: {:ok, MachineState.halt(state, :invalid)}
 end
