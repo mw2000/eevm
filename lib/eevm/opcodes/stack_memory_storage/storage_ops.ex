@@ -25,5 +25,25 @@ defmodule EEVM.Opcodes.StackMemoryStorage.StorageOps do
     end
   end
 
+  def execute(0x5C, state) do
+    with {:ok, key, s1} <- Stack.pop(state.stack),
+         value = Map.get(state.transient_storage, key, 0),
+         {:ok, s2} <- Stack.push(s1, value) do
+      {:ok, %{state | stack: s2} |> MachineState.advance_pc()}
+    else
+      {:error, reason} -> {:error, reason, state}
+    end
+  end
+
+  def execute(0x5D, state) do
+    with {:ok, key, s1} <- Stack.pop(state.stack),
+         {:ok, value, s2} <- Stack.pop(s1) do
+      new_transient = Map.put(state.transient_storage, key, value)
+      {:ok, %{state | stack: s2, transient_storage: new_transient} |> MachineState.advance_pc()}
+    else
+      {:error, reason} -> {:error, reason, state}
+    end
+  end
+
   def execute(_opcode, state), do: {:ok, MachineState.halt(state, :invalid)}
 end

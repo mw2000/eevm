@@ -89,6 +89,8 @@ defmodule EEVM.Gas.Static do
   def static_cost(0x59), do: @gas_base
   def static_cost(0x5A), do: @gas_base
   def static_cost(0x5B), do: @gas_jumpdest
+  def static_cost(0x5C), do: @gas_warm_access
+  def static_cost(0x5D), do: @gas_warm_access
   def static_cost(0x5E), do: @gas_very_low
   def static_cost(0x5F), do: @gas_base
 
