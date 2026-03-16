@@ -2,6 +2,7 @@ defmodule EEVM.Opcodes.Environment.External do
   @moduledoc false
 
   alias EEVM.{MachineState, Memory, Stack, WorldState}
+  alias EEVM.Gas.Access
   alias EEVM.Gas.Dynamic
   alias EEVM.Gas.Memory, as: GasMemory
   alias EEVM.Context.Contract
@@ -10,20 +11,42 @@ defmodule EEVM.Opcodes.Environment.External do
   @spec execute(non_neg_integer(), MachineState.t()) ::
           {:ok, MachineState.t()} | {:error, atom(), MachineState.t()}
   def execute(0x31, state) do
-    with {:ok, addr, s1} <- Stack.pop(state.stack),
-         balance = lookup_balance(state, addr),
-         {:ok, s2} <- Stack.push(s1, balance) do
-      {:ok, %{state | stack: s2} |> MachineState.advance_pc()}
+    with {:ok, addr, s1} <- Stack.pop(state.stack) do
+      {access_cost, state_after_access} = Access.address_access_cost(%{state | stack: s1}, addr)
+
+      case MachineState.consume_gas(state_after_access, access_cost) do
+        {:ok, state_after_gas} ->
+          balance = lookup_balance(state_after_gas, addr)
+
+          case Stack.push(state_after_gas.stack, balance) do
+            {:ok, s2} -> {:ok, %{state_after_gas | stack: s2} |> MachineState.advance_pc()}
+            {:error, reason} -> {:error, reason, state_after_gas}
+          end
+
+        {:error, :out_of_gas, halted_state} ->
+          {:error, :out_of_gas, halted_state}
+      end
     else
       {:error, reason} -> {:error, reason, state}
     end
   end
 
   def execute(0x3B, state) do
-    with {:ok, addr, s1} <- Stack.pop(state.stack),
-         size = byte_size(WorldState.get_code(state.world_state, addr)),
-         {:ok, s2} <- Stack.push(s1, size) do
-      {:ok, %{state | stack: s2} |> MachineState.advance_pc()}
+    with {:ok, addr, s1} <- Stack.pop(state.stack) do
+      {access_cost, state_after_access} = Access.address_access_cost(%{state | stack: s1}, addr)
+
+      case MachineState.consume_gas(state_after_access, access_cost) do
+        {:ok, state_after_gas} ->
+          size = byte_size(WorldState.get_code(state_after_gas.world_state, addr))
+
+          case Stack.push(state_after_gas.stack, size) do
+            {:ok, s2} -> {:ok, %{state_after_gas | stack: s2} |> MachineState.advance_pc()}
+            {:error, reason} -> {:error, reason, state_after_gas}
+          end
+
+        {:error, :out_of_gas, halted_state} ->
+          {:error, :out_of_gas, halted_state}
+      end
     else
       {:error, reason} -> {:error, reason, state}
     end
@@ -34,30 +57,42 @@ defmodule EEVM.Opcodes.Environment.External do
          {:ok, dest_offset, s2} <- Stack.pop(s1),
          {:ok, code_offset, s3} <- Stack.pop(s2),
          {:ok, length, s4} <- Stack.pop(s3) do
-      if length == 0 do
-        {:ok, %{state | stack: s4} |> MachineState.advance_pc()}
-      else
-        dynamic_cost =
-          Dynamic.copy_cost(length) +
-            GasMemory.memory_expansion_cost(Memory.size(state.memory), dest_offset, length)
+      {access_cost, state_after_access} = Access.address_access_cost(%{state | stack: s4}, addr)
 
-        case MachineState.consume_gas(%{state | stack: s4}, dynamic_cost) do
-          {:ok, state_after_gas} ->
-            bytes = read_external_code(state_after_gas.world_state, addr, code_offset, length)
+      case MachineState.consume_gas(state_after_access, access_cost) do
+        {:ok, state_after_access_gas} ->
+          if length == 0 do
+            {:ok, state_after_access_gas |> MachineState.advance_pc()}
+          else
+            dynamic_cost =
+              Dynamic.copy_cost(length) +
+                GasMemory.memory_expansion_cost(
+                  Memory.size(state_after_access_gas.memory),
+                  dest_offset,
+                  length
+                )
 
-            new_memory =
-              bytes
-              |> :binary.bin_to_list()
-              |> Enum.with_index()
-              |> Enum.reduce(state_after_gas.memory, fn {byte, i}, mem ->
-                Memory.store_byte(mem, dest_offset + i, byte)
-              end)
+            case MachineState.consume_gas(state_after_access_gas, dynamic_cost) do
+              {:ok, state_after_gas} ->
+                bytes = read_external_code(state_after_gas.world_state, addr, code_offset, length)
 
-            {:ok, %{state_after_gas | memory: new_memory} |> MachineState.advance_pc()}
+                new_memory =
+                  bytes
+                  |> :binary.bin_to_list()
+                  |> Enum.with_index()
+                  |> Enum.reduce(state_after_gas.memory, fn {byte, i}, mem ->
+                    Memory.store_byte(mem, dest_offset + i, byte)
+                  end)
 
-          {:error, :out_of_gas, halted_state} ->
-            {:error, :out_of_gas, halted_state}
-        end
+                {:ok, %{state_after_gas | memory: new_memory} |> MachineState.advance_pc()}
+
+              {:error, :out_of_gas, halted_state} ->
+                {:error, :out_of_gas, halted_state}
+            end
+          end
+
+        {:error, :out_of_gas, halted_state} ->
+          {:error, :out_of_gas, halted_state}
       end
     else
       {:error, reason} -> {:error, reason, state}
@@ -66,20 +101,27 @@ defmodule EEVM.Opcodes.Environment.External do
 
   def execute(0x3F, state) do
     with {:ok, addr, s1} <- Stack.pop(state.stack) do
-      hash_value =
-        if WorldState.account_exists?(state.world_state, addr) do
-          code = WorldState.get_code(state.world_state, addr)
-          hash = ExKeccak.hash_256(code)
-          <<hash_int::unsigned-big-256>> = hash
-          hash_int
-        else
-          0
-        end
+      {access_cost, state_after_access} = Access.address_access_cost(%{state | stack: s1}, addr)
 
-      with {:ok, s2} <- Stack.push(s1, hash_value) do
-        {:ok, %{state | stack: s2} |> MachineState.advance_pc()}
-      else
-        {:error, reason} -> {:error, reason, state}
+      case MachineState.consume_gas(state_after_access, access_cost) do
+        {:ok, state_after_gas} ->
+          hash_value =
+            if WorldState.account_exists?(state_after_gas.world_state, addr) do
+              code = WorldState.get_code(state_after_gas.world_state, addr)
+              hash = ExKeccak.hash_256(code)
+              <<hash_int::unsigned-big-256>> = hash
+              hash_int
+            else
+              0
+            end
+
+          case Stack.push(state_after_gas.stack, hash_value) do
+            {:ok, s2} -> {:ok, %{state_after_gas | stack: s2} |> MachineState.advance_pc()}
+            {:error, reason} -> {:error, reason, state_after_gas}
+          end
+
+        {:error, :out_of_gas, halted_state} ->
+          {:error, :out_of_gas, halted_state}
       end
     else
       {:error, reason} -> {:error, reason, state}

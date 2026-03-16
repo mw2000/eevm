@@ -39,6 +39,8 @@ defmodule EEVM.MachineState do
           tx: Transaction.t(),
           block: Block.t(),
           contract: Contract.t(),
+          accessed_addresses: MapSet.t(non_neg_integer()),
+          accessed_storage_keys: MapSet.t({non_neg_integer(), non_neg_integer()}),
           world_state: WorldState.t(),
           call_stack: [CallFrame.t()],
           frame_return_offset: non_neg_integer(),
@@ -61,6 +63,8 @@ defmodule EEVM.MachineState do
             tx: nil,
             block: nil,
             contract: nil,
+            accessed_addresses: nil,
+            accessed_storage_keys: nil,
             world_state: nil,
             call_stack: [],
             frame_return_offset: 0,
@@ -99,15 +103,21 @@ defmodule EEVM.MachineState do
   """
   @spec new(binary(), keyword()) :: t()
   def new(code, opts \\ []) do
+    contract = Keyword.get(opts, :contract, Contract.new())
+    tx = Keyword.get(opts, :tx, Transaction.new())
+
     %__MODULE__{
       code: code,
       stack: Stack.new(),
       memory: Memory.new(),
       storage: Keyword.get(opts, :storage, Storage.new()),
       transient_storage: Keyword.get(opts, :transient_storage, %{}),
-      tx: Keyword.get(opts, :tx, Transaction.new()),
+      tx: tx,
       block: Keyword.get(opts, :block, Block.new()),
-      contract: Keyword.get(opts, :contract, Contract.new()),
+      contract: contract,
+      accessed_addresses:
+        Keyword.get(opts, :accessed_addresses, pre_warm_addresses(contract, tx)),
+      accessed_storage_keys: Keyword.get(opts, :accessed_storage_keys, MapSet.new()),
       world_state: Keyword.get(opts, :world_state, WorldState.new()),
       call_stack: Keyword.get(opts, :call_stack, []),
       frame_return_offset: Keyword.get(opts, :frame_return_offset, 0),
@@ -117,6 +127,16 @@ defmodule EEVM.MachineState do
       return_data: Keyword.get(opts, :return_data, <<>>),
       gas: Keyword.get(opts, :gas, 1_000_000)
     }
+  end
+
+  defp pre_warm_addresses(contract, tx) do
+    MapSet.new()
+    |> MapSet.put(contract.address)
+    |> MapSet.put(contract.caller)
+    |> MapSet.put(tx.origin)
+    |> then(fn set ->
+      Enum.reduce(0x01..0x0A, set, &MapSet.put(&2, &1))
+    end)
   end
 
   @doc "Returns the opcode byte at the current program counter, or nil if past end."
