@@ -60,12 +60,14 @@ defmodule EEVM.StorageTest do
       assert result.gas == 100_000 - 20_006
     end
 
-    test "SLOAD gas cost is 200" do
+    test "SLOAD cold gas cost is 2100" do
       # PUSH1 0, SLOAD, STOP
-      # Gas: PUSH1=3 + SLOAD=200 + STOP=0 = 203
       code = <<0x60, 0, 0x54, 0x00>>
       result = EEVM.execute(code, gas: 1_000)
-      assert result.gas == 1_000 - 203
+      assert result.status == :out_of_gas
+
+      result = EEVM.execute(code, gas: 3_000)
+      assert result.gas == 3_000 - 2103
     end
 
     test "SSTORE out of gas" do

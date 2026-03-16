@@ -224,7 +224,7 @@ defmodule EEVM.Opcodes.EnvironmentTest do
     end
 
     test "BALANCE costs 2600 gas" do
-      code = <<0x60, 0, 0x31, 0x00>>
+      code = <<0x60, 0x0B, 0x31, 0x00>>
       result = EEVM.execute(code, gas: 10_000)
       # PUSH1=3 + BALANCE=2600 + STOP=0 = 2603
       assert result.gas == 10_000 - 2603
@@ -388,14 +388,15 @@ defmodule EEVM.Opcodes.EnvironmentTest do
     end
 
     test "EXTCODECOPY gas includes static, copy, and memory expansion" do
-      world_state = WorldState.new(%{1 => %{code: <<0xAA, 0xBB, 0xCC, 0xDD>>}})
-      code = <<0x60, 4, 0x60, 0, 0x60, 0, 0x60, 1, 0x3C, 0x60, 0, 0x51, 0x00>>
-      initial_gas = 1_000
+      world_state = WorldState.new(%{11 => %{code: <<0xAA, 0xBB, 0xCC, 0xDD>>}})
+      code = <<0x60, 4, 0x60, 0, 0x60, 0, 0x60, 11, 0x3C, 0x60, 0, 0x51, 0x00>>
+      initial_gas = 10_000
 
       result = EEVM.execute(code, gas: initial_gas, world_state: world_state)
 
       expected_spent =
         Static.static_cost(0x60) * 5 +
+          2600 +
           Static.static_cost(0x3C) +
           Dynamic.copy_cost(4) +
           Memory.memory_expansion_cost(0, 0, 4) +

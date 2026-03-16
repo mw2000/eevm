@@ -10,10 +10,8 @@ defmodule EEVM.Gas.Static do
   @gas_jumpdest 1
 
   @gas_keccak256 30
-  @gas_sload 200
   @gas_sstore 20_000
   @gas_blockhash 20
-  @gas_balance 2600
   @gas_selfbalance 5
   @gas_log 375
   @gas_warm_access 100
@@ -52,7 +50,7 @@ defmodule EEVM.Gas.Static do
   def static_cost(0x20), do: @gas_keccak256
 
   def static_cost(0x30), do: @gas_base
-  def static_cost(0x31), do: @gas_balance
+  def static_cost(0x31), do: 0
   def static_cost(0x32), do: @gas_base
   def static_cost(0x33), do: @gas_base
   def static_cost(0x34), do: @gas_base
@@ -62,11 +60,11 @@ defmodule EEVM.Gas.Static do
   def static_cost(0x38), do: @gas_base
   def static_cost(0x39), do: @gas_very_low
   def static_cost(0x3A), do: @gas_base
-  def static_cost(0x3B), do: @gas_warm_access
-  def static_cost(0x3C), do: @gas_warm_access
+  def static_cost(0x3B), do: 0
+  def static_cost(0x3C), do: 0
   def static_cost(0x3D), do: @gas_base
   def static_cost(0x3E), do: @gas_very_low
-  def static_cost(0x3F), do: @gas_warm_access
+  def static_cost(0x3F), do: 0
   def static_cost(0x40), do: @gas_blockhash
   def static_cost(0x41), do: @gas_base
   def static_cost(0x42), do: @gas_base
@@ -83,7 +81,7 @@ defmodule EEVM.Gas.Static do
   def static_cost(0x51), do: @gas_very_low
   def static_cost(0x52), do: @gas_very_low
   def static_cost(0x53), do: @gas_very_low
-  def static_cost(0x54), do: @gas_sload
+  def static_cost(0x54), do: 0
   def static_cost(0x55), do: @gas_sstore
   def static_cost(0x56), do: @gas_mid
   def static_cost(0x57), do: @gas_high
