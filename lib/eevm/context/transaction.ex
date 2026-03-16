@@ -16,6 +16,7 @@ defmodule EEVM.Context.Transaction do
   |-------|--------|-------------|
   | `origin` | ORIGIN (0x32) | The externally owned account (EOA) that signed the tx |
   | `gasprice` | GASPRICE (0x3A) | Gas price in wei the sender is paying |
+  | `blob_hashes` | BLOBHASH (0x49) | List of blob versioned hashes from EIP-4844 transaction payload |
 
   ### Origin vs Caller
 
@@ -32,11 +33,13 @@ defmodule EEVM.Context.Transaction do
 
   @type t :: %__MODULE__{
           origin: non_neg_integer(),
-          gasprice: non_neg_integer()
+          gasprice: non_neg_integer(),
+          blob_hashes: [non_neg_integer()]
         }
 
   defstruct origin: 0,
-            gasprice: 0
+            gasprice: 0,
+            blob_hashes: []
 
   @doc "Creates a new transaction context with default values."
   @spec new() :: t()

@@ -19,6 +19,7 @@ defmodule EEVM.Context.Block do
   | `gaslimit` | GASLIMIT (0x45) | Block gas limit |
   | `prevrandao` | PREVRANDAO (0x44) | Previous block's RANDAO mix (post-Merge) |
   | `basefee` | BASEFEE (0x48) | Block base fee from EIP-1559 |
+  | `blob_base_fee` | BLOBBASEFEE (0x4A) | Block blob base fee from EIP-7516 |
   | `chain_id` | CHAINID (0x46) | Network ID (1=mainnet, 137=Polygon, etc.) |
   | `hashes` | BLOCKHASH (0x40) | Map of recent block numbers to their hashes |
 
@@ -42,6 +43,7 @@ defmodule EEVM.Context.Block do
           gaslimit: non_neg_integer(),
           prevrandao: non_neg_integer(),
           basefee: non_neg_integer(),
+          blob_base_fee: non_neg_integer(),
           chain_id: non_neg_integer(),
           hashes: %{non_neg_integer() => non_neg_integer()}
         }
@@ -52,6 +54,7 @@ defmodule EEVM.Context.Block do
             gaslimit: 0,
             prevrandao: 0,
             basefee: 0,
+            blob_base_fee: 0,
             chain_id: 1,
             hashes: %{}
 

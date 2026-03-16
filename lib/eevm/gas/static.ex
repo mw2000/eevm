@@ -76,6 +76,8 @@ defmodule EEVM.Gas.Static do
   def static_cost(0x46), do: @gas_base
   def static_cost(0x47), do: @gas_selfbalance
   def static_cost(0x48), do: @gas_base
+  def static_cost(0x49), do: @gas_very_low
+  def static_cost(0x4A), do: @gas_base
 
   def static_cost(0x50), do: @gas_base
   def static_cost(0x51), do: @gas_very_low
