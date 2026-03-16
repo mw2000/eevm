@@ -132,6 +132,9 @@ defmodule EEVM.Executor do
   defp execute_opcode(0x55, %{is_static: true} = state),
     do: {:ok, MachineState.halt(state, :reverted)}
 
+  defp execute_opcode(0x5D, %{is_static: true} = state),
+    do: {:ok, MachineState.halt(state, :reverted)}
+
   defp execute_opcode(op, %{is_static: true} = state) when op in 0xA0..0xA4,
     do: {:ok, MachineState.halt(state, :reverted)}
 
@@ -161,7 +164,9 @@ defmodule EEVM.Executor do
   defp execute_opcode(op, state) when op in [0x51, 0x52, 0x53, 0x59, 0x5E],
     do: MemoryOps.execute(op, state)
 
-  defp execute_opcode(op, state) when op in [0x54, 0x55], do: StorageOps.execute(op, state)
+  defp execute_opcode(op, state) when op in [0x54, 0x55, 0x5C, 0x5D],
+    do: StorageOps.execute(op, state)
+
   defp execute_opcode(0x5A, state), do: Simple.execute(0x5A, state)
   defp execute_opcode(op, state) when op in 0x56..0x5B, do: ControlFlow.execute(op, state)
   defp execute_opcode(0x5F, state), do: ControlFlow.execute(0x5F, state)
