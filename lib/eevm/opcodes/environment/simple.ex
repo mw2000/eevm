@@ -22,6 +22,7 @@ defmodule EEVM.Opcodes.Environment.Simple do
   def execute(0x45, state), do: Helpers.push_value(state, state.block.gaslimit)
   def execute(0x46, state), do: Helpers.push_value(state, state.block.chain_id)
   def execute(0x48, state), do: Helpers.push_value(state, state.block.basefee)
+  def execute(0x4A, state), do: Helpers.push_value(state, state.block.blob_base_fee)
   def execute(0x5A, state), do: Helpers.push_value(state, state.gas)
 
   def execute(0x40, state) do
@@ -29,6 +30,19 @@ defmodule EEVM.Opcodes.Environment.Simple do
          hash = Block.hash(state.block, block_num),
          {:ok, s2} <- Stack.push(s1, hash) do
       {:ok, %{state | stack: s2} |> MachineState.advance_pc()}
+    else
+      {:error, reason} -> {:error, reason, state}
+    end
+  end
+
+  def execute(0x49, state) do
+    with {:ok, index, s1} <- Stack.pop(state.stack) do
+      value = Enum.at(state.tx.blob_hashes, index, 0)
+
+      case Stack.push(s1, value) do
+        {:ok, s2} -> {:ok, %{state | stack: s2} |> MachineState.advance_pc()}
+        {:error, reason} -> {:error, reason, state}
+      end
     else
       {:error, reason} -> {:error, reason, state}
     end
