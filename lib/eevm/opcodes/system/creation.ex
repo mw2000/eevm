@@ -1,6 +1,10 @@
 defmodule EEVM.Opcodes.System.Creation do
   @moduledoc false
 
+  @max_code_size 24_576
+  @max_initcode_size 49_152
+  @initcode_word_cost 2
+
   alias EEVM.{Executor, MachineState, Memory, Stack, WorldState}
   alias EEVM.Gas.Dynamic
   alias EEVM.Gas.Memory, as: GasMemory
@@ -177,82 +181,115 @@ defmodule EEVM.Opcodes.System.Creation do
 
     case MachineState.consume_gas(%{state | stack: stack}, extra_cost) do
       {:ok, state_after_cost} ->
-        {init_code, memory_after_read} = Memory.read_bytes(state_after_cost.memory, offset, size)
-
         creator = state_after_cost.contract.address
         nonce = WorldState.get_nonce(state_after_cost.world_state, creator)
 
         world_state_after_nonce =
           WorldState.increment_nonce(state_after_cost.world_state, creator)
 
-        new_address =
-          if salt == nil,
-            do: derive_create_address(creator, nonce),
-            else: derive_create2_address(creator, salt, init_code)
+        if size > @max_initcode_size do
+          create_failed(%{state_after_cost | world_state: world_state_after_nonce}, stack)
+        else
+          initcode_cost = @initcode_word_cost * div(size + 31, 32)
 
-        can_create = can_create_account?(world_state_after_nonce, new_address)
+          case MachineState.consume_gas(state_after_cost, initcode_cost) do
+            {:ok, state_after_initcode_cost} ->
+              {init_code, memory_after_read} =
+                Memory.read_bytes(state_after_initcode_cost.memory, offset, size)
 
-        if can_create do
-          case WorldState.transfer(world_state_after_nonce, creator, new_address, value) do
-            {:ok, world_state_after_transfer} ->
-              child_contract =
-                Contract.new(
-                  address: new_address,
-                  caller: creator,
-                  callvalue: value,
-                  calldata: <<>>,
-                  balances: state_after_cost.contract.balances
-                )
+              new_address =
+                if salt == nil,
+                  do: derive_create_address(creator, nonce),
+                  else: derive_create2_address(creator, salt, init_code)
 
-              child_state =
-                MachineState.new(init_code,
-                  gas: state_after_cost.gas,
-                  storage: state_after_cost.storage,
-                  tx: state_after_cost.tx,
-                  block: state_after_cost.block,
-                  contract: child_contract,
-                  world_state: world_state_after_transfer,
-                  is_static: state_after_cost.is_static,
-                  depth: state_after_cost.depth + 1
-                )
+              can_create = can_create_account?(world_state_after_nonce, new_address)
 
-              child_result = Executor.run_loop(child_state)
-              deployment_success = child_result.status == :stopped
+              if can_create do
+                case WorldState.transfer(world_state_after_nonce, creator, new_address, value) do
+                  {:ok, world_state_after_transfer} ->
+                    child_contract =
+                      Contract.new(
+                        address: new_address,
+                        caller: creator,
+                        callvalue: value,
+                        calldata: <<>>,
+                        balances: state_after_initcode_cost.contract.balances
+                      )
 
-              if deployment_success do
-                runtime_code = child_result.return_data
-                deposit_cost = Dynamic.code_deposit_cost(byte_size(runtime_code))
+                    child_state =
+                      MachineState.new(init_code,
+                        gas: state_after_initcode_cost.gas,
+                        storage: state_after_initcode_cost.storage,
+                        tx: state_after_initcode_cost.tx,
+                        block: state_after_initcode_cost.block,
+                        contract: child_contract,
+                        world_state: world_state_after_transfer,
+                        is_static: state_after_initcode_cost.is_static,
+                        depth: state_after_initcode_cost.depth + 1
+                      )
 
-                if child_result.gas >= deposit_cost do
-                  world_state_after_deploy =
-                    child_result.world_state
-                    |> WorldState.put_code(new_address, runtime_code)
-                    |> WorldState.set_nonce(new_address, 1)
+                    child_result = Executor.run_loop(child_state)
+                    deployment_success = child_result.status == :stopped
 
-                  {:ok, stack_after_create} = Stack.push(stack, new_address)
+                    if deployment_success do
+                      runtime_code = child_result.return_data
 
-                  {:ok,
-                   state_after_cost
-                   |> Map.put(:stack, stack_after_create)
-                   |> Map.put(:memory, memory_after_read)
-                   |> Map.put(:world_state, world_state_after_deploy)
-                   |> Map.put(:storage, child_result.storage)
-                   |> Map.put(:logs, state_after_cost.logs ++ child_result.logs)
-                   |> Map.put(:gas, child_result.gas - deposit_cost)
-                   |> Map.put(:return_data, child_result.return_data)
-                   |> MachineState.advance_pc()}
-                else
-                  create_failed(%{state_after_cost | world_state: world_state_after_nonce}, stack)
+                      if byte_size(runtime_code) > @max_code_size do
+                        create_failed(
+                          %{state_after_initcode_cost | world_state: world_state_after_nonce},
+                          stack
+                        )
+                      else
+                        deposit_cost = Dynamic.code_deposit_cost(byte_size(runtime_code))
+
+                        if child_result.gas >= deposit_cost do
+                          world_state_after_deploy =
+                            child_result.world_state
+                            |> WorldState.put_code(new_address, runtime_code)
+                            |> WorldState.set_nonce(new_address, 1)
+
+                          {:ok, stack_after_create} = Stack.push(stack, new_address)
+
+                          {:ok,
+                           state_after_initcode_cost
+                           |> Map.put(:stack, stack_after_create)
+                           |> Map.put(:memory, memory_after_read)
+                           |> Map.put(:world_state, world_state_after_deploy)
+                           |> Map.put(:storage, child_result.storage)
+                           |> Map.put(:logs, state_after_initcode_cost.logs ++ child_result.logs)
+                           |> Map.put(:gas, child_result.gas - deposit_cost)
+                           |> Map.put(:return_data, child_result.return_data)
+                           |> MachineState.advance_pc()}
+                        else
+                          create_failed(
+                            %{state_after_initcode_cost | world_state: world_state_after_nonce},
+                            stack
+                          )
+                        end
+                      end
+                    else
+                      create_failed(
+                        %{state_after_initcode_cost | world_state: world_state_after_nonce},
+                        stack
+                      )
+                    end
+
+                  {:error, :insufficient_balance} ->
+                    create_failed(
+                      %{state_after_initcode_cost | world_state: world_state_after_nonce},
+                      stack
+                    )
                 end
               else
-                create_failed(%{state_after_cost | world_state: world_state_after_nonce}, stack)
+                create_failed(
+                  %{state_after_initcode_cost | world_state: world_state_after_nonce},
+                  stack
+                )
               end
 
-            {:error, :insufficient_balance} ->
-              create_failed(%{state_after_cost | world_state: world_state_after_nonce}, stack)
+            {:error, :out_of_gas, halted_state} ->
+              {:error, :out_of_gas, halted_state}
           end
-        else
-          create_failed(%{state_after_cost | world_state: world_state_after_nonce}, stack)
         end
 
       {:error, :out_of_gas, halted_state} ->
