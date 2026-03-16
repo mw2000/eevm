@@ -9,6 +9,7 @@ defmodule EEVM.Opcodes.System.Creation do
   alias EEVM.Gas.Dynamic
   alias EEVM.Gas.Memory, as: GasMemory
   alias EEVM.Context.Contract
+  alias EEVM.Precompiles
 
   @spec execute(non_neg_integer(), MachineState.t()) ::
           {:ok, MachineState.t()} | {:error, atom(), MachineState.t()}
@@ -405,63 +406,93 @@ defmodule EEVM.Opcodes.System.Creation do
         {:ok, state_after_forward} ->
           target_code = WorldState.get_code(world_state_after_transfer, address)
 
-          child_contract =
-            Contract.new(
-              address: address,
-              caller: state_after_forward.contract.address,
-              callvalue: value,
-              calldata: calldata,
-              balances: state_after_forward.contract.balances
-            )
+          if Precompiles.is_precompile?(address) and target_code == <<>> do
+            child_gas = forwarded_gas + Dynamic.call_stipend(value)
 
-          child_gas = forwarded_gas + Dynamic.call_stipend(value)
+            case Precompiles.execute(address, calldata, child_gas) do
+              {:ok, output, gas_used} ->
+                remaining_gas = child_gas - gas_used
+                memory_result = write_return_data(memory_after_read, ret_offset, ret_size, output)
+                {:ok, stack_after_call} = Stack.push(state_after_forward.stack, 1)
 
-          child_state =
-            MachineState.new(target_code,
-              gas: child_gas,
-              storage: state_after_forward.storage,
-              tx: state_after_forward.tx,
-              block: state_after_forward.block,
-              contract: child_contract,
-              world_state: world_state_after_transfer,
-              is_static: state_after_forward.is_static,
-              depth: state_after_forward.depth + 1
-            )
+                {:ok,
+                 state_after_forward
+                 |> Map.put(:stack, stack_after_call)
+                 |> Map.put(:memory, memory_result)
+                 |> Map.put(:return_data, output)
+                 |> Map.put(:gas, state_after_forward.gas + remaining_gas)
+                 |> MachineState.advance_pc()}
 
-          child_result = Executor.run_loop(child_state)
-          call_succeeded = child_result.status == :stopped
+              {:error, _reason} ->
+                memory_result = write_return_data(memory_after_read, ret_offset, ret_size, <<>>)
+                {:ok, stack_after_call} = Stack.push(state_after_forward.stack, 0)
 
-          world_state_result =
-            if call_succeeded,
-              do: child_result.world_state,
-              else: state_after_forward.world_state
+                {:ok,
+                 state_after_forward
+                 |> Map.put(:stack, stack_after_call)
+                 |> Map.put(:memory, memory_result)
+                 |> Map.put(:return_data, <<>>)
+                 |> MachineState.advance_pc()}
+            end
+          else
+            child_contract =
+              Contract.new(
+                address: address,
+                caller: state_after_forward.contract.address,
+                callvalue: value,
+                calldata: calldata,
+                balances: state_after_forward.contract.balances
+              )
 
-          storage_result =
-            if call_succeeded,
-              do: child_result.storage,
-              else: state_after_forward.storage
+            child_gas = forwarded_gas + Dynamic.call_stipend(value)
 
-          logs_result =
-            if call_succeeded,
-              do: state_after_forward.logs ++ child_result.logs,
-              else: state_after_forward.logs
+            child_state =
+              MachineState.new(target_code,
+                gas: child_gas,
+                storage: state_after_forward.storage,
+                tx: state_after_forward.tx,
+                block: state_after_forward.block,
+                contract: child_contract,
+                world_state: world_state_after_transfer,
+                is_static: state_after_forward.is_static,
+                depth: state_after_forward.depth + 1
+              )
 
-          memory_result =
-            write_return_data(memory_after_read, ret_offset, ret_size, child_result.return_data)
+            child_result = Executor.run_loop(child_state)
+            call_succeeded = child_result.status == :stopped
 
-          result_flag = if(call_succeeded, do: 1, else: 0)
-          {:ok, stack_after_call} = Stack.push(state_after_forward.stack, result_flag)
+            world_state_result =
+              if call_succeeded,
+                do: child_result.world_state,
+                else: state_after_forward.world_state
 
-          {:ok,
-           state_after_forward
-           |> Map.put(:stack, stack_after_call)
-           |> Map.put(:memory, memory_result)
-           |> Map.put(:return_data, child_result.return_data)
-           |> Map.put(:world_state, world_state_result)
-           |> Map.put(:storage, storage_result)
-           |> Map.put(:logs, logs_result)
-           |> Map.put(:gas, state_after_forward.gas + child_result.gas)
-           |> MachineState.advance_pc()}
+            storage_result =
+              if call_succeeded,
+                do: child_result.storage,
+                else: state_after_forward.storage
+
+            logs_result =
+              if call_succeeded,
+                do: state_after_forward.logs ++ child_result.logs,
+                else: state_after_forward.logs
+
+            memory_result =
+              write_return_data(memory_after_read, ret_offset, ret_size, child_result.return_data)
+
+            result_flag = if(call_succeeded, do: 1, else: 0)
+            {:ok, stack_after_call} = Stack.push(state_after_forward.stack, result_flag)
+
+            {:ok,
+             state_after_forward
+             |> Map.put(:stack, stack_after_call)
+             |> Map.put(:memory, memory_result)
+             |> Map.put(:return_data, child_result.return_data)
+             |> Map.put(:world_state, world_state_result)
+             |> Map.put(:storage, storage_result)
+             |> Map.put(:logs, logs_result)
+             |> Map.put(:gas, state_after_forward.gas + child_result.gas)
+             |> MachineState.advance_pc()}
+          end
 
         {:error, :out_of_gas, _halted_state} ->
           call_failed(state_after_cost, stack)
@@ -504,66 +535,94 @@ defmodule EEVM.Opcodes.System.Creation do
              forwarded_gas
            ) do
         {:ok, state_after_forward} ->
-          target_code = WorldState.get_code(state_after_forward.world_state, address)
-
-          child_contract =
-            Contract.new(
-              address: state_after_forward.contract.address,
-              caller: caller,
-              callvalue: callvalue,
-              calldata: calldata,
-              balances: state_after_forward.contract.balances
-            )
-
           child_gas =
             forwarded_gas + if(add_stipend?, do: Dynamic.call_stipend(callvalue), else: 0)
 
-          child_state =
-            MachineState.new(target_code,
-              gas: child_gas,
-              storage: state_after_forward.storage,
-              tx: state_after_forward.tx,
-              block: state_after_forward.block,
-              contract: child_contract,
-              world_state: state_after_forward.world_state,
-              is_static: state_after_forward.is_static,
-              depth: state_after_forward.depth + 1
-            )
+          target_code = WorldState.get_code(state_after_forward.world_state, address)
 
-          child_result = Executor.run_loop(child_state)
-          call_succeeded = child_result.status == :stopped
+          if Precompiles.is_precompile?(address) and target_code == <<>> do
+            case Precompiles.execute(address, calldata, child_gas) do
+              {:ok, output, gas_used} ->
+                remaining_gas = child_gas - gas_used
+                memory_result = write_return_data(memory_after_read, ret_offset, ret_size, output)
+                {:ok, stack_after_call} = Stack.push(state_after_forward.stack, 1)
 
-          world_state_result =
-            if call_succeeded,
-              do: child_result.world_state,
-              else: state_after_forward.world_state
+                {:ok,
+                 state_after_forward
+                 |> Map.put(:stack, stack_after_call)
+                 |> Map.put(:memory, memory_result)
+                 |> Map.put(:return_data, output)
+                 |> Map.put(:gas, state_after_forward.gas + remaining_gas)
+                 |> MachineState.advance_pc()}
 
-          storage_result =
-            if call_succeeded,
-              do: child_result.storage,
-              else: state_after_forward.storage
+              {:error, _reason} ->
+                memory_result = write_return_data(memory_after_read, ret_offset, ret_size, <<>>)
+                {:ok, stack_after_call} = Stack.push(state_after_forward.stack, 0)
 
-          logs_result =
-            if call_succeeded,
-              do: state_after_forward.logs ++ child_result.logs,
-              else: state_after_forward.logs
+                {:ok,
+                 state_after_forward
+                 |> Map.put(:stack, stack_after_call)
+                 |> Map.put(:memory, memory_result)
+                 |> Map.put(:return_data, <<>>)
+                 |> MachineState.advance_pc()}
+            end
+          else
+            child_contract =
+              Contract.new(
+                address: state_after_forward.contract.address,
+                caller: caller,
+                callvalue: callvalue,
+                calldata: calldata,
+                balances: state_after_forward.contract.balances
+              )
 
-          memory_result =
-            write_return_data(memory_after_read, ret_offset, ret_size, child_result.return_data)
+            child_state =
+              MachineState.new(target_code,
+                gas: child_gas,
+                storage: state_after_forward.storage,
+                tx: state_after_forward.tx,
+                block: state_after_forward.block,
+                contract: child_contract,
+                world_state: state_after_forward.world_state,
+                is_static: state_after_forward.is_static,
+                depth: state_after_forward.depth + 1
+              )
 
-          result_flag = if(call_succeeded, do: 1, else: 0)
-          {:ok, stack_after_call} = Stack.push(state_after_forward.stack, result_flag)
+            child_result = Executor.run_loop(child_state)
+            call_succeeded = child_result.status == :stopped
 
-          {:ok,
-           state_after_forward
-           |> Map.put(:stack, stack_after_call)
-           |> Map.put(:memory, memory_result)
-           |> Map.put(:return_data, child_result.return_data)
-           |> Map.put(:world_state, world_state_result)
-           |> Map.put(:storage, storage_result)
-           |> Map.put(:logs, logs_result)
-           |> Map.put(:gas, state_after_forward.gas + child_result.gas)
-           |> MachineState.advance_pc()}
+            world_state_result =
+              if call_succeeded,
+                do: child_result.world_state,
+                else: state_after_forward.world_state
+
+            storage_result =
+              if call_succeeded,
+                do: child_result.storage,
+                else: state_after_forward.storage
+
+            logs_result =
+              if call_succeeded,
+                do: state_after_forward.logs ++ child_result.logs,
+                else: state_after_forward.logs
+
+            memory_result =
+              write_return_data(memory_after_read, ret_offset, ret_size, child_result.return_data)
+
+            result_flag = if(call_succeeded, do: 1, else: 0)
+            {:ok, stack_after_call} = Stack.push(state_after_forward.stack, result_flag)
+
+            {:ok,
+             state_after_forward
+             |> Map.put(:stack, stack_after_call)
+             |> Map.put(:memory, memory_result)
+             |> Map.put(:return_data, child_result.return_data)
+             |> Map.put(:world_state, world_state_result)
+             |> Map.put(:storage, storage_result)
+             |> Map.put(:logs, logs_result)
+             |> Map.put(:gas, state_after_forward.gas + child_result.gas)
+             |> MachineState.advance_pc()}
+          end
 
         {:error, :out_of_gas, _halted_state} ->
           call_failed(state_after_cost, stack)
