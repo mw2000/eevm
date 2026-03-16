@@ -16,6 +16,7 @@ defmodule EEVM.Gas.Static do
   @gas_log 375
   @gas_warm_access 100
   @gas_create 32_000
+  @gas_selfdestruct 5000
 
   @spec static_cost(non_neg_integer()) :: non_neg_integer()
   def static_cost(0x00), do: @gas_zero
@@ -109,6 +110,7 @@ defmodule EEVM.Gas.Static do
   def static_cost(0xFA), do: @gas_warm_access
   def static_cost(0xFD), do: @gas_zero
   def static_cost(0xFE), do: @gas_zero
+  def static_cost(0xFF), do: @gas_selfdestruct
 
   def static_cost(_), do: @gas_zero
 end

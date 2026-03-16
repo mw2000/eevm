@@ -1,7 +1,7 @@
 defmodule EEVM.Opcodes.System.Termination do
   @moduledoc false
 
-  alias EEVM.{MachineState, Memory, Stack}
+  alias EEVM.{MachineState, Memory, Stack, WorldState}
   alias EEVM.Gas.Memory, as: GasMemory
 
   @spec execute(non_neg_integer(), MachineState.t()) ::
@@ -41,6 +41,37 @@ defmodule EEVM.Opcodes.System.Termination do
     else
       {:error, reason} -> {:error, reason, state}
       {:error, :out_of_gas, halted_state} -> {:error, :out_of_gas, halted_state}
+    end
+  end
+
+  def execute(0xFF, state) do
+    with {:ok, beneficiary, s1} <- Stack.pop(state.stack) do
+      contract_address = state.contract.address
+      balance = WorldState.get_balance(state.world_state, contract_address)
+
+      beneficiary_exists = WorldState.account_exists?(state.world_state, beneficiary)
+      dynamic_cost = if not beneficiary_exists and balance > 0, do: 25_000, else: 0
+
+      case MachineState.consume_gas(%{state | stack: s1}, dynamic_cost) do
+        {:ok, state_after_gas} ->
+          world_state_zeroed =
+            state_after_gas.world_state
+            |> WorldState.set_balance(contract_address, 0)
+
+          world_state_after =
+            world_state_zeroed
+            |> WorldState.set_balance(
+              beneficiary,
+              WorldState.get_balance(world_state_zeroed, beneficiary) + balance
+            )
+
+          {:ok, MachineState.halt(%{state_after_gas | world_state: world_state_after}, :stopped)}
+
+        {:error, :out_of_gas, halted_state} ->
+          {:error, :out_of_gas, halted_state}
+      end
+    else
+      {:error, reason} -> {:error, reason, state}
     end
   end
 
