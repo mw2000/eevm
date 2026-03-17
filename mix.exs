@@ -28,6 +28,7 @@ defmodule EEVM.MixProject do
     [
       # Keccak-256 hash (Ethereum uses Keccak, not SHA3-256)
       {:ex_keccak, "~> 0.7"},
+      {:ex_secp256k1, "~> 0.7"},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev], runtime: false}
     ]

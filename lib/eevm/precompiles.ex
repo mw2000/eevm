@@ -1,6 +1,7 @@
 defmodule EEVM.Precompiles do
   @moduledoc false
 
+  alias EEVM.Precompiles.ECRecover
   alias EEVM.Precompiles.Identity
   alias EEVM.Precompiles.Blake2F
   alias EEVM.Precompiles.ModExp
@@ -13,6 +14,7 @@ defmodule EEVM.Precompiles do
 
   @spec execute(non_neg_integer(), binary(), non_neg_integer()) ::
           {:ok, binary(), non_neg_integer()} | {:error, atom()}
+  def execute(0x01, input, gas_limit), do: ECRecover.execute(input, gas_limit)
   def execute(0x02, input, gas_limit), do: SHA256.execute(input, gas_limit)
   def execute(0x03, input, gas_limit), do: RIPEMD160.execute(input, gas_limit)
   def execute(0x04, input, gas_limit), do: Identity.execute(input, gas_limit)
