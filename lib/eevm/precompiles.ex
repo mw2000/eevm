@@ -3,6 +3,7 @@ defmodule EEVM.Precompiles do
 
   alias EEVM.Precompiles.Identity
   alias EEVM.Precompiles.Blake2F
+  alias EEVM.Precompiles.ModExp
   alias EEVM.Precompiles.RIPEMD160
   alias EEVM.Precompiles.SHA256
 
@@ -15,6 +16,7 @@ defmodule EEVM.Precompiles do
   def execute(0x02, input, gas_limit), do: SHA256.execute(input, gas_limit)
   def execute(0x03, input, gas_limit), do: RIPEMD160.execute(input, gas_limit)
   def execute(0x04, input, gas_limit), do: Identity.execute(input, gas_limit)
+  def execute(0x05, input, gas_limit), do: ModExp.execute(input, gas_limit)
   def execute(0x09, input, gas_limit), do: Blake2F.execute(input, gas_limit)
 
   def execute(address, input, gas_limit) do
