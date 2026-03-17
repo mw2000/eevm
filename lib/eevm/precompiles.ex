@@ -1,6 +1,7 @@
 defmodule EEVM.Precompiles do
   @moduledoc false
 
+  alias EEVM.Precompiles.Identity
   alias EEVM.Precompiles.RIPEMD160
 
   @spec is_precompile?(non_neg_integer()) :: boolean()
@@ -10,6 +11,7 @@ defmodule EEVM.Precompiles do
   @spec execute(non_neg_integer(), binary(), non_neg_integer()) ::
           {:ok, binary(), non_neg_integer()} | {:error, atom()}
   def execute(0x03, input, gas_limit), do: RIPEMD160.execute(input, gas_limit)
+  def execute(0x04, input, gas_limit), do: Identity.execute(input, gas_limit)
 
   def execute(address, input, gas_limit) do
     :erlang.apply(__MODULE__, :do_execute, [address, input, gas_limit])
