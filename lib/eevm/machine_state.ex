@@ -98,6 +98,7 @@ defmodule EEVM.MachineState do
       - `:frame_return_size` — parent memory write-back size (default: `0`)
       - `:is_static` — static context flag for this frame (default: `false`)
       - `:depth` — current call depth (default: `0`)
+      - `:refund` — gas refund counter (default: `0`)
 
   ## Example
 
