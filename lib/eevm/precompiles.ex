@@ -3,6 +3,7 @@ defmodule EEVM.Precompiles do
 
   alias EEVM.Precompiles.ECRecover
   alias EEVM.Precompiles.Identity
+  alias EEVM.Precompiles.KZGPointEval
   alias EEVM.Precompiles.Blake2F
   alias EEVM.Precompiles.ModExp
   alias EEVM.Precompiles.RIPEMD160
@@ -20,6 +21,7 @@ defmodule EEVM.Precompiles do
   def execute(0x04, input, gas_limit), do: Identity.execute(input, gas_limit)
   def execute(0x05, input, gas_limit), do: ModExp.execute(input, gas_limit)
   def execute(0x09, input, gas_limit), do: Blake2F.execute(input, gas_limit)
+  def execute(0x0A, input, gas_limit), do: KZGPointEval.execute(input, gas_limit)
 
   def execute(address, input, gas_limit) do
     :erlang.apply(__MODULE__, :do_execute, [address, input, gas_limit])
