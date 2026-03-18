@@ -48,6 +48,7 @@ defmodule EEVM.Executor do
     StackMemoryStorage.MemoryOps,
     StackMemoryStorage.StackOps,
     StackMemoryStorage.StorageOps,
+    System.Calls,
     System.Creation,
     System.Termination
   }
@@ -199,8 +200,11 @@ defmodule EEVM.Executor do
   defp execute_opcode(op, state) when op in 0x60..0x9F, do: ControlFlow.execute(op, state)
   defp execute_opcode(op, state) when op in 0xA0..0xA4, do: Logging.execute(op, state)
 
-  defp execute_opcode(op, state) when op in [0xF0, 0xF1, 0xF2, 0xF4, 0xF5, 0xFA],
+  defp execute_opcode(op, state) when op in [0xF0, 0xF5],
     do: Creation.execute(op, state)
+
+  defp execute_opcode(op, state) when op in [0xF1, 0xF2, 0xF4, 0xFA],
+    do: Calls.execute(op, state)
 
   defp execute_opcode(op, state) when op in [0xF3, 0xFD, 0xFE, 0xFF],
     do: Termination.execute(op, state)

@@ -1,5 +1,16 @@
 defmodule EEVM.Opcodes.StackMemoryStorage.MemoryOps do
-  @moduledoc false
+  @moduledoc """
+  Memory access opcodes: MLOAD, MSTORE, MSTORE8, MSIZE, and MCOPY.
+
+  These opcodes read from and write to EVM linear memory. Memory is byte-addressable
+  and expands on demand — each expansion incurs a gas cost calculated by `Gas.Memory`.
+
+  - **MLOAD** (0x51) — loads a 32-byte word from memory at the given offset.
+  - **MSTORE** (0x52) — stores a 32-byte word to memory at the given offset.
+  - **MSTORE8** (0x53) — stores a single byte (lowest byte of value) at the given offset.
+  - **MSIZE** (0x59) — pushes the current memory size in bytes.
+  - **MCOPY** (0x5E) — copies a region of memory to another location (EIP-5656).
+  """
 
   alias EEVM.{MachineState, Memory, Stack}
   alias EEVM.Gas.Dynamic

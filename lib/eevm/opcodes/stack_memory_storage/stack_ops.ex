@@ -1,5 +1,10 @@
 defmodule EEVM.Opcodes.StackMemoryStorage.StackOps do
-  @moduledoc false
+  @moduledoc """
+  Stack manipulation opcode: POP (0x50).
+
+  Removes the top element from the stack and discards it. Fails with
+  `:stack_underflow` if the stack is empty.
+  """
 
   alias EEVM.{MachineState, Stack}
 
