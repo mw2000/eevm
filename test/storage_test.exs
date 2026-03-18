@@ -52,12 +52,11 @@ defmodule EEVM.StorageTest do
       assert EEVM.stack_values(result) == [9999]
     end
 
-    test "SSTORE gas cost is 20000" do
+    test "SSTORE fresh write includes cold surcharge" do
       # PUSH1 1, PUSH1 0, SSTORE, STOP
-      # Gas: PUSH1=3 + PUSH1=3 + SSTORE=20000 + STOP=0 = 20006
       code = <<0x60, 1, 0x60, 0, 0x55, 0x00>>
       result = EEVM.execute(code, gas: 100_000)
-      assert result.gas == 100_000 - 20_006
+      assert result.gas == 100_000 - 22_106
     end
 
     test "SLOAD cold gas cost is 2100" do

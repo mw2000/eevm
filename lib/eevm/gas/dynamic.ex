@@ -13,6 +13,10 @@ defmodule EEVM.Gas.Dynamic do
   @gas_code_deposit 200
   @gas_call_value 9000
   @gas_new_account 25_000
+  @sstore_set_gas 20_000
+  @sstore_reset_gas 2_900
+  @sstore_clears_schedule 4_800
+  @sstore_noop_gas 100
 
   @spec exp_dynamic_cost(non_neg_integer()) :: non_neg_integer()
   def exp_dynamic_cost(0), do: 0
@@ -55,6 +59,56 @@ defmodule EEVM.Gas.Dynamic do
   @spec call_stipend(non_neg_integer()) :: non_neg_integer()
   def call_stipend(0), do: 0
   def call_stipend(_value), do: 2300
+
+  @spec sstore_cost(non_neg_integer(), non_neg_integer(), non_neg_integer()) ::
+          {non_neg_integer(), integer()}
+  def sstore_cost(original, current, new_value) do
+    cond do
+      current == new_value ->
+        {@sstore_noop_gas, 0}
+
+      original == current and original == 0 ->
+        {@sstore_set_gas, 0}
+
+      original == current ->
+        refund = if new_value == 0, do: @sstore_clears_schedule, else: 0
+        {@sstore_reset_gas, refund}
+
+      true ->
+        refund = dirty_slot_refund_delta(original, current, new_value)
+        {@sstore_noop_gas, refund}
+    end
+  end
+
+  @spec sstore_cost(non_neg_integer(), non_neg_integer(), non_neg_integer(), boolean()) ::
+          {non_neg_integer(), integer()}
+  def sstore_cost(original, current, new_value, _is_warm),
+    do: sstore_cost(original, current, new_value)
+
+  defp dirty_slot_refund_delta(original, current, new_value) do
+    base_refund =
+      if original != 0 do
+        0
+        |> maybe_subtract(current == 0, @sstore_clears_schedule)
+        |> maybe_add(new_value == 0, @sstore_clears_schedule)
+      else
+        0
+      end
+
+    if original == new_value do
+      if original == 0,
+        do: base_refund + (@sstore_set_gas - @sstore_noop_gas),
+        else: base_refund + (@sstore_reset_gas - @sstore_noop_gas)
+    else
+      base_refund
+    end
+  end
+
+  defp maybe_add(value, true, amount), do: value + amount
+  defp maybe_add(value, false, _amount), do: value
+
+  defp maybe_subtract(value, true, amount), do: value - amount
+  defp maybe_subtract(value, false, _amount), do: value
 
   defp word_count(0), do: 0
   defp word_count(byte_size), do: div(byte_size + 31, 32)
