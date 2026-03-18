@@ -29,6 +29,8 @@ defmodule EEVM.MixProject do
       # Keccak-256 hash (Ethereum uses Keccak, not SHA3-256)
       {:ex_keccak, "~> 0.7"},
       {:ex_secp256k1, "~> 0.7"},
+      # BN128 (alt_bn128) elliptic curve operations for EVM precompiles 0x06-0x08
+      {:bn, "~> 0.2.2"},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev], runtime: false}
     ]
