@@ -82,6 +82,18 @@ defmodule EEVM.WorldState do
     %{world_state | accounts: Map.put(accounts, address, account)}
   end
 
+  @doc """
+  Removes an account entirely from the world state.
+
+  Used by SELFDESTRUCT under EIP-6780: when a contract is created and
+  self-destructed within the same transaction, the account is fully deleted
+  (balance, nonce, code, and storage are all removed).
+  """
+  @spec delete_account(t(), non_neg_integer()) :: t()
+  def delete_account(%__MODULE__{accounts: accounts} = world_state, address) do
+    %{world_state | accounts: Map.delete(accounts, address)}
+  end
+
   @spec put_code(t(), non_neg_integer(), binary()) :: t()
   def put_code(world_state, address, code) when is_binary(code) do
     update_account(world_state, address, fn account -> Map.put(account, :code, code) end)

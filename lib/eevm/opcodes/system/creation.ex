@@ -115,6 +115,7 @@ defmodule EEVM.Opcodes.System.Creation do
                         world_state: world_state_after_transfer,
                         accessed_addresses: state_after_initcode_cost.accessed_addresses,
                         accessed_storage_keys: state_after_initcode_cost.accessed_storage_keys,
+                        created_addresses: state_after_initcode_cost.created_addresses,
                         is_static: state_after_initcode_cost.is_static,
                         depth: state_after_initcode_cost.depth + 1
                       )
@@ -141,6 +142,9 @@ defmodule EEVM.Opcodes.System.Creation do
 
                           {:ok, stack_after_create} = Stack.push(stack, new_address)
 
+                          created_addresses_after =
+                            MapSet.put(child_result.created_addresses, new_address)
+
                           {:ok,
                            state_after_initcode_cost
                            |> Map.put(:stack, stack_after_create)
@@ -150,6 +154,7 @@ defmodule EEVM.Opcodes.System.Creation do
                            |> Map.put(:logs, state_after_initcode_cost.logs ++ child_result.logs)
                            |> Map.put(:accessed_addresses, child_result.accessed_addresses)
                            |> Map.put(:accessed_storage_keys, child_result.accessed_storage_keys)
+                           |> Map.put(:created_addresses, created_addresses_after)
                            |> Map.put(:gas, child_result.gas - deposit_cost)
                            |> Map.put(:return_data, child_result.return_data)
                            |> MachineState.advance_pc()}

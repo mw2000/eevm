@@ -6,7 +6,7 @@ defmodule EEVM.Memory do
 
   - Memory is a word-addressed byte array that expands in 32-byte chunks.
   - Reading/writing beyond current size auto-expands (zero-filled).
-  - Gas cost increases quadratically with memory size (not implemented yet).
+  - Gas cost increases quadratically with memory size (see `EEVM.Gas.Memory`).
 
   ## Elixir Learning Notes
 
