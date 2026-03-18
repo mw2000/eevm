@@ -1,5 +1,13 @@
 defmodule EEVM.Opcodes.Environment.Data do
-  @moduledoc false
+  @moduledoc """
+  Data-copying environment opcodes that read from calldata, code, or return data.
+
+  These opcodes load data from the current execution context into the stack or
+  memory, with dynamic gas costs for memory expansion and per-word copy fees.
+
+  Includes: CALLDATALOAD (0x35), CALLDATACOPY (0x37), CODECOPY (0x39),
+  and RETURNDATACOPY (0x3E).
+  """
 
   alias EEVM.{MachineState, Memory, Stack}
   alias EEVM.Gas.Dynamic

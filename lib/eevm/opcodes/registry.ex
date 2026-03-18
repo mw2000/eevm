@@ -1,5 +1,15 @@
 defmodule EEVM.Opcodes.Registry do
-  @moduledoc false
+  @moduledoc """
+  Opcode metadata registry — maps opcode bytes to names and stack I/O signatures.
+
+  This module is the single source of truth for opcode metadata. Given an opcode byte
+  (0x00–0xFF), it returns the human-readable name, the number of stack inputs consumed,
+  and the number of stack outputs produced. This information is used by the disassembler
+  and can be used to validate stack depth statically.
+
+  PUSH1–PUSH32, DUP1–DUP16, and SWAP1–SWAP16 are generated dynamically from their
+  opcode ranges rather than stored in the static map.
+  """
 
   @stop 0x00
   @add 0x01
@@ -57,6 +67,8 @@ defmodule EEVM.Opcodes.Registry do
   @chainid 0x46
   @selfbalance 0x47
   @basefee 0x48
+  @blobhash 0x49
+  @blobbasefee 0x4A
   @gas_ 0x5A
 
   @pop 0x50
@@ -69,6 +81,8 @@ defmodule EEVM.Opcodes.Registry do
   @jumpi 0x57
   @pc 0x58
   @msize 0x59
+  @tload 0x5C
+  @tstore 0x5D
   @mcopy 0x5E
   @jumpdest 0x5B
 
@@ -92,6 +106,7 @@ defmodule EEVM.Opcodes.Registry do
   @delegatecall 0xF4
   @create2 0xF5
   @staticcall 0xFA
+  @selfdestruct 0xFF
   @revert 0xFD
   @invalid 0xFE
 
@@ -148,6 +163,8 @@ defmodule EEVM.Opcodes.Registry do
     @chainid => %{name: "CHAINID", inputs: 0, outputs: 1},
     @selfbalance => %{name: "SELFBALANCE", inputs: 0, outputs: 1},
     @basefee => %{name: "BASEFEE", inputs: 0, outputs: 1},
+    @blobhash => %{name: "BLOBHASH", inputs: 1, outputs: 1},
+    @blobbasefee => %{name: "BLOBBASEFEE", inputs: 0, outputs: 1},
     @gas_ => %{name: "GAS", inputs: 0, outputs: 1},
     @push0 => %{name: "PUSH0", inputs: 0, outputs: 1},
     @pop => %{name: "POP", inputs: 1, outputs: 0},
@@ -156,6 +173,8 @@ defmodule EEVM.Opcodes.Registry do
     @mstore8 => %{name: "MSTORE8", inputs: 2, outputs: 0},
     @sload => %{name: "SLOAD", inputs: 1, outputs: 1},
     @sstore => %{name: "SSTORE", inputs: 2, outputs: 0},
+    @tload => %{name: "TLOAD", inputs: 1, outputs: 1},
+    @tstore => %{name: "TSTORE", inputs: 2, outputs: 0},
     @msize => %{name: "MSIZE", inputs: 0, outputs: 1},
     @mcopy => %{name: "MCOPY", inputs: 3, outputs: 0},
     @jump => %{name: "JUMP", inputs: 1, outputs: 0},
@@ -175,7 +194,8 @@ defmodule EEVM.Opcodes.Registry do
     @staticcall => %{name: "STATICCALL", inputs: 6, outputs: 1},
     @return_ => %{name: "RETURN", inputs: 2, outputs: 0},
     @revert => %{name: "REVERT", inputs: 2, outputs: 0},
-    @invalid => %{name: "INVALID", inputs: 0, outputs: 0}
+    @invalid => %{name: "INVALID", inputs: 0, outputs: 0},
+    @selfdestruct => %{name: "SELFDESTRUCT", inputs: 1, outputs: 0}
   }
 
   @spec info(non_neg_integer()) :: {:ok, map()} | {:error, :unknown_opcode}
@@ -201,15 +221,15 @@ defmodule EEVM.Opcodes.Registry do
     end
   end
 
-  @spec is_push?(non_neg_integer()) :: boolean()
-  def is_push?(op), do: op >= @push1 and op <= @push32
+  @spec push?(non_neg_integer()) :: boolean()
+  def push?(op), do: op >= @push1 and op <= @push32
 
   @spec push_bytes(non_neg_integer()) :: non_neg_integer()
   def push_bytes(op) when op >= @push1 and op <= @push32, do: op - @push1 + 1
 
-  @spec is_dup?(non_neg_integer()) :: boolean()
-  def is_dup?(op), do: op >= @dup1 and op <= @dup16
+  @spec dup?(non_neg_integer()) :: boolean()
+  def dup?(op), do: op >= @dup1 and op <= @dup16
 
-  @spec is_swap?(non_neg_integer()) :: boolean()
-  def is_swap?(op), do: op >= @swap1 and op <= @swap16
+  @spec swap?(non_neg_integer()) :: boolean()
+  def swap?(op), do: op >= @swap1 and op <= @swap16
 end

@@ -47,12 +47,12 @@ defmodule EEVM.Opcodes.PrecompileTest do
       alias EEVM.Precompiles
 
       for addr <- 0x01..0x0A do
-        assert Precompiles.is_precompile?(addr) == true
+        assert Precompiles.precompile?(addr) == true
       end
 
-      assert Precompiles.is_precompile?(0x00) == false
-      assert Precompiles.is_precompile?(0x0B) == false
-      assert Precompiles.is_precompile?(0xFF) == false
+      assert Precompiles.precompile?(0x00) == false
+      assert Precompiles.precompile?(0x0B) == false
+      assert Precompiles.precompile?(0xFF) == false
     end
 
     test "DELEGATECALL to unimplemented precompile pushes 0" do

@@ -1,5 +1,25 @@
 defmodule EEVM.Opcodes.StackMemoryStorage.StorageOps do
-  @moduledoc false
+  @moduledoc """
+  Persistent and transient storage opcodes: SLOAD, SSTORE, TLOAD, and TSTORE.
+
+  ## Persistent Storage (SLOAD/SSTORE)
+
+  Persistent storage is a key-value mapping (256-bit → 256-bit) that persists across
+  transactions. Gas costs follow the EIP-2200 structured schedule with EIP-2929
+  cold/warm access tracking:
+
+  - **SLOAD** (0x54) — reads a storage slot. Costs 2,100 (cold) or 100 (warm) per EIP-2929.
+  - **SSTORE** (0x55) — writes a storage slot. Cost depends on the transition from
+    original → current → new value, with refunds for clearing slots (EIP-3529).
+
+  ## Transient Storage (TLOAD/TSTORE)
+
+  Transient storage (EIP-1153) provides a key-value mapping that is automatically
+  cleared at the end of each transaction. Useful for reentrancy locks and temporary state.
+
+  - **TLOAD** (0x5C) — reads from transient storage. Costs 100 gas (warm access).
+  - **TSTORE** (0x5D) — writes to transient storage. Costs 100 gas (warm access).
+  """
 
   alias EEVM.{MachineState, Stack, Storage}
   alias EEVM.Gas.{Access, Dynamic}

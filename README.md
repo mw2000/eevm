@@ -5,7 +5,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Elixir](https://img.shields.io/badge/Elixir-1.19+-4B275F.svg)](https://elixir-lang.org)
 
-A from-scratch EVM built for learning — both Ethereum internals and the Elixir language. Every module is documented with EVM concepts and idiomatic Elixir patterns side by side.
+A from-scratch EVM built for learning — both Ethereum internals and the Elixir language. Modules are documented with EVM concepts, EIP references, and idiomatic Elixir patterns side by side.
 
 <p align="center">
   <img src="assets/banner.png" alt="eevm logo" />
@@ -32,39 +32,66 @@ iex> EEVM.disassemble(<<0x60, 0x01, 0x60, 0x02, 0x01, 0x00>>)
 | **Bitwise** | `AND` `OR` `XOR` `NOT` `BYTE` `SHL` `SHR` `SAR` |
 | **Crypto** | `KECCAK256` |
 | **Stack** | `POP` `PUSH0` `PUSH1`–`PUSH32` `DUP1`–`DUP16` `SWAP1`–`SWAP16` |
-| **Memory** | `MLOAD` `MSTORE` `MSTORE8` `MSIZE` |
-| **Storage** | `SLOAD` `SSTORE` |
-| **Environment** | `ADDRESS` `BALANCE` `ORIGIN` `CALLER` `CALLVALUE` `CALLDATALOAD` `CALLDATASIZE` `CALLDATACOPY` `CODESIZE` `GASPRICE` `RETURNDATASIZE` `BLOCKHASH` `COINBASE` `TIMESTAMP` `NUMBER` `PREVRANDAO` `GASLIMIT` `CHAINID` `SELFBALANCE` `BASEFEE` `GAS` |
+| **Memory** | `MLOAD` `MSTORE` `MSTORE8` `MSIZE` `MCOPY` |
+| **Storage** | `SLOAD` `SSTORE` `TLOAD` `TSTORE` |
+| **Environment** | `ADDRESS` `BALANCE` `ORIGIN` `CALLER` `CALLVALUE` `CALLDATALOAD` `CALLDATASIZE` `CALLDATACOPY` `CODESIZE` `GASPRICE` `RETURNDATASIZE` `RETURNDATACOPY` `BLOCKHASH` `COINBASE` `TIMESTAMP` `NUMBER` `PREVRANDAO` `GASLIMIT` `CHAINID` `SELFBALANCE` `BASEFEE` `BLOBBASEFEE` `BLOBHASH` `GAS` |
 | **Control Flow** | `JUMP` `JUMPI` `JUMPDEST` `PC` |
-| **System** | `STOP` `RETURN` `REVERT` `INVALID` |
+| **Logging** | `LOG0` `LOG1` `LOG2` `LOG3` `LOG4` |
+| **System** | `CREATE` `CREATE2` `CALL` `CALLCODE` `DELEGATECALL` `STATICCALL` `STOP` `RETURN` `REVERT` `INVALID` `SELFDESTRUCT` |
+| **Precompiles** | ECRECOVER · SHA256 · RIPEMD160 · IDENTITY · MODEXP · BN256 Add/Mul/Pairing · BLAKE2F · KZG Point Eval |
 
 ## Architecture
 
 ```
 lib/
-├── eevm.ex                    # Public API — execute, disassemble, inspect
+├── eevm.ex                         # Public API — execute, disassemble, inspect
 └── eevm/
-    ├── executor.ex            # Thin dispatcher — fetch, decode, route to opcode modules
-    ├── machine_state.ex       # Execution state (PC, stack, memory, gas)
-    ├── stack.ex               # LIFO stack (1024 depth, uint256 values)
-    ├── memory.ex              # Byte-addressable linear memory
-    ├── storage.ex             # Persistent key-value storage
-    ├── gas.ex                 # Gas metering and per-opcode costs
-    ├── opcodes.ex             # Opcode byte → name + stack metadata
+    ├── executor.ex                  # Fetch-decode-execute loop (tail-recursive)
+    ├── machine_state.ex             # Execution state (PC, stack, memory, gas, status)
+    ├── stack.ex                     # LIFO stack (1024 depth, uint256 values)
+    ├── memory.ex                    # Byte-addressable linear memory (sparse storage)
+    ├── storage.ex                   # Persistent key-value storage (256-bit slots)
+    ├── world_state.ex               # Account state (balances, code, nonces)
+    ├── call_frame.ex                # Execution frame snapshot for nested calls
     ├── context/
-    │   ├── transaction.ex     # Transaction context (origin, gas price)
-    │   ├── block.ex            # Block context (coinbase, timestamp, number)
-    │   └── contract.ex         # Contract context (address, caller, value, calldata)
-    └── opcodes/
-        ├── helpers.ex         # Shared utilities (signing, modular exponentiation)
-        ├── arithmetic.ex      # ADD, MUL, SUB, DIV, MOD, EXP, SIGNEXTEND
-        ├── comparison.ex      # LT, GT, SLT, SGT, EQ, ISZERO
-        ├── bitwise.ex         # AND, OR, XOR, NOT, BYTE, SHL, SHR, SAR
-        ├── crypto.ex          # KECCAK256
-        ├── stack_memory_storage.ex  # POP, MLOAD, MSTORE, SLOAD, SSTORE, MSIZE
-        ├── environment.ex     # ADDRESS, CALLER, CALLVALUE, CALLDATALOAD, ...
-        ├── control_flow.ex    # JUMP, JUMPI, PUSH0–PUSH32, DUP, SWAP
-        └── system.ex          # STOP, RETURN, REVERT, INVALID
+    │   ├── transaction.ex           # Transaction context (origin, gasprice, blob_hashes)
+    │   ├── block.ex                 # Block context (coinbase, timestamp, prevrandao, basefee)
+    │   └── contract.ex              # Contract context (address, caller, value, calldata)
+    ├── gas/
+    │   ├── static.ex                # Fixed per-opcode costs (Yellow Paper Appendix G)
+    │   ├── dynamic.ex               # Variable costs (EXP, KECCAK256, SSTORE, LOGn, CALL)
+    │   ├── memory.ex                # Memory expansion cost (quadratic formula)
+    │   └── access.ex                # Cold/warm access tracking (EIP-2929)
+    ├── opcodes/
+    │   ├── registry.ex              # Opcode byte → name + stack I/O metadata
+    │   ├── helpers.ex               # Shared utilities (signed math, modular exp)
+    │   ├── arithmetic.ex            # ADD, MUL, SUB, DIV, MOD, EXP, SIGNEXTEND
+    │   ├── comparison.ex            # LT, GT, SLT, SGT, EQ, ISZERO
+    │   ├── bitwise.ex               # AND, OR, XOR, NOT, BYTE, SHL, SHR, SAR
+    │   ├── crypto.ex                # KECCAK256
+    │   ├── control_flow.ex          # PUSH0–32, DUP1–16, SWAP1–16, JUMP, JUMPI, PC
+    │   ├── logging.ex               # LOG0–LOG4
+    │   ├── environment/
+    │   │   ├── simple.ex            # ADDRESS, ORIGIN, CALLER, TIMESTAMP, GAS, ...
+    │   │   ├── data.ex              # CALLDATALOAD, CALLDATACOPY, CODECOPY, RETURNDATACOPY
+    │   │   └── external.ex          # BALANCE, EXTCODESIZE, EXTCODECOPY, EXTCODEHASH
+    │   ├── stack_memory_storage/
+    │   │   ├── stack_ops.ex         # POP
+    │   │   ├── memory_ops.ex        # MLOAD, MSTORE, MSTORE8, MSIZE, MCOPY
+    │   │   └── storage_ops.ex       # SLOAD, SSTORE, TLOAD, TSTORE
+    │   └── system/
+    │       ├── termination.ex       # STOP, RETURN, REVERT, INVALID, SELFDESTRUCT
+    │       └── creation.ex          # CREATE, CREATE2, CALL, DELEGATECALL, STATICCALL
+    └── precompiles/
+        ├── precompiles.ex           # Dispatcher (addresses 0x01–0x0A)
+        ├── ecrecover.ex             # 0x01: EC signature recovery
+        ├── sha256.ex                # 0x02: SHA-256 hash
+        ├── ripemd160.ex             # 0x03: RIPEMD-160 hash
+        ├── identity.ex              # 0x04: Data copy (no-op)
+        ├── modexp.ex                # 0x05: Big integer modular exponentiation
+        ├── bn256.ex                 # 0x06–0x08: BN256 curve operations
+        ├── blake2f.ex               # 0x09: BLAKE2b compression
+        └── kzg_point_eval.ex        # 0x0A: KZG point evaluation (EIP-4844)
 ```
 
 The EVM is a **stack machine**. The executor reads one opcode at a time from bytecode and dispatches to the appropriate opcode module. Each module pops operands from the stack, computes, and pushes results back. All values are unsigned 256-bit integers. Memory is a separate byte-addressable space that expands on demand.
@@ -87,7 +114,7 @@ mix test
 iex -S mix
 ```
 
-Requires Elixir 1.19+ and Erlang/OTP 28+.
+Requires Elixir 1.18+ and Erlang/OTP 28+.
 
 ## Elixir Concepts Covered
 

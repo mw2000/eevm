@@ -1,5 +1,14 @@
 defmodule EEVM.Opcodes.Environment.Simple do
-  @moduledoc false
+  @moduledoc """
+  Simple environment opcodes that read a single value from the execution context.
+
+  These opcodes push one value onto the stack with no dynamic gas cost beyond
+  the static base. They read from the transaction, block, or contract context.
+
+  Includes: ADDRESS, ORIGIN, CALLER, CALLVALUE, CALLDATASIZE, CODESIZE,
+  GASPRICE, RETURNDATASIZE, COINBASE, TIMESTAMP, NUMBER, PREVRANDAO,
+  GASLIMIT, CHAINID, BASEFEE, BLOBBASEFEE, GAS, BLOCKHASH, and BLOBHASH.
+  """
 
   alias EEVM.{MachineState, Stack}
   alias EEVM.Context.Block

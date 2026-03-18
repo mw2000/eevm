@@ -1,5 +1,14 @@
 defmodule EEVM.Opcodes.Environment.External do
-  @moduledoc false
+  @moduledoc """
+  External account inspection opcodes with EIP-2929 access cost tracking.
+
+  These opcodes query other accounts' state (balance, code, code hash) and
+  incur cold/warm access costs per EIP-2929. The first access to an address
+  costs 2,600 gas (cold); subsequent accesses cost 100 gas (warm).
+
+  Includes: BALANCE (0x31), EXTCODESIZE (0x3B), EXTCODECOPY (0x3C),
+  EXTCODEHASH (0x3F), and SELFBALANCE (0x47).
+  """
 
   alias EEVM.{MachineState, Memory, Stack, WorldState}
   alias EEVM.Gas.Access

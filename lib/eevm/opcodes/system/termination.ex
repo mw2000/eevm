@@ -1,5 +1,16 @@
 defmodule EEVM.Opcodes.System.Termination do
-  @moduledoc false
+  @moduledoc """
+  Execution-terminating opcodes: STOP, RETURN, REVERT, INVALID, and SELFDESTRUCT.
+
+  These opcodes end the current execution frame. STOP and RETURN indicate success,
+  REVERT indicates a controlled failure (state changes are rolled back but gas for
+  the return data copy is still consumed), and INVALID halts with an error.
+
+  SELFDESTRUCT (0xFF) transfers the contract's balance to a beneficiary address
+  and marks the contract for deletion. Per EIP-6780, in post-Cancun transactions
+  SELFDESTRUCT only has its full effect when called in the same transaction that
+  created the contract.
+  """
 
   alias EEVM.{MachineState, Memory, Stack, WorldState}
   alias EEVM.Gas.Memory, as: GasMemory
