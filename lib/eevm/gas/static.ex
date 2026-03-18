@@ -10,7 +10,6 @@ defmodule EEVM.Gas.Static do
   @gas_jumpdest 1
 
   @gas_keccak256 30
-  @gas_sstore 20_000
   @gas_blockhash 20
   @gas_selfbalance 5
   @gas_log 375
@@ -83,7 +82,7 @@ defmodule EEVM.Gas.Static do
   def static_cost(0x52), do: @gas_very_low
   def static_cost(0x53), do: @gas_very_low
   def static_cost(0x54), do: 0
-  def static_cost(0x55), do: @gas_sstore
+  def static_cost(0x55), do: 0
   def static_cost(0x56), do: @gas_mid
   def static_cost(0x57), do: @gas_high
   def static_cost(0x58), do: @gas_base

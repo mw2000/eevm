@@ -35,6 +35,7 @@ defmodule EEVM.MachineState do
           stack: Stack.t(),
           memory: Memory.t(),
           storage: Storage.t(),
+          original_storage: %{non_neg_integer() => non_neg_integer()},
           transient_storage: %{non_neg_integer() => non_neg_integer()},
           tx: Transaction.t(),
           block: Block.t(),
@@ -48,6 +49,7 @@ defmodule EEVM.MachineState do
           is_static: boolean(),
           depth: non_neg_integer(),
           gas: non_neg_integer(),
+          refund: non_neg_integer(),
           status: status(),
           return_data: binary(),
           logs: [%{address: non_neg_integer(), data: binary(), topics: [non_neg_integer()]}],
@@ -59,6 +61,7 @@ defmodule EEVM.MachineState do
             stack: nil,
             memory: nil,
             storage: nil,
+            original_storage: %{},
             transient_storage: %{},
             tx: nil,
             block: nil,
@@ -72,6 +75,7 @@ defmodule EEVM.MachineState do
             is_static: false,
             depth: 0,
             gas: 1_000_000,
+            refund: 0,
             status: :running,
             return_data: <<>>,
             logs: [],
@@ -111,6 +115,7 @@ defmodule EEVM.MachineState do
       stack: Stack.new(),
       memory: Memory.new(),
       storage: Keyword.get(opts, :storage, Storage.new()),
+      original_storage: Keyword.get(opts, :original_storage, %{}),
       transient_storage: Keyword.get(opts, :transient_storage, %{}),
       tx: tx,
       block: Keyword.get(opts, :block, Block.new()),
@@ -125,7 +130,8 @@ defmodule EEVM.MachineState do
       is_static: Keyword.get(opts, :is_static, false),
       depth: Keyword.get(opts, :depth, 0),
       return_data: Keyword.get(opts, :return_data, <<>>),
-      gas: Keyword.get(opts, :gas, 1_000_000)
+      gas: Keyword.get(opts, :gas, 1_000_000),
+      refund: Keyword.get(opts, :refund, 0)
     }
   end
 
@@ -269,6 +275,14 @@ defmodule EEVM.MachineState do
   @doc "Returns the gas remaining."
   @spec gas_remaining(t()) :: non_neg_integer()
   def gas_remaining(%__MODULE__{gas: gas}), do: gas
+
+  @doc "Adds `amount` to the accumulated gas refund."
+  @spec add_refund(t(), non_neg_integer()) :: t()
+  def add_refund(state, amount), do: %{state | refund: state.refund + amount}
+
+  @doc "Subtracts `amount` from refund, flooring at 0."
+  @spec sub_refund(t(), non_neg_integer()) :: t()
+  def sub_refund(state, amount), do: %{state | refund: max(state.refund - amount, 0)}
 
   @doc "Halts execution with the given status."
   @spec halt(t(), status()) :: t()
