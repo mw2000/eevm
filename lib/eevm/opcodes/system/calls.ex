@@ -242,6 +242,7 @@ defmodule EEVM.Opcodes.System.Calls do
                 world_state: world_state_after_transfer,
                 accessed_addresses: state_after_forward.accessed_addresses,
                 accessed_storage_keys: state_after_forward.accessed_storage_keys,
+                created_addresses: state_after_forward.created_addresses,
                 is_static: state_after_forward.is_static,
                 depth: state_after_forward.depth + 1
               )
@@ -274,6 +275,11 @@ defmodule EEVM.Opcodes.System.Calls do
                 do: child_result.accessed_storage_keys,
                 else: state_after_forward.accessed_storage_keys
 
+            created_addresses_result =
+              if call_succeeded,
+                do: child_result.created_addresses,
+                else: state_after_forward.created_addresses
+
             memory_result =
               write_return_data(memory_after_read, ret_offset, ret_size, child_result.return_data)
 
@@ -290,6 +296,7 @@ defmodule EEVM.Opcodes.System.Calls do
              |> Map.put(:logs, logs_result)
              |> Map.put(:accessed_addresses, accessed_addresses_result)
              |> Map.put(:accessed_storage_keys, accessed_storage_keys_result)
+             |> Map.put(:created_addresses, created_addresses_result)
              |> Map.put(:gas, state_after_forward.gas + child_result.gas)
              |> MachineState.advance_pc()}
           end
@@ -386,6 +393,7 @@ defmodule EEVM.Opcodes.System.Calls do
                 world_state: state_after_forward.world_state,
                 accessed_addresses: state_after_forward.accessed_addresses,
                 accessed_storage_keys: state_after_forward.accessed_storage_keys,
+                created_addresses: state_after_forward.created_addresses,
                 is_static: state_after_forward.is_static,
                 depth: state_after_forward.depth + 1
               )
@@ -418,6 +426,11 @@ defmodule EEVM.Opcodes.System.Calls do
                 do: child_result.accessed_storage_keys,
                 else: state_after_forward.accessed_storage_keys
 
+            created_addresses_result =
+              if call_succeeded,
+                do: child_result.created_addresses,
+                else: state_after_forward.created_addresses
+
             memory_result =
               write_return_data(memory_after_read, ret_offset, ret_size, child_result.return_data)
 
@@ -434,6 +447,7 @@ defmodule EEVM.Opcodes.System.Calls do
              |> Map.put(:logs, logs_result)
              |> Map.put(:accessed_addresses, accessed_addresses_result)
              |> Map.put(:accessed_storage_keys, accessed_storage_keys_result)
+             |> Map.put(:created_addresses, created_addresses_result)
              |> Map.put(:gas, state_after_forward.gas + child_result.gas)
              |> MachineState.advance_pc()}
           end

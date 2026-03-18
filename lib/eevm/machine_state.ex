@@ -42,6 +42,7 @@ defmodule EEVM.MachineState do
           contract: Contract.t(),
           accessed_addresses: MapSet.t(non_neg_integer()),
           accessed_storage_keys: MapSet.t({non_neg_integer(), non_neg_integer()}),
+          created_addresses: MapSet.t(non_neg_integer()),
           world_state: WorldState.t(),
           call_stack: [CallFrame.t()],
           frame_return_offset: non_neg_integer(),
@@ -68,6 +69,7 @@ defmodule EEVM.MachineState do
             contract: nil,
             accessed_addresses: nil,
             accessed_storage_keys: nil,
+            created_addresses: nil,
             world_state: nil,
             call_stack: [],
             frame_return_offset: 0,
@@ -124,6 +126,7 @@ defmodule EEVM.MachineState do
       accessed_addresses:
         Keyword.get(opts, :accessed_addresses, pre_warm_addresses(contract, tx)),
       accessed_storage_keys: Keyword.get(opts, :accessed_storage_keys, MapSet.new()),
+      created_addresses: Keyword.get(opts, :created_addresses, MapSet.new()),
       world_state: Keyword.get(opts, :world_state, WorldState.new()),
       call_stack: Keyword.get(opts, :call_stack, []),
       frame_return_offset: Keyword.get(opts, :frame_return_offset, 0),
