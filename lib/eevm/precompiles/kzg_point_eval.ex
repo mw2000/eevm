@@ -120,6 +120,7 @@ defmodule EEVM.Precompiles.KZGPointEval do
     kzg_module = :"Elixir.KzgElixir"
 
     if Code.ensure_loaded?(kzg_module) and function_exported?(kzg_module, :verify_kzg_proof, 4) do
+      # credo:disable-for-next-line Credo.Check.Refactor.Apply
       case apply(kzg_module, :verify_kzg_proof, [commitment, z, y, proof]) do
         {:ok, true} -> :ok
         {:ok, false} -> {:error, :proof_verification_failed}
