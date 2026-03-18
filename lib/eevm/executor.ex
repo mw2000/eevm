@@ -69,9 +69,14 @@ defmodule EEVM.Executor do
 
   @spec run(binary(), keyword()) :: MachineState.t()
   def run(code, opts \\ []) do
-    code
-    |> MachineState.new(opts)
-    |> run_loop()
+    initial_gas = Keyword.get(opts, :gas, 1_000_000)
+
+    final_state =
+      code
+      |> MachineState.new(opts)
+      |> run_loop()
+
+    apply_refund(final_state, initial_gas)
   end
 
   @doc """
@@ -113,13 +118,30 @@ defmodule EEVM.Executor do
     end
   end
 
+  def run_loop(%MachineState{status: :reverted, call_stack: [parent | _]} = state) do
+    state_with_restored_refund = %{state | refund: parent.refund}
+    {:ok, resumed_state} = MachineState.pop_frame(state_with_restored_refund)
+    run_loop(resumed_state)
+  end
+
   def run_loop(%MachineState{status: status, call_stack: [_ | _]} = state)
-      when status in [:stopped, :reverted, :invalid, :out_of_gas] do
+      when status in [:stopped, :invalid, :out_of_gas] do
     {:ok, resumed_state} = MachineState.pop_frame(state)
     run_loop(resumed_state)
   end
 
   def run_loop(state), do: state
+
+  defp apply_refund(%MachineState{status: status} = state, _initial_gas)
+       when status in [:reverted, :out_of_gas, :invalid] do
+    %{state | refund: 0}
+  end
+
+  defp apply_refund(%MachineState{} = state, initial_gas) do
+    gas_used = initial_gas - state.gas
+    effective_refund = min(state.refund, div(gas_used, 5))
+    %{state | gas: state.gas + effective_refund, refund: 0}
+  end
 
   # Dispatch table for execute_opcode/2.
   #
