@@ -20,7 +20,7 @@ defmodule EEVM.Opcodes.System.Creation do
   @max_initcode_size 49_152
   @initcode_word_cost 2
 
-  alias EEVM.{Executor, MachineState, Memory, Stack, WorldState}
+  alias EEVM.{Database, Executor, MachineState, Memory, Stack}
   alias EEVM.Gas.Dynamic
   alias EEVM.Gas.Memory, as: GasMemory
   alias EEVM.Context.Contract
@@ -71,13 +71,13 @@ defmodule EEVM.Opcodes.System.Creation do
     case MachineState.consume_gas(%{state | stack: stack}, extra_cost) do
       {:ok, state_after_cost} ->
         creator = state_after_cost.contract.address
-        nonce = WorldState.get_nonce(state_after_cost.world_state, creator)
+        nonce = Database.get_nonce(state_after_cost.db, creator)
 
-        world_state_after_nonce =
-          WorldState.increment_nonce(state_after_cost.world_state, creator)
+        db_after_nonce =
+          Database.increment_nonce(state_after_cost.db, creator)
 
         if size > @max_initcode_size do
-          create_failed(%{state_after_cost | world_state: world_state_after_nonce}, stack)
+          create_failed(%{state_after_cost | db: db_after_nonce}, stack)
         else
           initcode_cost = @initcode_word_cost * div(size + 31, 32)
 
@@ -91,11 +91,11 @@ defmodule EEVM.Opcodes.System.Creation do
                   do: derive_create_address(creator, nonce),
                   else: derive_create2_address(creator, salt, init_code)
 
-              can_create = can_create_account?(world_state_after_nonce, new_address)
+              can_create = can_create_account?(db_after_nonce, new_address)
 
               if can_create do
-                case WorldState.transfer(world_state_after_nonce, creator, new_address, value) do
-                  {:ok, world_state_after_transfer} ->
+                case Database.transfer(db_after_nonce, creator, new_address, value) do
+                  {:ok, db_after_transfer} ->
                     child_contract =
                       Contract.new(
                         address: new_address,
@@ -108,11 +108,10 @@ defmodule EEVM.Opcodes.System.Creation do
                     child_state =
                       MachineState.new(init_code,
                         gas: state_after_initcode_cost.gas,
-                        storage: state_after_initcode_cost.storage,
+                        db: db_after_transfer,
                         tx: state_after_initcode_cost.tx,
                         block: state_after_initcode_cost.block,
                         contract: child_contract,
-                        world_state: world_state_after_transfer,
                         accessed_addresses: state_after_initcode_cost.accessed_addresses,
                         accessed_storage_keys: state_after_initcode_cost.accessed_storage_keys,
                         created_addresses: state_after_initcode_cost.created_addresses,
@@ -128,17 +127,17 @@ defmodule EEVM.Opcodes.System.Creation do
 
                       if byte_size(runtime_code) > @max_code_size do
                         create_failed(
-                          %{state_after_initcode_cost | world_state: world_state_after_nonce},
+                          %{state_after_initcode_cost | db: db_after_nonce},
                           stack
                         )
                       else
                         deposit_cost = Dynamic.code_deposit_cost(byte_size(runtime_code))
 
                         if child_result.gas >= deposit_cost do
-                          world_state_after_deploy =
-                            child_result.world_state
-                            |> WorldState.put_code(new_address, runtime_code)
-                            |> WorldState.set_nonce(new_address, 1)
+                          db_after_deploy =
+                            child_result.db
+                            |> Database.put_code(new_address, runtime_code)
+                            |> Database.set_nonce(new_address, 1)
 
                           {:ok, stack_after_create} = Stack.push(stack, new_address)
 
@@ -149,8 +148,7 @@ defmodule EEVM.Opcodes.System.Creation do
                            state_after_initcode_cost
                            |> Map.put(:stack, stack_after_create)
                            |> Map.put(:memory, memory_after_read)
-                           |> Map.put(:world_state, world_state_after_deploy)
-                           |> Map.put(:storage, child_result.storage)
+                           |> Map.put(:db, db_after_deploy)
                            |> Map.put(:logs, state_after_initcode_cost.logs ++ child_result.logs)
                            |> Map.put(:accessed_addresses, child_result.accessed_addresses)
                            |> Map.put(:accessed_storage_keys, child_result.accessed_storage_keys)
@@ -160,27 +158,27 @@ defmodule EEVM.Opcodes.System.Creation do
                            |> MachineState.advance_pc()}
                         else
                           create_failed(
-                            %{state_after_initcode_cost | world_state: world_state_after_nonce},
+                            %{state_after_initcode_cost | db: db_after_nonce},
                             stack
                           )
                         end
                       end
                     else
                       create_failed(
-                        %{state_after_initcode_cost | world_state: world_state_after_nonce},
+                        %{state_after_initcode_cost | db: db_after_nonce},
                         stack
                       )
                     end
 
                   {:error, :insufficient_balance} ->
                     create_failed(
-                      %{state_after_initcode_cost | world_state: world_state_after_nonce},
+                      %{state_after_initcode_cost | db: db_after_nonce},
                       stack
                     )
                 end
               else
                 create_failed(
-                  %{state_after_initcode_cost | world_state: world_state_after_nonce},
+                  %{state_after_initcode_cost | db: db_after_nonce},
                   stack
                 )
               end
@@ -195,16 +193,16 @@ defmodule EEVM.Opcodes.System.Creation do
     end
   end
 
-  defp can_create_account?(world_state, address) do
-    account = WorldState.get_account(world_state, address)
+  defp can_create_account?(db, address) do
+    account = Database.get_account(db, address)
 
     case account do
       nil ->
         true
 
       _ ->
-        WorldState.get_nonce(world_state, address) == 0 and
-          WorldState.get_code(world_state, address) == <<>>
+        Database.get_nonce(db, address) == 0 and
+          Database.get_code(db, address) == <<>>
     end
   end
 

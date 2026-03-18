@@ -21,7 +21,7 @@ defmodule EEVM.Opcodes.StackMemoryStorage.StorageOps do
   - **TSTORE** (0x5D) — writes to transient storage. Costs 100 gas (warm access).
   """
 
-  alias EEVM.{MachineState, Stack, Storage}
+  alias EEVM.{Database, MachineState, Stack}
   alias EEVM.Gas.{Access, Dynamic}
 
   @cold_sload_cost 2100
@@ -37,7 +37,7 @@ defmodule EEVM.Opcodes.StackMemoryStorage.StorageOps do
 
       case MachineState.consume_gas(state_after_access, access_cost) do
         {:ok, state_after_gas} ->
-          value = Storage.load(state_after_gas.storage, key)
+          value = Database.storage_load(state_after_gas.db, contract_address, key)
 
           case Stack.push(state_after_gas.stack, value) do
             {:ok, s2} -> {:ok, %{state_after_gas | stack: s2} |> MachineState.advance_pc()}
@@ -73,7 +73,7 @@ defmodule EEVM.Opcodes.StackMemoryStorage.StorageOps do
 
       cold_cost = if is_warm, do: 0, else: @cold_sload_cost
       {original_value, state_with_original} = get_original_value(state_after_access, key)
-      current_value = Storage.load(state_with_original.storage, key)
+      current_value = Database.storage_load(state_with_original.db, contract_address, key)
 
       {sstore_gas, refund_delta} = Dynamic.sstore_cost(original_value, current_value, value)
       total_cost = cold_cost + sstore_gas
@@ -81,8 +81,8 @@ defmodule EEVM.Opcodes.StackMemoryStorage.StorageOps do
       case MachineState.consume_gas(state_with_original, total_cost) do
         {:ok, state_after_gas} ->
           state_after_refund = apply_refund_delta(state_after_gas, refund_delta)
-          new_storage = Storage.store(state_after_refund.storage, key, value)
-          {:ok, %{state_after_refund | storage: new_storage} |> MachineState.advance_pc()}
+          new_db = Database.storage_store(state_after_refund.db, contract_address, key, value)
+          {:ok, %{state_after_refund | db: new_db} |> MachineState.advance_pc()}
 
         {:error, :out_of_gas, halted} ->
           {:error, :out_of_gas, halted}
@@ -120,7 +120,7 @@ defmodule EEVM.Opcodes.StackMemoryStorage.StorageOps do
         {value, state}
 
       :error ->
-        value = Storage.load(state.storage, key)
+        value = Database.storage_load(state.db, state.contract.address, key)
         {value, %{state | original_storage: Map.put(state.original_storage, key, value)}}
     end
   end

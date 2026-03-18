@@ -8,7 +8,7 @@ defmodule EEVM.MachineState do
   - **pc** (program counter): points to the current instruction
   - **stack**: the operand stack (max 1024 elements)
   - **memory**: byte-addressable linear memory
-  - **world_state**: account/code state used for external account lookups
+  - **db**: unified external state backend (accounts + contract storage)
   - **call_stack**: suspended parent frames during nested execution
   - **frame return metadata**: parent memory write-back offset and size
   - **is_static/depth**: execution mode and current call depth
@@ -25,7 +25,9 @@ defmodule EEVM.MachineState do
   - The `alias` keyword lets us reference modules by their short name.
   """
 
-  alias EEVM.{CallFrame, Memory, Stack, Storage, WorldState}
+  alias EEVM.{CallFrame, Memory, Stack}
+  alias EEVM.Database
+  alias EEVM.Database.InMemory, as: InMemoryDB
   alias EEVM.Context.{Block, Contract, Transaction}
 
   @type status :: :running | :stopped | :reverted | :invalid | :out_of_gas | {:error, atom()}
@@ -34,7 +36,7 @@ defmodule EEVM.MachineState do
           pc: non_neg_integer(),
           stack: Stack.t(),
           memory: Memory.t(),
-          storage: Storage.t(),
+          db: Database.t(),
           original_storage: %{non_neg_integer() => non_neg_integer()},
           transient_storage: %{non_neg_integer() => non_neg_integer()},
           tx: Transaction.t(),
@@ -43,7 +45,6 @@ defmodule EEVM.MachineState do
           accessed_addresses: MapSet.t(non_neg_integer()),
           accessed_storage_keys: MapSet.t({non_neg_integer(), non_neg_integer()}),
           created_addresses: MapSet.t(non_neg_integer()),
-          world_state: WorldState.t(),
           call_stack: [CallFrame.t()],
           frame_return_offset: non_neg_integer(),
           frame_return_size: non_neg_integer(),
@@ -61,7 +62,7 @@ defmodule EEVM.MachineState do
   defstruct pc: 0,
             stack: nil,
             memory: nil,
-            storage: nil,
+            db: nil,
             original_storage: %{},
             transient_storage: %{},
             tx: nil,
@@ -70,7 +71,6 @@ defmodule EEVM.MachineState do
             accessed_addresses: nil,
             accessed_storage_keys: nil,
             created_addresses: nil,
-            world_state: nil,
             call_stack: [],
             frame_return_offset: 0,
             frame_return_size: 0,
@@ -90,11 +90,12 @@ defmodule EEVM.MachineState do
     - `code` — the raw EVM bytecode as an Elixir binary
     - `opts` — optional keyword list:
       - `:gas` — initial gas (default: 1,000,000)
-      - `:storage` — initial storage (default: empty)
+      - `:db` — unified external database (default: empty in-memory DB)
+      - `:storage` — legacy initial storage (default: empty, backward-compat)
       - `:tx` — transaction context (default: empty)
       - `:block` — block context (default: empty)
       - `:contract` — contract/message context (default: empty)
-      - `:world_state` — external account state (default: empty)
+      - `:world_state` — legacy external account state (default: empty, backward-compat)
       - `:call_stack` — internal frame stack (default: `[]`)
       - `:frame_return_offset` — parent memory write-back offset (default: `0`)
       - `:frame_return_size` — parent memory write-back size (default: `0`)
@@ -117,7 +118,7 @@ defmodule EEVM.MachineState do
       code: code,
       stack: Stack.new(),
       memory: Memory.new(),
-      storage: Keyword.get(opts, :storage, Storage.new()),
+      db: init_db(opts, contract),
       original_storage: Keyword.get(opts, :original_storage, %{}),
       transient_storage: Keyword.get(opts, :transient_storage, %{}),
       tx: tx,
@@ -127,7 +128,6 @@ defmodule EEVM.MachineState do
         Keyword.get(opts, :accessed_addresses, pre_warm_addresses(contract, tx)),
       accessed_storage_keys: Keyword.get(opts, :accessed_storage_keys, MapSet.new()),
       created_addresses: Keyword.get(opts, :created_addresses, MapSet.new()),
-      world_state: Keyword.get(opts, :world_state, WorldState.new()),
       call_stack: Keyword.get(opts, :call_stack, []),
       frame_return_offset: Keyword.get(opts, :frame_return_offset, 0),
       frame_return_size: Keyword.get(opts, :frame_return_size, 0),
@@ -147,6 +147,28 @@ defmodule EEVM.MachineState do
     |> then(fn set ->
       Enum.reduce(0x01..0x0A, set, &MapSet.put(&2, &1))
     end)
+  end
+
+  defp init_db(opts, contract) do
+    case Keyword.fetch(opts, :db) do
+      {:ok, db} ->
+        db
+
+      :error ->
+        world_state = Keyword.get(opts, :world_state, EEVM.WorldState.new())
+        storage = Keyword.get(opts, :storage, EEVM.Storage.new())
+
+        InMemoryDB.new(
+          accounts: world_state.accounts,
+          storage: convert_storage(storage, contract.address)
+        )
+    end
+  end
+
+  defp convert_storage(%EEVM.Storage{slots: slots}, _address) when map_size(slots) == 0, do: %{}
+
+  defp convert_storage(%EEVM.Storage{slots: slots}, address) do
+    %{address => slots}
   end
 
   @doc "Returns the opcode byte at the current program counter, or nil if past end."

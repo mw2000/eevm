@@ -12,7 +12,7 @@ defmodule EEVM.Opcodes.System.Termination do
   created the contract.
   """
 
-  alias EEVM.{MachineState, Memory, Stack, WorldState}
+  alias EEVM.{Database, MachineState, Memory, Stack}
   alias EEVM.Gas.Memory, as: GasMemory
 
   @spec execute(non_neg_integer(), MachineState.t()) ::
@@ -58,9 +58,9 @@ defmodule EEVM.Opcodes.System.Termination do
   def execute(0xFF, state) do
     with {:ok, beneficiary, s1} <- Stack.pop(state.stack) do
       contract_address = state.contract.address
-      balance = WorldState.get_balance(state.world_state, contract_address)
+      balance = Database.get_balance(state.db, contract_address)
 
-      beneficiary_exists = WorldState.account_exists?(state.world_state, beneficiary)
+      beneficiary_exists = Database.account_exists?(state.db, beneficiary)
       dynamic_cost = if not beneficiary_exists and balance > 0, do: 25_000, else: 0
 
       case MachineState.consume_gas(%{state | stack: s1}, dynamic_cost) do
@@ -71,34 +71,34 @@ defmodule EEVM.Opcodes.System.Termination do
           created_this_tx =
             MapSet.member?(state_after_gas.created_addresses, contract_address)
 
-          world_state_after =
+          db_after =
             if created_this_tx do
               # EIP-6780: full deletion for contracts created in the same tx
-              ws = WorldState.delete_account(state_after_gas.world_state, contract_address)
+              db = Database.delete_account(state_after_gas.db, contract_address)
 
               if beneficiary != contract_address do
-                WorldState.set_balance(
-                  ws,
+                Database.set_balance(
+                  db,
                   beneficiary,
-                  WorldState.get_balance(ws, beneficiary) + balance
+                  Database.get_balance(db, beneficiary) + balance
                 )
               else
-                ws
+                db
               end
             else
               if beneficiary == contract_address do
-                state_after_gas.world_state
+                state_after_gas.db
               else
                 beneficiary_balance =
-                  WorldState.get_balance(state_after_gas.world_state, beneficiary)
+                  Database.get_balance(state_after_gas.db, beneficiary)
 
-                state_after_gas.world_state
-                |> WorldState.set_balance(contract_address, 0)
-                |> WorldState.set_balance(beneficiary, beneficiary_balance + balance)
+                state_after_gas.db
+                |> Database.set_balance(contract_address, 0)
+                |> Database.set_balance(beneficiary, beneficiary_balance + balance)
               end
             end
 
-          {:ok, MachineState.halt(%{state_after_gas | world_state: world_state_after}, :stopped)}
+          {:ok, MachineState.halt(%{state_after_gas | db: db_after}, :stopped)}
 
         {:error, :out_of_gas, halted_state} ->
           {:error, :out_of_gas, halted_state}

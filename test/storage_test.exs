@@ -1,7 +1,7 @@
 defmodule EEVM.StorageTest do
   use ExUnit.Case, async: true
 
-  alias EEVM.Storage
+  alias EEVM.{Database, Storage}
 
   describe "Storage (SLOAD/SSTORE)" do
     test "SSTORE then SLOAD retrieves the stored value" do
@@ -91,7 +91,7 @@ defmodule EEVM.StorageTest do
       # Store 42 at slot 0
       code = <<0x60, 42, 0x60, 0, 0x55, 0x00>>
       result = EEVM.execute(code)
-      assert Storage.load(result.storage, 0) == 42
+      assert Database.storage_load(result.db, 0, 0) == 42
     end
   end
 end
