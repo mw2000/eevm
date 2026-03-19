@@ -67,6 +67,12 @@ defmodule EEVM do
   @spec logs(MachineState.t()) :: [map()]
   def logs(%MachineState{} = state), do: state.logs
 
+  @doc "Computes the 256-byte logs bloom filter for the executed transaction."
+  @spec logs_bloom(MachineState.t()) :: EEVM.Bloom.t()
+  def logs_bloom(%MachineState{} = state) do
+    EEVM.Bloom.from_logs(state.logs)
+  end
+
   @doc """
   Disassembles bytecode into a human-readable list of instructions.
 
