@@ -34,12 +34,32 @@ defmodule EEVM.Context.Transaction do
   @type t :: %__MODULE__{
           origin: non_neg_integer(),
           gasprice: non_neg_integer(),
-          blob_hashes: [non_neg_integer()]
+          blob_hashes: [non_neg_integer()],
+          nonce: non_neg_integer(),
+          gas_limit: non_neg_integer(),
+          to: non_neg_integer() | nil,
+          value: non_neg_integer(),
+          data: binary(),
+          max_fee_per_gas: non_neg_integer(),
+          max_priority_fee_per_gas: non_neg_integer(),
+          access_list: [{non_neg_integer(), [non_neg_integer()]}],
+          max_fee_per_blob_gas: non_neg_integer(),
+          type: :legacy | :eip2930 | :eip1559 | :eip4844
         }
 
   defstruct origin: 0,
             gasprice: 0,
-            blob_hashes: []
+            blob_hashes: [],
+            nonce: 0,
+            gas_limit: 0,
+            to: nil,
+            value: 0,
+            data: <<>>,
+            max_fee_per_gas: 0,
+            max_priority_fee_per_gas: 0,
+            access_list: [],
+            max_fee_per_blob_gas: 0,
+            type: :legacy
 
   @doc "Creates a new transaction context with default values."
   @spec new() :: t()
