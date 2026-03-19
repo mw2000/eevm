@@ -1,7 +1,7 @@
 defmodule EEVM.Opcodes.SelfdestructTest do
   use ExUnit.Case, async: true
 
-  alias EEVM.WorldState
+  alias EEVM.{Database, WorldState}
   alias EEVM.Context.Contract
   alias EEVM.Gas.Static
 
@@ -19,8 +19,8 @@ defmodule EEVM.Opcodes.SelfdestructTest do
       result = EEVM.execute(code, world_state: world_state, contract: contract, gas: 1_000_000)
 
       assert result.status == :stopped
-      assert WorldState.get_balance(result.world_state, 0xAA) == 0
-      assert WorldState.get_balance(result.world_state, 0xBB) == 150
+      assert Database.get_balance(result.db, 0xAA) == 0
+      assert Database.get_balance(result.db, 0xBB) == 150
     end
 
     test "halts execution after SELFDESTRUCT" do
@@ -48,7 +48,7 @@ defmodule EEVM.Opcodes.SelfdestructTest do
       result = EEVM.execute(code, world_state: world_state, contract: contract, gas: 1_000_000)
 
       assert result.status == :stopped
-      assert WorldState.get_balance(result.world_state, 0xAA) == 100
+      assert Database.get_balance(result.db, 0xAA) == 100
     end
 
     test "zero balance self-destruct costs 5000 gas" do
@@ -78,7 +78,7 @@ defmodule EEVM.Opcodes.SelfdestructTest do
       assert result.status == :stopped
       expected_gas = 1_000_000 - Static.static_cost(0x60) - 5000 - 25_000
       assert result.gas == expected_gas
-      assert WorldState.get_balance(result.world_state, 0xCC) == 100
+      assert Database.get_balance(result.db, 0xCC) == 100
     end
 
     test "no extra gas for existing beneficiary with value" do
@@ -121,10 +121,10 @@ defmodule EEVM.Opcodes.SelfdestructTest do
       result = EEVM.execute(code, world_state: world_state, contract: contract, gas: 1_000_000)
 
       assert result.status == :stopped
-      assert WorldState.get_code(result.world_state, 0xAA) == <<0x60, 0x01>>
-      assert WorldState.get_nonce(result.world_state, 0xAA) == 5
-      assert WorldState.get_balance(result.world_state, 0xAA) == 0
-      assert WorldState.get_balance(result.world_state, 0xBB) == 50
+      assert Database.get_code(result.db, 0xAA) == <<0x60, 0x01>>
+      assert Database.get_nonce(result.db, 0xAA) == 5
+      assert Database.get_balance(result.db, 0xAA) == 0
+      assert Database.get_balance(result.db, 0xBB) == 50
     end
 
     test "EIP-6780: full deletion when contract was created in same tx" do
@@ -146,9 +146,9 @@ defmodule EEVM.Opcodes.SelfdestructTest do
         )
 
       assert result.status == :stopped
-      assert WorldState.get_account(result.world_state, 0xAA) == nil
-      assert WorldState.account_exists?(result.world_state, 0xAA) == false
-      assert WorldState.get_balance(result.world_state, 0xBB) == 150
+      assert Database.get_account(result.db, 0xAA) == nil
+      assert Database.account_exists?(result.db, 0xAA) == false
+      assert Database.get_balance(result.db, 0xBB) == 150
     end
 
     test "EIP-6780: full deletion to self when created in same tx burns balance" do
@@ -165,7 +165,7 @@ defmodule EEVM.Opcodes.SelfdestructTest do
         )
 
       assert result.status == :stopped
-      assert WorldState.get_account(result.world_state, 0xAA) == nil
+      assert Database.get_account(result.db, 0xAA) == nil
     end
 
     test "EIP-6780: not created this tx preserves account (only transfers balance)" do
@@ -181,11 +181,11 @@ defmodule EEVM.Opcodes.SelfdestructTest do
       result = EEVM.execute(code, world_state: world_state, contract: contract, gas: 1_000_000)
 
       assert result.status == :stopped
-      assert WorldState.account_exists?(result.world_state, 0xAA) == true
-      assert WorldState.get_code(result.world_state, 0xAA) == <<0xFE>>
-      assert WorldState.get_nonce(result.world_state, 0xAA) == 10
-      assert WorldState.get_balance(result.world_state, 0xAA) == 0
-      assert WorldState.get_balance(result.world_state, 0xCC) == 75
+      assert Database.account_exists?(result.db, 0xAA) == true
+      assert Database.get_code(result.db, 0xAA) == <<0xFE>>
+      assert Database.get_nonce(result.db, 0xAA) == 10
+      assert Database.get_balance(result.db, 0xAA) == 0
+      assert Database.get_balance(result.db, 0xCC) == 75
     end
   end
 end

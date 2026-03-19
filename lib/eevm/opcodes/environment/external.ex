@@ -10,7 +10,7 @@ defmodule EEVM.Opcodes.Environment.External do
   EXTCODEHASH (0x3F), and SELFBALANCE (0x47).
   """
 
-  alias EEVM.{MachineState, Memory, Stack, WorldState}
+  alias EEVM.{Database, MachineState, Memory, Stack}
   alias EEVM.Gas.Access
   alias EEVM.Gas.Dynamic
   alias EEVM.Gas.Memory, as: GasMemory
@@ -46,7 +46,7 @@ defmodule EEVM.Opcodes.Environment.External do
 
       case MachineState.consume_gas(state_after_access, access_cost) do
         {:ok, state_after_gas} ->
-          size = byte_size(WorldState.get_code(state_after_gas.world_state, addr))
+          size = byte_size(Database.get_code(state_after_gas.db, addr))
 
           case Stack.push(state_after_gas.stack, size) do
             {:ok, s2} -> {:ok, %{state_after_gas | stack: s2} |> MachineState.advance_pc()}
@@ -83,7 +83,7 @@ defmodule EEVM.Opcodes.Environment.External do
 
             case MachineState.consume_gas(state_after_access_gas, dynamic_cost) do
               {:ok, state_after_gas} ->
-                bytes = read_external_code(state_after_gas.world_state, addr, code_offset, length)
+                bytes = read_external_code(state_after_gas.db, addr, code_offset, length)
 
                 new_memory =
                   bytes
@@ -115,8 +115,8 @@ defmodule EEVM.Opcodes.Environment.External do
       case MachineState.consume_gas(state_after_access, access_cost) do
         {:ok, state_after_gas} ->
           hash_value =
-            if WorldState.account_exists?(state_after_gas.world_state, addr) do
-              code = WorldState.get_code(state_after_gas.world_state, addr)
+            if Database.account_exists?(state_after_gas.db, addr) do
+              code = Database.get_code(state_after_gas.db, addr)
               hash = ExKeccak.hash_256(code)
               <<hash_int::unsigned-big-256>> = hash
               hash_int
@@ -145,15 +145,15 @@ defmodule EEVM.Opcodes.Environment.External do
   def execute(_opcode, state), do: {:ok, MachineState.halt(state, :invalid)}
 
   defp lookup_balance(state, address) do
-    if WorldState.account_exists?(state.world_state, address) do
-      WorldState.get_balance(state.world_state, address)
+    if Database.account_exists?(state.db, address) do
+      Database.get_balance(state.db, address)
     else
       Contract.balance(state.contract, address)
     end
   end
 
-  defp read_external_code(world_state, address, offset, length) do
-    code = WorldState.get_code(world_state, address)
+  defp read_external_code(db, address, offset, length) do
+    code = Database.get_code(db, address)
     code_size = byte_size(code)
 
     if offset >= code_size do

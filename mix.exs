@@ -44,7 +44,7 @@ defmodule EEVM.MixProject do
         "compile --warnings-as-errors",
         "credo --strict",
         "dialyzer",
-        "test"
+        "cmd mix test"
       ]
     ]
   end

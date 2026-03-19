@@ -3,7 +3,7 @@ defmodule EEVM.Opcodes.SystemTest do
 
   import EEVM.TestSupport.BytecodeHelpers
 
-  alias EEVM.{Memory, Storage, WorldState}
+  alias EEVM.{Database, Memory, WorldState}
   alias EEVM.Context.Contract
 
   describe "Executor - Return & Halt" do
@@ -44,8 +44,8 @@ defmodule EEVM.Opcodes.SystemTest do
 
       assert result.status == :stopped
       assert created_address != 0
-      assert WorldState.get_code(result.world_state, created_address) == <<0xAA>>
-      assert WorldState.get_nonce(result.world_state, 0) == 1
+      assert Database.get_code(result.db, created_address) == <<0xAA>>
+      assert Database.get_nonce(result.db, 0) == 1
     end
 
     test "CREATE transfers value to created contract" do
@@ -55,8 +55,8 @@ defmodule EEVM.Opcodes.SystemTest do
       result = EEVM.execute(code, world_state: WorldState.new(%{0 => %{balance: 7}}))
       [created_address] = EEVM.stack_values(result)
 
-      assert WorldState.get_balance(result.world_state, 0) == 5
-      assert WorldState.get_balance(result.world_state, created_address) == 2
+      assert Database.get_balance(result.db, 0) == 5
+      assert Database.get_balance(result.db, created_address) == 2
     end
 
     test "CREATE2 with same salt and init code yields deterministic address" do
@@ -71,7 +71,7 @@ defmodule EEVM.Opcodes.SystemTest do
 
       assert address1 != 0
       assert address1 == address2
-      assert WorldState.get_code(result1.world_state, address1) == <<0xBB>>
+      assert Database.get_code(result1.db, address1) == <<0xBB>>
     end
 
     test "CREATE fails and pushes zero when balance is insufficient" do
@@ -82,7 +82,7 @@ defmodule EEVM.Opcodes.SystemTest do
 
       assert result.status == :stopped
       assert EEVM.stack_values(result) == [0]
-      assert WorldState.get_balance(result.world_state, 0) == 1
+      assert Database.get_balance(result.db, 0) == 1
     end
   end
 
@@ -120,8 +120,8 @@ defmodule EEVM.Opcodes.SystemTest do
 
       assert result.status == :stopped
       assert EEVM.stack_values(result) == [0]
-      assert WorldState.get_balance(result.world_state, 0) == 0
-      assert WorldState.get_balance(result.world_state, 1) == 0
+      assert Database.get_balance(result.db, 0) == 0
+      assert Database.get_balance(result.db, 1) == 0
     end
 
     test "transfers value on successful call" do
@@ -134,8 +134,8 @@ defmodule EEVM.Opcodes.SystemTest do
       result = EEVM.execute(code, world_state: world_state)
 
       assert EEVM.stack_values(result) == [1]
-      assert WorldState.get_balance(result.world_state, 0) == 6
-      assert WorldState.get_balance(result.world_state, 1) == 3
+      assert Database.get_balance(result.db, 0) == 6
+      assert Database.get_balance(result.db, 1) == 3
     end
 
     test "failed child call pushes 0 and restores balances" do
@@ -155,8 +155,8 @@ defmodule EEVM.Opcodes.SystemTest do
 
       assert result.status == :stopped
       assert EEVM.stack_values(result) == [0]
-      assert WorldState.get_balance(result.world_state, 0) == 8
-      assert WorldState.get_balance(result.world_state, 1) == 1
+      assert Database.get_balance(result.db, 0) == 8
+      assert Database.get_balance(result.db, 1) == 1
       assert result.return_data == <<>>
     end
   end
@@ -199,7 +199,7 @@ defmodule EEVM.Opcodes.SystemTest do
 
       assert result.status == :stopped
       assert EEVM.stack_values(result) == [0]
-      assert EEVM.Storage.load(result.storage, 0) == 0
+      assert Database.storage_load(result.db, 0, 0) == 0
     end
 
     test "pushes failure flag when child attempts LOG in static context" do
@@ -245,7 +245,7 @@ defmodule EEVM.Opcodes.SystemTest do
       assert result.return_data == <<0x00>>
       {mem, _} = Memory.read_bytes(result.memory, 0, 1)
       assert mem == <<0x00>>
-      assert EEVM.Storage.load(result.storage, 0) == 0
+      assert Database.storage_load(result.db, 0, 0) == 0
     end
 
     test "does not transfer value" do
@@ -258,8 +258,8 @@ defmodule EEVM.Opcodes.SystemTest do
 
       assert result.status == :stopped
       assert EEVM.stack_values(result) == [1]
-      assert WorldState.get_balance(result.world_state, 0) == 9
-      assert WorldState.get_balance(result.world_state, 1) == 0
+      assert Database.get_balance(result.db, 0) == 9
+      assert Database.get_balance(result.db, 1) == 0
     end
   end
 
@@ -280,8 +280,8 @@ defmodule EEVM.Opcodes.SystemTest do
       result = EEVM.execute(code, world_state: world_state, contract: contract)
 
       assert EEVM.stack_values(result) == [1]
-      assert Storage.load(result.storage, 0xAA) == 1
-      assert Storage.load(result.storage, 0x01) == 0
+      assert Database.storage_load(result.db, contract.address, 0xAA) == 1
+      assert Database.storage_load(result.db, contract.address, 0x01) == 0
     end
 
     test "preserves caller (msg.sender)" do
@@ -296,7 +296,7 @@ defmodule EEVM.Opcodes.SystemTest do
       result = EEVM.execute(code, world_state: world_state, contract: contract)
 
       assert EEVM.stack_values(result) == [1]
-      assert Storage.load(result.storage, 0) == 0xBEEF
+      assert Database.storage_load(result.db, contract.address, 0) == 0xBEEF
     end
 
     test "preserves callvalue (msg.value)" do
@@ -311,7 +311,7 @@ defmodule EEVM.Opcodes.SystemTest do
       result = EEVM.execute(code, world_state: world_state, contract: contract)
 
       assert EEVM.stack_values(result) == [1]
-      assert Storage.load(result.storage, 0) == 999
+      assert Database.storage_load(result.db, contract.address, 0) == 999
     end
 
     test "ADDRESS returns parent's address" do
@@ -326,7 +326,7 @@ defmodule EEVM.Opcodes.SystemTest do
       result = EEVM.execute(code, world_state: world_state, contract: contract)
 
       assert EEVM.stack_values(result) == [1]
-      assert Storage.load(result.storage, 0) == 0xAA
+      assert Database.storage_load(result.db, contract.address, 0) == 0xAA
     end
 
     test "pushes 0 on failure" do
@@ -357,8 +357,8 @@ defmodule EEVM.Opcodes.SystemTest do
       result = EEVM.execute(code, world_state: world_state, contract: contract)
 
       assert EEVM.stack_values(result) == [1]
-      assert Storage.load(result.storage, 0xAA) == 1
-      assert Storage.load(result.storage, 0x01) == 0
+      assert Database.storage_load(result.db, contract.address, 0xAA) == 1
+      assert Database.storage_load(result.db, contract.address, 0x01) == 0
     end
 
     test "CALLER returns current contract address" do
@@ -373,7 +373,7 @@ defmodule EEVM.Opcodes.SystemTest do
       result = EEVM.execute(code, world_state: world_state, contract: contract)
 
       assert EEVM.stack_values(result) == [1]
-      assert Storage.load(result.storage, 0) == 0xAAAA
+      assert Database.storage_load(result.db, contract.address, 0) == 0xAAAA
     end
 
     test "pushes 0 on failure" do

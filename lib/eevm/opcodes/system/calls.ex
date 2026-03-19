@@ -17,7 +17,7 @@ defmodule EEVM.Opcodes.System.Calls do
   All call opcodes use EIP-150 gas forwarding: `min(requested, available - available/64)`.
   """
 
-  alias EEVM.{Executor, MachineState, Memory, Stack, WorldState}
+  alias EEVM.{Database, Executor, MachineState, Memory, Stack}
   alias EEVM.Gas.Dynamic
   alias EEVM.Gas.Memory, as: GasMemory
   alias EEVM.Context.Contract
@@ -164,8 +164,8 @@ defmodule EEVM.Opcodes.System.Calls do
          ret_offset,
          ret_size
        ) do
-    world_state = state.world_state
-    account_exists = WorldState.account_exists?(world_state, address)
+    db = state.db
+    account_exists = Database.account_exists?(db, address)
 
     call_cost =
       Dynamic.call_value_cost(value) +
@@ -173,9 +173,9 @@ defmodule EEVM.Opcodes.System.Calls do
         call_memory_expansion_cost(state.memory, args_offset, args_size, ret_offset, ret_size)
 
     with {:ok, state_after_cost} <- MachineState.consume_gas(%{state | stack: stack}, call_cost),
-         {:ok, world_state_after_transfer} <-
-           WorldState.transfer(
-             state_after_cost.world_state,
+         {:ok, db_after_transfer} <-
+           Database.transfer(
+             state_after_cost.db,
              state_after_cost.contract.address,
              address,
              value
@@ -190,7 +190,7 @@ defmodule EEVM.Opcodes.System.Calls do
              forwarded_gas
            ) do
         {:ok, state_after_forward} ->
-          target_code = WorldState.get_code(world_state_after_transfer, address)
+          target_code = Database.get_code(db_after_transfer, address)
 
           if Precompiles.precompile?(address) and target_code == <<>> do
             child_gas = forwarded_gas + Dynamic.call_stipend(value)
@@ -235,11 +235,10 @@ defmodule EEVM.Opcodes.System.Calls do
             child_state =
               MachineState.new(target_code,
                 gas: child_gas,
-                storage: state_after_forward.storage,
+                db: db_after_transfer,
                 tx: state_after_forward.tx,
                 block: state_after_forward.block,
                 contract: child_contract,
-                world_state: world_state_after_transfer,
                 accessed_addresses: state_after_forward.accessed_addresses,
                 accessed_storage_keys: state_after_forward.accessed_storage_keys,
                 created_addresses: state_after_forward.created_addresses,
@@ -250,15 +249,10 @@ defmodule EEVM.Opcodes.System.Calls do
             child_result = Executor.run_loop(child_state)
             call_succeeded = child_result.status == :stopped
 
-            world_state_result =
+            db_result =
               if call_succeeded,
-                do: child_result.world_state,
-                else: state_after_forward.world_state
-
-            storage_result =
-              if call_succeeded,
-                do: child_result.storage,
-                else: state_after_forward.storage
+                do: child_result.db,
+                else: state_after_forward.db
 
             logs_result =
               if call_succeeded,
@@ -291,8 +285,7 @@ defmodule EEVM.Opcodes.System.Calls do
              |> Map.put(:stack, stack_after_call)
              |> Map.put(:memory, memory_result)
              |> Map.put(:return_data, child_result.return_data)
-             |> Map.put(:world_state, world_state_result)
-             |> Map.put(:storage, storage_result)
+             |> Map.put(:db, db_result)
              |> Map.put(:logs, logs_result)
              |> Map.put(:accessed_addresses, accessed_addresses_result)
              |> Map.put(:accessed_storage_keys, accessed_storage_keys_result)
@@ -345,7 +338,7 @@ defmodule EEVM.Opcodes.System.Calls do
           child_gas =
             forwarded_gas + if(add_stipend?, do: Dynamic.call_stipend(callvalue), else: 0)
 
-          target_code = WorldState.get_code(state_after_forward.world_state, address)
+          target_code = Database.get_code(state_after_forward.db, address)
 
           if Precompiles.precompile?(address) and target_code == <<>> do
             case Precompiles.execute(address, calldata, child_gas) do
@@ -386,11 +379,10 @@ defmodule EEVM.Opcodes.System.Calls do
             child_state =
               MachineState.new(target_code,
                 gas: child_gas,
-                storage: state_after_forward.storage,
+                db: state_after_forward.db,
                 tx: state_after_forward.tx,
                 block: state_after_forward.block,
                 contract: child_contract,
-                world_state: state_after_forward.world_state,
                 accessed_addresses: state_after_forward.accessed_addresses,
                 accessed_storage_keys: state_after_forward.accessed_storage_keys,
                 created_addresses: state_after_forward.created_addresses,
@@ -401,15 +393,10 @@ defmodule EEVM.Opcodes.System.Calls do
             child_result = Executor.run_loop(child_state)
             call_succeeded = child_result.status == :stopped
 
-            world_state_result =
+            db_result =
               if call_succeeded,
-                do: child_result.world_state,
-                else: state_after_forward.world_state
-
-            storage_result =
-              if call_succeeded,
-                do: child_result.storage,
-                else: state_after_forward.storage
+                do: child_result.db,
+                else: state_after_forward.db
 
             logs_result =
               if call_succeeded,
@@ -442,8 +429,7 @@ defmodule EEVM.Opcodes.System.Calls do
              |> Map.put(:stack, stack_after_call)
              |> Map.put(:memory, memory_result)
              |> Map.put(:return_data, child_result.return_data)
-             |> Map.put(:world_state, world_state_result)
-             |> Map.put(:storage, storage_result)
+             |> Map.put(:db, db_result)
              |> Map.put(:logs, logs_result)
              |> Map.put(:accessed_addresses, accessed_addresses_result)
              |> Map.put(:accessed_storage_keys, accessed_storage_keys_result)
