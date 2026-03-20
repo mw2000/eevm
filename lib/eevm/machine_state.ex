@@ -86,6 +86,9 @@ defmodule EEVM.MachineState do
   @doc """
   Creates a new machine state for executing the given bytecode.
 
+  Includes EIP-2929/EIP-3651 access-list pre-warming so sender, recipient,
+  precompiles, and `block.coinbase` start warm for address-access gas metering.
+
   ## Parameters
     - `code` — the raw EVM bytecode as an Elixir binary
     - `opts` — optional keyword list:
@@ -113,6 +116,7 @@ defmodule EEVM.MachineState do
   def new(code, opts \\ []) do
     contract = Keyword.get(opts, :contract, Contract.new())
     tx = Keyword.get(opts, :tx, Transaction.new())
+    block = Keyword.get(opts, :block, Block.new())
 
     %__MODULE__{
       code: code,
@@ -122,10 +126,10 @@ defmodule EEVM.MachineState do
       original_storage: Keyword.get(opts, :original_storage, %{}),
       transient_storage: Keyword.get(opts, :transient_storage, %{}),
       tx: tx,
-      block: Keyword.get(opts, :block, Block.new()),
+      block: block,
       contract: contract,
       accessed_addresses:
-        Keyword.get(opts, :accessed_addresses, pre_warm_addresses(contract, tx)),
+        Keyword.get(opts, :accessed_addresses, pre_warm_addresses(contract, tx, block)),
       accessed_storage_keys: Keyword.get(opts, :accessed_storage_keys, MapSet.new()),
       created_addresses: Keyword.get(opts, :created_addresses, MapSet.new()),
       call_stack: Keyword.get(opts, :call_stack, []),
@@ -139,11 +143,15 @@ defmodule EEVM.MachineState do
     }
   end
 
-  defp pre_warm_addresses(contract, tx) do
+  # EIP-3651 (Shanghai): COINBASE is pre-warmed at tx start because many
+  # contracts access the block producer address (e.g., builder/proposer payments),
+  # and charging the first touch as cold penalizes a common access pattern.
+  defp pre_warm_addresses(contract, tx, block) do
     MapSet.new()
     |> MapSet.put(contract.address)
     |> MapSet.put(contract.caller)
     |> MapSet.put(tx.origin)
+    |> MapSet.put(block.coinbase)
     |> then(fn set ->
       Enum.reduce(0x01..0x0A, set, &MapSet.put(&2, &1))
     end)
