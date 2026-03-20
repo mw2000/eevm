@@ -131,36 +131,54 @@ defmodule EEVM.Opcodes.System.Creation do
                           stack
                         )
                       else
-                        deposit_cost = Dynamic.code_deposit_cost(byte_size(runtime_code))
-
-                        if child_result.gas >= deposit_cost do
-                          db_after_deploy =
-                            child_result.db
-                            |> Database.put_code(new_address, runtime_code)
-                            |> Database.set_nonce(new_address, 1)
-
-                          {:ok, stack_after_create} = Stack.push(stack, new_address)
-
-                          created_addresses_after =
-                            MapSet.put(child_result.created_addresses, new_address)
-
-                          {:ok,
-                           state_after_initcode_cost
-                           |> Map.put(:stack, stack_after_create)
-                           |> Map.put(:memory, memory_after_read)
-                           |> Map.put(:db, db_after_deploy)
-                           |> Map.put(:logs, state_after_initcode_cost.logs ++ child_result.logs)
-                           |> Map.put(:accessed_addresses, child_result.accessed_addresses)
-                           |> Map.put(:accessed_storage_keys, child_result.accessed_storage_keys)
-                           |> Map.put(:created_addresses, created_addresses_after)
-                           |> Map.put(:gas, child_result.gas - deposit_cost)
-                           |> Map.put(:return_data, child_result.return_data)
-                           |> MachineState.advance_pc()}
-                        else
+                        # EIP-3541 (London): reject runtime code whose first byte is 0xEF.
+                        # The 0xEF prefix is reserved for the EVM Object Format (EOF).
+                        # This check runs after EIP-170 size validation and after init code
+                        # execution — so init code gas is already consumed but no code is
+                        # deposited. Empty runtime code is explicitly allowed.
+                        if reject_eip_3541_runtime_code?(runtime_code) do
                           create_failed(
                             %{state_after_initcode_cost | db: db_after_nonce},
                             stack
                           )
+                        else
+                          deposit_cost = Dynamic.code_deposit_cost(byte_size(runtime_code))
+
+                          if child_result.gas >= deposit_cost do
+                            db_after_deploy =
+                              child_result.db
+                              |> Database.put_code(new_address, runtime_code)
+                              |> Database.set_nonce(new_address, 1)
+
+                            {:ok, stack_after_create} = Stack.push(stack, new_address)
+
+                            created_addresses_after =
+                              MapSet.put(child_result.created_addresses, new_address)
+
+                            {:ok,
+                             state_after_initcode_cost
+                             |> Map.put(:stack, stack_after_create)
+                             |> Map.put(:memory, memory_after_read)
+                             |> Map.put(:db, db_after_deploy)
+                             |> Map.put(
+                               :logs,
+                               state_after_initcode_cost.logs ++ child_result.logs
+                             )
+                             |> Map.put(:accessed_addresses, child_result.accessed_addresses)
+                             |> Map.put(
+                               :accessed_storage_keys,
+                               child_result.accessed_storage_keys
+                             )
+                             |> Map.put(:created_addresses, created_addresses_after)
+                             |> Map.put(:gas, child_result.gas - deposit_cost)
+                             |> Map.put(:return_data, child_result.return_data)
+                             |> MachineState.advance_pc()}
+                          else
+                            create_failed(
+                              %{state_after_initcode_cost | db: db_after_nonce},
+                              stack
+                            )
+                          end
                         end
                       end
                     else
@@ -255,6 +273,15 @@ defmodule EEVM.Opcodes.System.Creation do
       length_bytes = :binary.encode_unsigned(length)
       <<0xF7 + byte_size(length_bytes), length_bytes::binary, payload::binary>>
     end
+  end
+
+  # EIP-3541 (London): returns true when runtime code must be rejected.
+  # CREATE/CREATE2 cannot deploy bytecode whose first byte is 0xEF — that
+  # prefix is reserved for the EVM Object Format (EOF). Empty runtime code
+  # is explicitly allowed; only a non-empty 0xEF-prefixed result is rejected.
+  @spec reject_eip_3541_runtime_code?(binary()) :: boolean()
+  defp reject_eip_3541_runtime_code?(runtime_code) do
+    byte_size(runtime_code) > 0 and :binary.first(runtime_code) == 0xEF
   end
 
   defp create_failed(state, stack) do
