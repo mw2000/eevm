@@ -136,7 +136,6 @@ defmodule EEVM.MachineState do
       block: block,
       contract: contract,
       config: config,
-      config: config,
       touched_addresses: Keyword.get(opts, :touched_addresses, MapSet.new()),
       accessed_addresses:
         Keyword.get(opts, :accessed_addresses, pre_warm_addresses(contract, tx, block, config)),
