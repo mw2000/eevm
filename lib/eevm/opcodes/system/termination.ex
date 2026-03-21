@@ -12,7 +12,7 @@ defmodule EEVM.Opcodes.System.Termination do
   created the contract.
   """
 
-  alias EEVM.{Database, MachineState, Memory, Stack}
+  alias EEVM.{Database, HardforkConfig, MachineState, Memory, Stack}
   alias EEVM.Gas.Memory, as: GasMemory
 
   @spec execute(non_neg_integer(), MachineState.t()) ::
@@ -67,15 +67,17 @@ defmodule EEVM.Opcodes.System.Termination do
         {:ok, state_after_gas} ->
           state_after_touch = MachineState.touch_address(state_after_gas, beneficiary)
 
-          # EIP-6780: post-Cancun, SELFDESTRUCT only fully deletes the account
-          # when the contract was created in the same transaction. Otherwise it
-          # only transfers the balance to the beneficiary.
-          created_this_tx =
-            MapSet.member?(state_after_touch.created_addresses, contract_address)
+          # EIP-6780 (Cancun+): SELFDESTRUCT only fully deletes the account when
+          # the contract was created in the same transaction. Pre-Cancun, every
+          # SELFDESTRUCT unconditionally deletes the account and transfers the balance.
+          eip_6780_active? = HardforkConfig.enabled?(state_after_touch.config.hardfork, :eip_6780)
+          created_this_tx = MapSet.member?(state_after_touch.created_addresses, contract_address)
+
+          full_delete? = not eip_6780_active? or created_this_tx
 
           db_after =
-            if created_this_tx do
-              # EIP-6780: full deletion for contracts created in the same tx
+            if full_delete? do
+              # Full deletion: account is removed and balance transferred
               db = Database.delete_account(state_after_touch.db, contract_address)
 
               if beneficiary != contract_address do
@@ -88,6 +90,7 @@ defmodule EEVM.Opcodes.System.Termination do
                 db
               end
             else
+              # EIP-6780 partial: only transfer balance, keep account intact
               if beneficiary == contract_address do
                 state_after_gas.db
               else

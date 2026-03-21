@@ -23,6 +23,7 @@ defmodule EEVM.Opcodes.StackMemoryStorage.StorageOps do
 
   alias EEVM.{Database, MachineState, Stack}
   alias EEVM.Gas.{Access, Dynamic}
+  alias EEVM.HardforkConfig
 
   @cold_sload_cost 2100
 
@@ -92,23 +93,36 @@ defmodule EEVM.Opcodes.StackMemoryStorage.StorageOps do
     end
   end
 
-  def execute(0x5C, state) do
-    with {:ok, key, s1} <- Stack.pop(state.stack),
-         value = Map.get(state.transient_storage, key, 0),
-         {:ok, s2} <- Stack.push(s1, value) do
-      {:ok, %{state | stack: s2} |> MachineState.advance_pc()}
+  # TLOAD (EIP-1153, Cancun+): reads from transient storage — a key-value map
+  # cleared at the end of each transaction. Pre-Cancun, 0x5C is undefined → :invalid.
+  def execute(0x5C, %{config: %{hardfork: hardfork}} = state) do
+    if HardforkConfig.enabled?(hardfork, :eip_1153) do
+      with {:ok, key, s1} <- Stack.pop(state.stack),
+           value = Map.get(state.transient_storage, key, 0),
+           {:ok, s2} <- Stack.push(s1, value) do
+        {:ok, %{state | stack: s2} |> MachineState.advance_pc()}
+      else
+        {:error, reason} -> {:error, reason, state}
+      end
     else
-      {:error, reason} -> {:error, reason, state}
+      {:ok, MachineState.halt(state, :invalid)}
     end
   end
 
-  def execute(0x5D, state) do
-    with {:ok, key, s1} <- Stack.pop(state.stack),
-         {:ok, value, s2} <- Stack.pop(s1) do
-      new_transient = Map.put(state.transient_storage, key, value)
-      {:ok, %{state | stack: s2, transient_storage: new_transient} |> MachineState.advance_pc()}
+  # TSTORE (EIP-1153, Cancun+): writes to transient storage. The static-context
+  # guard in the executor rejects TSTORE before this clause is reached in static mode.
+  # Pre-Cancun, 0x5D is undefined → :invalid.
+  def execute(0x5D, %{config: %{hardfork: hardfork}} = state) do
+    if HardforkConfig.enabled?(hardfork, :eip_1153) do
+      with {:ok, key, s1} <- Stack.pop(state.stack),
+           {:ok, value, s2} <- Stack.pop(s1) do
+        new_transient = Map.put(state.transient_storage, key, value)
+        {:ok, %{state | stack: s2, transient_storage: new_transient} |> MachineState.advance_pc()}
+      else
+        {:error, reason} -> {:error, reason, state}
+      end
     else
-      {:error, reason} -> {:error, reason, state}
+      {:ok, MachineState.halt(state, :invalid)}
     end
   end
 

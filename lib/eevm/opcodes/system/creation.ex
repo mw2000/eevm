@@ -20,7 +20,10 @@ defmodule EEVM.Opcodes.System.Creation do
   @max_initcode_size 49_152
   @initcode_word_cost 2
 
-  alias EEVM.{Database, Executor, MachineState, Memory, Stack}
+  alias EEVM.{Database, Executor, HardforkConfig, MachineState, Memory, Stack}
+  alias EEVM.Gas.Dynamic
+  alias EEVM.Gas.Memory, as: GasMemory
+  alias EEVM.Context.Contract
   alias EEVM.Gas.Dynamic
   alias EEVM.Gas.Memory, as: GasMemory
   alias EEVM.Context.Contract
@@ -76,10 +79,14 @@ defmodule EEVM.Opcodes.System.Creation do
         db_after_nonce =
           Database.increment_nonce(state_after_cost.db, creator)
 
-        if size > @max_initcode_size do
+        if HardforkConfig.enabled?(state_after_cost.config.hardfork, :eip_3860) and
+           size > @max_initcode_size do
           create_failed(%{state_after_cost | db: db_after_nonce}, stack)
         else
-          initcode_cost = @initcode_word_cost * div(size + 31, 32)
+          initcode_cost =
+            if HardforkConfig.enabled?(state_after_cost.config.hardfork, :eip_3860),
+              do: @initcode_word_cost * div(size + 31, 32),
+              else: 0
 
           case MachineState.consume_gas(state_after_cost, initcode_cost) do
             {:ok, state_after_initcode_cost} ->
@@ -130,18 +137,20 @@ defmodule EEVM.Opcodes.System.Creation do
                     if deployment_success do
                       runtime_code = child_result.return_data
 
-                      if byte_size(runtime_code) > @max_code_size do
+                      if HardforkConfig.enabled?(child_result.config.hardfork, :eip_170) and
+                         byte_size(runtime_code) > @max_code_size do
                         create_failed(
                           %{state_after_touch | db: db_after_nonce},
                           stack
                         )
                       else
-                        # EIP-3541 (London): reject runtime code whose first byte is 0xEF.
+                        # EIP-3541 (London+): reject runtime code whose first byte is 0xEF.
                         # The 0xEF prefix is reserved for the EVM Object Format (EOF).
                         # This check runs after EIP-170 size validation and after init code
-                        # execution — so init code gas is already consumed but no code is
+                        # execution -- so init code gas is already consumed but no code is
                         # deposited. Empty runtime code is explicitly allowed.
-                        if reject_eip_3541_runtime_code?(runtime_code) do
+                        if HardforkConfig.enabled?(child_result.config.hardfork, :eip_3541) and
+                           reject_eip_3541_runtime_code?(runtime_code) do
                           create_failed(
                             %{state_after_touch | db: db_after_nonce},
                             stack
