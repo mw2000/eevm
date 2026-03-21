@@ -13,13 +13,15 @@ defmodule EEVM.StateRootTest do
 
   test "compute_storage_root/2 includes only non-zero slots" do
     db =
-      InMemory.new(storage: %{
-        0xAA => %{
-          0 => 0,
-          1 => 42,
-          5 => 999
+      InMemory.new(
+        storage: %{
+          0xAA => %{
+            0 => 0,
+            1 => 42,
+            5 => 999
+          }
         }
-      })
+      )
 
     expected =
       Trie.secure_root_hash([

@@ -16,7 +16,9 @@ defmodule EEVM.StateRoot do
       |> Database.storage_slots(address)
       |> Enum.reject(fn {_slot, value} -> value == 0 end)
       |> Enum.sort_by(fn {slot, _value} -> slot end)
-      |> Enum.map(fn {slot, value} -> {encode_uint(slot, @storage_key_bytes), ExRLP.encode(value)} end)
+      |> Enum.map(fn {slot, value} ->
+        {encode_uint(slot, @storage_key_bytes), ExRLP.encode(value)}
+      end)
 
     Trie.secure_root_hash(entries)
   end
@@ -51,7 +53,8 @@ defmodule EEVM.StateRoot do
     db
     |> Database.storage_addresses()
     |> Enum.flat_map(fn address ->
-      case Database.storage_slots(db, address) |> Enum.reject(fn {_slot, value} -> value == 0 end) do
+      case Database.storage_slots(db, address)
+           |> Enum.reject(fn {_slot, value} -> value == 0 end) do
         [] -> []
         _slots -> [address]
       end
