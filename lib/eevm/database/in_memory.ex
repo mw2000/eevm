@@ -181,6 +181,23 @@ defmodule EEVM.Database.InMemory do
   end
 
   @impl true
+  def account_addresses(%{accounts: accounts}) do
+    Map.keys(accounts)
+  end
+
+  @impl true
+  def storage_slots(%{storage: storage}, address) do
+    storage
+    |> Map.get(address, %{})
+    |> Map.to_list()
+  end
+
+  @impl true
+  def storage_addresses(%{storage: storage}) do
+    Map.keys(storage)
+  end
+
+  @impl true
   def storage_store(%{storage: storage} = state, address, key, value) do
     address_storage = Map.get(storage, address, %{})
     updated_slot = Map.put(address_storage, key, band_256(value))

@@ -208,6 +208,25 @@ defmodule EEVM.DatabaseTest do
       db = Database.storage_store(db, 0xAA, 0, 99)
       assert Database.storage_load(db, 0xAA, 0) == 99
     end
+
+    test "account_addresses/1 returns all account keys" do
+      db = InMemory.new(accounts: %{0xAA => %{balance: 1}, 0xBB => %{nonce: 2}})
+
+      assert db |> Database.account_addresses() |> Enum.sort() == [0xAA, 0xBB]
+    end
+
+    test "storage_slots/2 returns tracked slot entries" do
+      db = InMemory.new(storage: %{0xAA => %{0 => 10, 9 => 11}})
+
+      assert db |> Database.storage_slots(0xAA) |> Enum.sort() == [{0, 10}, {9, 11}]
+      assert Database.storage_slots(db, 0xBB) == []
+    end
+
+    test "storage_addresses/1 returns addresses with tracked storage" do
+      db = InMemory.new(storage: %{0xAA => %{0 => 1}, 0xBB => %{2 => 2}})
+
+      assert db |> Database.storage_addresses() |> Enum.sort() == [0xAA, 0xBB]
+    end
   end
 
   describe "Database struct" do
