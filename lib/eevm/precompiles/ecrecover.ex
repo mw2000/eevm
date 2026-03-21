@@ -35,6 +35,8 @@ defmodule EEVM.Precompiles.ECRecover do
   - Ethereum addresses are derived as `keccak256(pubkey_without_0x04)[12..31]`.
   """
 
+  @behaviour EEVM.Precompile
+
   @gas_cost 3000
   @curve_order 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141
 
@@ -46,6 +48,7 @@ defmodule EEVM.Precompiles.ECRecover do
   """
   @spec execute(binary(), non_neg_integer()) ::
           {:ok, binary(), non_neg_integer()} | {:error, :out_of_gas}
+  @impl true
   def execute(_input, gas_limit) when gas_limit < @gas_cost, do: {:error, :out_of_gas}
 
   def execute(input, _gas_limit) do

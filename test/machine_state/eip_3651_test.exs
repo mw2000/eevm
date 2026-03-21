@@ -2,6 +2,7 @@ defmodule EEVM.MachineState.EIP3651Test do
   use ExUnit.Case, async: true
 
   alias EEVM.MachineState
+  alias EEVM.Config
   alias EEVM.WorldState
   alias EEVM.Context.{Block, Contract, Transaction}
 
@@ -44,6 +45,14 @@ defmodule EEVM.MachineState.EIP3651Test do
 
       assert result.gas == initial_gas - 2 - 100
       refute result.gas == initial_gas - 2 - 2600
+    end
+
+    test "custom precompile addresses are pre-warmed" do
+      config = Config.new() |> Config.register_precompile(0x100, EEVM.Precompiles.Identity)
+
+      state = MachineState.new(<<0x00>>, config: config)
+
+      assert MapSet.member?(state.accessed_addresses, 0x100)
     end
   end
 end

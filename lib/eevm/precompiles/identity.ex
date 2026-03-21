@@ -37,6 +37,8 @@ defmodule EEVM.Precompiles.Identity do
     throughout the opcode modules.
   """
 
+  @behaviour EEVM.Precompile
+
   @base_cost 15
   @word_cost 3
 
@@ -60,6 +62,7 @@ defmodule EEVM.Precompiles.Identity do
   """
   @spec execute(binary(), non_neg_integer()) ::
           {:ok, binary(), non_neg_integer()} | {:error, :out_of_gas}
+  @impl true
   def execute(input, gas_limit) do
     cost = @base_cost + @word_cost * word_count(input)
 

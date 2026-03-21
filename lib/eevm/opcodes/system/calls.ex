@@ -192,10 +192,10 @@ defmodule EEVM.Opcodes.System.Calls do
         {:ok, state_after_forward} ->
           target_code = Database.get_code(db_after_transfer, address)
 
-          if Precompiles.precompile?(address) and target_code == <<>> do
+          if Precompiles.precompile?(address, state_after_forward.config) and target_code == <<>> do
             child_gas = forwarded_gas + Dynamic.call_stipend(value)
 
-            case Precompiles.execute(address, calldata, child_gas) do
+            case Precompiles.execute(address, calldata, child_gas, state_after_forward.config) do
               {:ok, output, gas_used} ->
                 remaining_gas = child_gas - gas_used
                 memory_result = write_return_data(memory_after_read, ret_offset, ret_size, output)
@@ -239,6 +239,7 @@ defmodule EEVM.Opcodes.System.Calls do
                 tx: state_after_forward.tx,
                 block: state_after_forward.block,
                 contract: child_contract,
+                config: state_after_forward.config,
                 accessed_addresses: state_after_forward.accessed_addresses,
                 accessed_storage_keys: state_after_forward.accessed_storage_keys,
                 created_addresses: state_after_forward.created_addresses,
@@ -340,8 +341,8 @@ defmodule EEVM.Opcodes.System.Calls do
 
           target_code = Database.get_code(state_after_forward.db, address)
 
-          if Precompiles.precompile?(address) and target_code == <<>> do
-            case Precompiles.execute(address, calldata, child_gas) do
+          if Precompiles.precompile?(address, state_after_forward.config) and target_code == <<>> do
+            case Precompiles.execute(address, calldata, child_gas, state_after_forward.config) do
               {:ok, output, gas_used} ->
                 remaining_gas = child_gas - gas_used
                 memory_result = write_return_data(memory_after_read, ret_offset, ret_size, output)
@@ -383,6 +384,7 @@ defmodule EEVM.Opcodes.System.Calls do
                 tx: state_after_forward.tx,
                 block: state_after_forward.block,
                 contract: child_contract,
+                config: state_after_forward.config,
                 accessed_addresses: state_after_forward.accessed_addresses,
                 accessed_storage_keys: state_after_forward.accessed_storage_keys,
                 created_addresses: state_after_forward.created_addresses,

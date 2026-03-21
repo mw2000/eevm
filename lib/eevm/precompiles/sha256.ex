@@ -37,6 +37,8 @@ defmodule EEVM.Precompiles.SHA256 do
     Erlang exposes the full OpenSSL digest catalogue this way.
   """
 
+  @behaviour EEVM.Precompile
+
   @base_cost 60
   @word_cost 12
 
@@ -58,6 +60,7 @@ defmodule EEVM.Precompiles.SHA256 do
   """
   @spec execute(binary(), non_neg_integer()) ::
           {:ok, binary(), non_neg_integer()} | {:error, :out_of_gas}
+  @impl true
   def execute(input, gas_limit) do
     cost = @base_cost + @word_cost * word_count(input)
 
