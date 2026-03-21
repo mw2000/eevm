@@ -26,9 +26,11 @@ defmodule EEVM.MachineState do
   """
 
   alias EEVM.{CallFrame, Memory, Stack}
+  alias EEVM.Config
   alias EEVM.Database
   alias EEVM.Database.InMemory, as: InMemoryDB
   alias EEVM.Context.{Block, Contract, Transaction}
+  alias EEVM.Precompiles
 
   @type status :: :running | :stopped | :reverted | :invalid | :out_of_gas | {:error, atom()}
 
@@ -42,6 +44,7 @@ defmodule EEVM.MachineState do
           tx: Transaction.t(),
           block: Block.t(),
           contract: Contract.t(),
+          config: Config.t(),
           accessed_addresses: MapSet.t(non_neg_integer()),
           accessed_storage_keys: MapSet.t({non_neg_integer(), non_neg_integer()}),
           created_addresses: MapSet.t(non_neg_integer()),
@@ -68,6 +71,7 @@ defmodule EEVM.MachineState do
             tx: nil,
             block: nil,
             contract: nil,
+            config: nil,
             accessed_addresses: nil,
             accessed_storage_keys: nil,
             created_addresses: nil,
@@ -117,6 +121,7 @@ defmodule EEVM.MachineState do
     contract = Keyword.get(opts, :contract, Contract.new())
     tx = Keyword.get(opts, :tx, Transaction.new())
     block = Keyword.get(opts, :block, Block.new())
+    config = Keyword.get(opts, :config, Config.new())
 
     %__MODULE__{
       code: code,
@@ -128,8 +133,9 @@ defmodule EEVM.MachineState do
       tx: tx,
       block: block,
       contract: contract,
+      config: config,
       accessed_addresses:
-        Keyword.get(opts, :accessed_addresses, pre_warm_addresses(contract, tx, block)),
+        Keyword.get(opts, :accessed_addresses, pre_warm_addresses(contract, tx, block, config)),
       accessed_storage_keys: Keyword.get(opts, :accessed_storage_keys, MapSet.new()),
       created_addresses: Keyword.get(opts, :created_addresses, MapSet.new()),
       call_stack: Keyword.get(opts, :call_stack, []),
@@ -146,14 +152,14 @@ defmodule EEVM.MachineState do
   # EIP-3651 (Shanghai): COINBASE is pre-warmed at tx start because many
   # contracts access the block producer address (e.g., builder/proposer payments),
   # and charging the first touch as cold penalizes a common access pattern.
-  defp pre_warm_addresses(contract, tx, block) do
+  defp pre_warm_addresses(contract, tx, block, config) do
     MapSet.new()
     |> MapSet.put(contract.address)
     |> MapSet.put(contract.caller)
     |> MapSet.put(tx.origin)
     |> MapSet.put(block.coinbase)
     |> then(fn set ->
-      Enum.reduce(0x01..0x0A, set, &MapSet.put(&2, &1))
+      Enum.reduce(Precompiles.precompile_addresses(config), set, &MapSet.put(&2, &1))
     end)
   end
 

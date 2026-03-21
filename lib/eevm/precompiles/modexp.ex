@@ -59,6 +59,8 @@ defmodule EEVM.Precompiles.ModExp do
     integers with `:binary.decode_unsigned/1` works for very large values.
   """
 
+  @behaviour EEVM.Precompile
+
   @minimum_gas 200
 
   @doc """
@@ -66,6 +68,7 @@ defmodule EEVM.Precompiles.ModExp do
   """
   @spec execute(binary(), non_neg_integer()) ::
           {:ok, binary(), non_neg_integer()} | {:error, :out_of_gas}
+  @impl true
   def execute(input, gas_limit) do
     {base_length, exp_length, mod_length, base_bytes, exp_bytes, mod_bytes} = parse_input(input)
     cost = gas_cost(base_length, exp_length, mod_length, exp_bytes)

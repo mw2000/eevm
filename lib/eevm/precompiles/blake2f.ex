@@ -41,6 +41,8 @@ defmodule EEVM.Precompiles.Blake2F do
     fixed-size vectors like Blake2b's 16-word working vector.
   """
 
+  @behaviour EEVM.Precompile
+
   import Bitwise
 
   @mask 0xFFFFFFFFFFFFFFFF
@@ -82,6 +84,7 @@ defmodule EEVM.Precompiles.Blake2F do
   """
   @spec execute(binary(), non_neg_integer()) ::
           {:ok, binary(), non_neg_integer()} | {:error, :invalid_input | :out_of_gas}
+  @impl true
   def execute(input, gas_limit) do
     with {:ok, rounds, h, m, t, final_block?} <- parse_input(input),
          :ok <- ensure_gas(rounds, gas_limit) do

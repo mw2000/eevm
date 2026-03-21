@@ -51,6 +51,8 @@ defmodule EEVM.Precompiles.KZGPointEval do
   the cryptographic proof step as successful when no verifier is available.
   """
 
+  @behaviour EEVM.Precompile
+
   @gas_cost 50_000
   @field_elements_per_blob 4_096
   @bls_modulus 52_435_875_175_126_190_479_447_740_508_185_965_837_690_552_500_527_637_822_603_658_699_938_581_184_513
@@ -64,6 +66,7 @@ defmodule EEVM.Precompiles.KZGPointEval do
              | :invalid_versioned_hash
              | :invalid_field_element
              | :proof_verification_failed}
+  @impl true
   def execute(_input, gas_limit) when gas_limit < @gas_cost, do: {:error, :out_of_gas}
 
   def execute(input, _gas_limit) do

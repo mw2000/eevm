@@ -112,6 +112,7 @@ defmodule EEVM.Opcodes.System.Creation do
                         tx: state_after_initcode_cost.tx,
                         block: state_after_initcode_cost.block,
                         contract: child_contract,
+                        config: state_after_initcode_cost.config,
                         accessed_addresses: state_after_initcode_cost.accessed_addresses,
                         accessed_storage_keys: state_after_initcode_cost.accessed_storage_keys,
                         created_addresses: state_after_initcode_cost.created_addresses,

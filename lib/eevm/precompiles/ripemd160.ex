@@ -42,6 +42,8 @@ defmodule EEVM.Precompiles.RIPEMD160 do
     bytes, yielding the required 32-byte output in one expression.
   """
 
+  @behaviour EEVM.Precompile
+
   @base_cost 600
   @word_cost 120
 
@@ -66,6 +68,7 @@ defmodule EEVM.Precompiles.RIPEMD160 do
   """
   @spec execute(binary(), non_neg_integer()) ::
           {:ok, binary(), non_neg_integer()} | {:error, :out_of_gas}
+  @impl true
   def execute(input, gas_limit) do
     cost = @base_cost + @word_cost * word_count(input)
 

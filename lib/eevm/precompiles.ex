@@ -23,37 +23,65 @@ defmodule EEVM.Precompiles do
   | 0x0A | KZG Point Evaluation — verify KZG commitment | EIP-4844 |
   """
 
-  alias EEVM.Precompiles.BN256
+  alias EEVM.Config
+  alias EEVM.Precompiles.BN256Add
+  alias EEVM.Precompiles.BN256Mul
+  alias EEVM.Precompiles.BN256Pairing
+  alias EEVM.Precompiles.Blake2F
   alias EEVM.Precompiles.ECRecover
   alias EEVM.Precompiles.Identity
   alias EEVM.Precompiles.KZGPointEval
-  alias EEVM.Precompiles.Blake2F
   alias EEVM.Precompiles.ModExp
   alias EEVM.Precompiles.RIPEMD160
   alias EEVM.Precompiles.SHA256
 
+  @default_registry %{
+    0x01 => ECRecover,
+    0x02 => SHA256,
+    0x03 => RIPEMD160,
+    0x04 => Identity,
+    0x05 => ModExp,
+    0x06 => BN256Add,
+    0x07 => BN256Mul,
+    0x08 => BN256Pairing,
+    0x09 => Blake2F,
+    0x0A => KZGPointEval
+  }
+
   @spec precompile?(non_neg_integer()) :: boolean()
-  def precompile?(address) when address >= 0x01 and address <= 0x0A, do: true
-  def precompile?(_), do: false
+  def precompile?(address), do: precompile?(address, Config.new())
+
+  @spec precompile?(non_neg_integer(), Config.t()) :: boolean()
+  def precompile?(address, %Config{} = config) when is_integer(address) and address >= 0 do
+    Map.has_key?(registry(config), address)
+  end
+
+  def precompile?(_address, _config), do: false
 
   @spec execute(non_neg_integer(), binary(), non_neg_integer()) ::
           {:ok, binary(), non_neg_integer()} | {:error, atom()}
-  def execute(0x01, input, gas_limit), do: ECRecover.execute(input, gas_limit)
-  def execute(0x02, input, gas_limit), do: SHA256.execute(input, gas_limit)
-  def execute(0x03, input, gas_limit), do: RIPEMD160.execute(input, gas_limit)
-  def execute(0x04, input, gas_limit), do: Identity.execute(input, gas_limit)
-  def execute(0x05, input, gas_limit), do: ModExp.execute(input, gas_limit)
-  def execute(0x06, input, gas_limit), do: BN256.execute_add(input, gas_limit)
-  def execute(0x07, input, gas_limit), do: BN256.execute_mul(input, gas_limit)
-  def execute(0x08, input, gas_limit), do: BN256.execute_pairing(input, gas_limit)
-  def execute(0x09, input, gas_limit), do: Blake2F.execute(input, gas_limit)
-  def execute(0x0A, input, gas_limit), do: KZGPointEval.execute(input, gas_limit)
+  def execute(address, input, gas_limit), do: execute(address, input, gas_limit, Config.new())
 
-  def execute(address, input, gas_limit) do
-    :erlang.apply(__MODULE__, :do_execute, [address, input, gas_limit])
+  @spec execute(non_neg_integer(), binary(), non_neg_integer(), Config.t()) ::
+          {:ok, binary(), non_neg_integer()} | {:error, atom()}
+  def execute(address, input, gas_limit, %Config{} = config)
+      when is_integer(address) and is_binary(input) and is_integer(gas_limit) and gas_limit >= 0 do
+    case Map.get(registry(config), address) do
+      nil -> {:error, :not_implemented}
+      module -> module.execute(input, gas_limit)
+    end
   end
 
-  def do_execute(_address, _input, _gas_limit) do
-    {:error, :not_implemented}
+  @spec precompile_addresses(Config.t()) :: [non_neg_integer()]
+  def precompile_addresses(%Config{} = config) do
+    config
+    |> registry()
+    |> Map.keys()
+    |> Enum.sort()
+  end
+
+  @spec registry(Config.t()) :: %{optional(non_neg_integer()) => module()}
+  def registry(%Config{precompiles: custom_precompiles}) do
+    Map.merge(@default_registry, custom_precompiles)
   end
 end

@@ -1,7 +1,17 @@
 defmodule EEVM.Opcodes.PrecompileTest do
   use ExUnit.Case, async: true
 
+  alias EEVM.Config
+  alias EEVM.Precompiles
   alias EEVM.WorldState
+
+  defmodule TestPrecompile do
+    @behaviour EEVM.Precompile
+
+    @impl true
+    def execute(_input, gas_limit) when gas_limit > 0, do: {:ok, <<0xAA>>, 1}
+    def execute(_input, _gas_limit), do: {:error, :out_of_gas}
+  end
 
   describe "Precompile routing (EIP-34)" do
     test "CALL to unimplemented precompile pushes 0 (failure)" do
@@ -63,6 +73,26 @@ defmodule EEVM.Opcodes.PrecompileTest do
       result = EEVM.execute(code, gas: 1_000_000)
       assert result.status == :stopped
       assert EEVM.stack_values(result) == [0]
+    end
+
+    test "custom precompile registration routes CALL and succeeds" do
+      config = Config.new() |> Config.register_precompile(0x100, TestPrecompile)
+
+      code =
+        <<0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x61, 0x01, 0x00, 0x61,
+          0xFF, 0xFF, 0xF1, 0x00>>
+
+      result = EEVM.execute(code, config: config, gas: 1_000_000)
+      assert result.status == :stopped
+      assert EEVM.stack_values(result) == [1]
+      assert result.return_data == <<0xAA>>
+    end
+
+    test "custom precompile detection is config-dependent" do
+      config = Config.new() |> Config.register_precompile(0x100, TestPrecompile)
+
+      refute Precompiles.precompile?(0x100)
+      assert Precompiles.precompile?(0x100, config)
     end
 
     test "CALL to identity precompile (0x04) succeeds and pushes 1" do
