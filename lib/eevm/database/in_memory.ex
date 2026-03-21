@@ -115,6 +115,13 @@ defmodule EEVM.Database.InMemory do
     end
   end
 
+  @impl true
+  def account_empty?(state, address) do
+    get_balance(state, address) == 0 and
+      get_nonce(state, address) == 0 and
+      get_code(state, address) == <<>>
+  end
+
   # ---------------------------------------------------------------------------
   # Account writes
   # ---------------------------------------------------------------------------

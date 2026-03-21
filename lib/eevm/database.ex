@@ -73,6 +73,9 @@ defmodule EEVM.Database do
   @doc "Return the nonce for `address` (0 if non-existent)."
   @callback get_nonce(state :: term(), address :: non_neg_integer()) :: non_neg_integer()
 
+  @doc "Return whether account at `address` is EIP-161 empty."
+  @callback account_empty?(state :: term(), address :: non_neg_integer()) :: boolean()
+
   # ---------------------------------------------------------------------------
   # Account write callbacks
   # ---------------------------------------------------------------------------
@@ -181,6 +184,11 @@ defmodule EEVM.Database do
   @spec get_nonce(t(), non_neg_integer()) :: non_neg_integer()
   def get_nonce(%__MODULE__{impl: impl, state: state}, address) do
     impl.get_nonce(state, address)
+  end
+
+  @spec account_empty?(t(), non_neg_integer()) :: boolean()
+  def account_empty?(%__MODULE__{impl: impl, state: state}, address) do
+    impl.account_empty?(state, address)
   end
 
   @spec put_account(t(), non_neg_integer(), account()) :: t()

@@ -45,6 +45,7 @@ defmodule EEVM.MachineState do
           block: Block.t(),
           contract: Contract.t(),
           config: Config.t(),
+          touched_addresses: MapSet.t(non_neg_integer()),
           accessed_addresses: MapSet.t(non_neg_integer()),
           accessed_storage_keys: MapSet.t({non_neg_integer(), non_neg_integer()}),
           created_addresses: MapSet.t(non_neg_integer()),
@@ -72,6 +73,7 @@ defmodule EEVM.MachineState do
             block: nil,
             contract: nil,
             config: nil,
+            touched_addresses: nil,
             accessed_addresses: nil,
             accessed_storage_keys: nil,
             created_addresses: nil,
@@ -134,6 +136,7 @@ defmodule EEVM.MachineState do
       block: block,
       contract: contract,
       config: config,
+      touched_addresses: Keyword.get(opts, :touched_addresses, MapSet.new()),
       accessed_addresses:
         Keyword.get(opts, :accessed_addresses, pre_warm_addresses(contract, tx, block, config)),
       accessed_storage_keys: Keyword.get(opts, :accessed_storage_keys, MapSet.new()),
@@ -328,6 +331,12 @@ defmodule EEVM.MachineState do
   @spec halt(t(), status()) :: t()
   def halt(state, status) do
     %{state | status: status}
+  end
+
+  @doc "Marks an address as touched for EIP-161 post-transaction cleanup."
+  @spec touch_address(t(), non_neg_integer()) :: t()
+  def touch_address(state, address) do
+    %{state | touched_addresses: MapSet.put(state.touched_addresses, address)}
   end
 
   defp write_return_data(memory, _offset, 0, return_data), do: {memory, return_data}

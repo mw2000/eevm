@@ -65,16 +65,18 @@ defmodule EEVM.Opcodes.System.Termination do
 
       case MachineState.consume_gas(%{state | stack: s1}, dynamic_cost) do
         {:ok, state_after_gas} ->
+          state_after_touch = MachineState.touch_address(state_after_gas, beneficiary)
+
           # EIP-6780: post-Cancun, SELFDESTRUCT only fully deletes the account
           # when the contract was created in the same transaction. Otherwise it
           # only transfers the balance to the beneficiary.
           created_this_tx =
-            MapSet.member?(state_after_gas.created_addresses, contract_address)
+            MapSet.member?(state_after_touch.created_addresses, contract_address)
 
           db_after =
             if created_this_tx do
               # EIP-6780: full deletion for contracts created in the same tx
-              db = Database.delete_account(state_after_gas.db, contract_address)
+              db = Database.delete_account(state_after_touch.db, contract_address)
 
               if beneficiary != contract_address do
                 Database.set_balance(
@@ -90,15 +92,15 @@ defmodule EEVM.Opcodes.System.Termination do
                 state_after_gas.db
               else
                 beneficiary_balance =
-                  Database.get_balance(state_after_gas.db, beneficiary)
+                  Database.get_balance(state_after_touch.db, beneficiary)
 
-                state_after_gas.db
+                state_after_touch.db
                 |> Database.set_balance(contract_address, 0)
                 |> Database.set_balance(beneficiary, beneficiary_balance + balance)
               end
             end
 
-          {:ok, MachineState.halt(%{state_after_gas | db: db_after}, :stopped)}
+          {:ok, MachineState.halt(%{state_after_touch | db: db_after}, :stopped)}
 
         {:error, :out_of_gas, halted_state} ->
           {:error, :out_of_gas, halted_state}
