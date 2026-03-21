@@ -33,6 +33,7 @@ defmodule EEVM.Executor do
   """
 
   alias EEVM.MachineState
+  alias EEVM.Database
   alias EEVM.Gas.Static
 
   alias EEVM.Opcodes.{
@@ -76,6 +77,7 @@ defmodule EEVM.Executor do
       code
       |> MachineState.new(opts)
       |> run_loop()
+      |> cleanup_touched_empty_accounts()
 
     apply_refund(final_state, initial_gas)
   end
@@ -143,6 +145,21 @@ defmodule EEVM.Executor do
     effective_refund = min(state.refund, div(gas_used, 5))
     %{state | gas: state.gas + effective_refund, refund: 0}
   end
+
+  defp cleanup_touched_empty_accounts(%MachineState{status: :stopped} = state) do
+    cleaned_db =
+      Enum.reduce(state.touched_addresses, state.db, fn address, db_acc ->
+        if Database.account_empty?(db_acc, address) do
+          Database.delete_account(db_acc, address)
+        else
+          db_acc
+        end
+      end)
+
+    %{state | db: cleaned_db}
+  end
+
+  defp cleanup_touched_empty_accounts(state), do: state
 
   # Dispatch table for execute_opcode/2.
   #

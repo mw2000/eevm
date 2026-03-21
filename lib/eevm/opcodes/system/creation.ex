@@ -91,6 +91,8 @@ defmodule EEVM.Opcodes.System.Creation do
                   do: derive_create_address(creator, nonce),
                   else: derive_create2_address(creator, salt, init_code)
 
+              state_after_touch = MachineState.touch_address(state_after_initcode_cost, new_address)
+
               can_create = can_create_account?(db_after_nonce, new_address)
 
               if can_create do
@@ -109,15 +111,16 @@ defmodule EEVM.Opcodes.System.Creation do
                       MachineState.new(init_code,
                         gas: state_after_initcode_cost.gas,
                         db: db_after_transfer,
-                        tx: state_after_initcode_cost.tx,
-                        block: state_after_initcode_cost.block,
+                        tx: state_after_touch.tx,
+                        block: state_after_touch.block,
                         contract: child_contract,
-                        config: state_after_initcode_cost.config,
-                        accessed_addresses: state_after_initcode_cost.accessed_addresses,
-                        accessed_storage_keys: state_after_initcode_cost.accessed_storage_keys,
-                        created_addresses: state_after_initcode_cost.created_addresses,
-                        is_static: state_after_initcode_cost.is_static,
-                        depth: state_after_initcode_cost.depth + 1
+                        config: state_after_touch.config,
+                        touched_addresses: state_after_touch.touched_addresses,
+                        accessed_addresses: state_after_touch.accessed_addresses,
+                        accessed_storage_keys: state_after_touch.accessed_storage_keys,
+                        created_addresses: state_after_touch.created_addresses,
+                        is_static: state_after_touch.is_static,
+                        depth: state_after_touch.depth + 1
                       )
 
                     child_result = Executor.run_loop(child_state)
@@ -128,7 +131,7 @@ defmodule EEVM.Opcodes.System.Creation do
 
                       if byte_size(runtime_code) > @max_code_size do
                         create_failed(
-                          %{state_after_initcode_cost | db: db_after_nonce},
+                          %{state_after_touch | db: db_after_nonce},
                           stack
                         )
                       else
@@ -139,7 +142,7 @@ defmodule EEVM.Opcodes.System.Creation do
                         # deposited. Empty runtime code is explicitly allowed.
                         if reject_eip_3541_runtime_code?(runtime_code) do
                           create_failed(
-                            %{state_after_initcode_cost | db: db_after_nonce},
+                            %{state_after_touch | db: db_after_nonce},
                             stack
                           )
                         else
@@ -171,12 +174,13 @@ defmodule EEVM.Opcodes.System.Creation do
                                child_result.accessed_storage_keys
                              )
                              |> Map.put(:created_addresses, created_addresses_after)
+                             |> Map.put(:touched_addresses, child_result.touched_addresses)
                              |> Map.put(:gas, child_result.gas - deposit_cost)
                              |> Map.put(:return_data, child_result.return_data)
                              |> MachineState.advance_pc()}
                           else
                             create_failed(
-                              %{state_after_initcode_cost | db: db_after_nonce},
+                              %{state_after_touch | db: db_after_nonce},
                               stack
                             )
                           end
@@ -184,20 +188,20 @@ defmodule EEVM.Opcodes.System.Creation do
                       end
                     else
                       create_failed(
-                        %{state_after_initcode_cost | db: db_after_nonce},
+                        %{state_after_touch | db: db_after_nonce},
                         stack
                       )
                     end
 
                   {:error, :insufficient_balance} ->
                     create_failed(
-                      %{state_after_initcode_cost | db: db_after_nonce},
+                      %{state_after_touch | db: db_after_nonce},
                       stack
                     )
                 end
               else
                 create_failed(
-                  %{state_after_initcode_cost | db: db_after_nonce},
+                  %{state_after_touch | db: db_after_nonce},
                   stack
                 )
               end

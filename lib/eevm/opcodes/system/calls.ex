@@ -200,13 +200,14 @@ defmodule EEVM.Opcodes.System.Calls do
                 remaining_gas = child_gas - gas_used
                 memory_result = write_return_data(memory_after_read, ret_offset, ret_size, output)
                 {:ok, stack_after_call} = Stack.push(state_after_forward.stack, 1)
+                state_after_touch = MachineState.touch_address(state_after_forward, address)
 
                 {:ok,
-                 state_after_forward
+                 state_after_touch
                  |> Map.put(:stack, stack_after_call)
                  |> Map.put(:memory, memory_result)
                  |> Map.put(:return_data, output)
-                 |> Map.put(:gas, state_after_forward.gas + remaining_gas)
+                 |> Map.put(:gas, state_after_touch.gas + remaining_gas)
                  |> MachineState.advance_pc()}
 
               {:error, _reason} ->
@@ -221,6 +222,8 @@ defmodule EEVM.Opcodes.System.Calls do
                  |> MachineState.advance_pc()}
             end
           else
+            state_after_touch = MachineState.touch_address(state_after_forward, address)
+
             child_contract =
               Contract.new(
                 address: address,
@@ -236,15 +239,16 @@ defmodule EEVM.Opcodes.System.Calls do
               MachineState.new(target_code,
                 gas: child_gas,
                 db: db_after_transfer,
-                tx: state_after_forward.tx,
-                block: state_after_forward.block,
+                tx: state_after_touch.tx,
+                block: state_after_touch.block,
                 contract: child_contract,
-                config: state_after_forward.config,
-                accessed_addresses: state_after_forward.accessed_addresses,
-                accessed_storage_keys: state_after_forward.accessed_storage_keys,
-                created_addresses: state_after_forward.created_addresses,
-                is_static: state_after_forward.is_static,
-                depth: state_after_forward.depth + 1
+                config: state_after_touch.config,
+                touched_addresses: state_after_touch.touched_addresses,
+                accessed_addresses: state_after_touch.accessed_addresses,
+                accessed_storage_keys: state_after_touch.accessed_storage_keys,
+                created_addresses: state_after_touch.created_addresses,
+                is_static: state_after_touch.is_static,
+                depth: state_after_touch.depth + 1
               )
 
             child_result = Executor.run_loop(child_state)
@@ -275,6 +279,11 @@ defmodule EEVM.Opcodes.System.Calls do
                 do: child_result.created_addresses,
                 else: state_after_forward.created_addresses
 
+            touched_addresses_result =
+              if call_succeeded,
+                do: child_result.touched_addresses,
+                else: state_after_forward.touched_addresses
+
             memory_result =
               write_return_data(memory_after_read, ret_offset, ret_size, child_result.return_data)
 
@@ -291,6 +300,7 @@ defmodule EEVM.Opcodes.System.Calls do
              |> Map.put(:accessed_addresses, accessed_addresses_result)
              |> Map.put(:accessed_storage_keys, accessed_storage_keys_result)
              |> Map.put(:created_addresses, created_addresses_result)
+             |> Map.put(:touched_addresses, touched_addresses_result)
              |> Map.put(:gas, state_after_forward.gas + child_result.gas)
              |> MachineState.advance_pc()}
           end
@@ -347,13 +357,14 @@ defmodule EEVM.Opcodes.System.Calls do
                 remaining_gas = child_gas - gas_used
                 memory_result = write_return_data(memory_after_read, ret_offset, ret_size, output)
                 {:ok, stack_after_call} = Stack.push(state_after_forward.stack, 1)
+                state_after_touch = MachineState.touch_address(state_after_forward, address)
 
                 {:ok,
-                 state_after_forward
+                 state_after_touch
                  |> Map.put(:stack, stack_after_call)
                  |> Map.put(:memory, memory_result)
                  |> Map.put(:return_data, output)
-                 |> Map.put(:gas, state_after_forward.gas + remaining_gas)
+                 |> Map.put(:gas, state_after_touch.gas + remaining_gas)
                  |> MachineState.advance_pc()}
 
               {:error, _reason} ->
@@ -368,6 +379,8 @@ defmodule EEVM.Opcodes.System.Calls do
                  |> MachineState.advance_pc()}
             end
           else
+            state_after_touch = MachineState.touch_address(state_after_forward, address)
+
             child_contract =
               Contract.new(
                 address: state_after_forward.contract.address,
@@ -380,16 +393,17 @@ defmodule EEVM.Opcodes.System.Calls do
             child_state =
               MachineState.new(target_code,
                 gas: child_gas,
-                db: state_after_forward.db,
-                tx: state_after_forward.tx,
-                block: state_after_forward.block,
+                db: state_after_touch.db,
+                tx: state_after_touch.tx,
+                block: state_after_touch.block,
                 contract: child_contract,
-                config: state_after_forward.config,
-                accessed_addresses: state_after_forward.accessed_addresses,
-                accessed_storage_keys: state_after_forward.accessed_storage_keys,
-                created_addresses: state_after_forward.created_addresses,
-                is_static: state_after_forward.is_static,
-                depth: state_after_forward.depth + 1
+                config: state_after_touch.config,
+                touched_addresses: state_after_touch.touched_addresses,
+                accessed_addresses: state_after_touch.accessed_addresses,
+                accessed_storage_keys: state_after_touch.accessed_storage_keys,
+                created_addresses: state_after_touch.created_addresses,
+                is_static: state_after_touch.is_static,
+                depth: state_after_touch.depth + 1
               )
 
             child_result = Executor.run_loop(child_state)
@@ -420,6 +434,11 @@ defmodule EEVM.Opcodes.System.Calls do
                 do: child_result.created_addresses,
                 else: state_after_forward.created_addresses
 
+            touched_addresses_result =
+              if call_succeeded,
+                do: child_result.touched_addresses,
+                else: state_after_forward.touched_addresses
+
             memory_result =
               write_return_data(memory_after_read, ret_offset, ret_size, child_result.return_data)
 
@@ -436,6 +455,7 @@ defmodule EEVM.Opcodes.System.Calls do
              |> Map.put(:accessed_addresses, accessed_addresses_result)
              |> Map.put(:accessed_storage_keys, accessed_storage_keys_result)
              |> Map.put(:created_addresses, created_addresses_result)
+             |> Map.put(:touched_addresses, touched_addresses_result)
              |> Map.put(:gas, state_after_forward.gas + child_result.gas)
              |> MachineState.advance_pc()}
           end
