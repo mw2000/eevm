@@ -80,7 +80,7 @@ defmodule EEVM.Opcodes.System.Creation do
           Database.increment_nonce(state_after_cost.db, creator)
 
         if HardforkConfig.enabled?(state_after_cost.config.hardfork, :eip_3860) and
-           size > @max_initcode_size do
+             size > @max_initcode_size do
           create_failed(%{state_after_cost | db: db_after_nonce}, stack)
         else
           initcode_cost =
@@ -138,7 +138,7 @@ defmodule EEVM.Opcodes.System.Creation do
                       runtime_code = child_result.return_data
 
                       if HardforkConfig.enabled?(child_result.config.hardfork, :eip_170) and
-                         byte_size(runtime_code) > @max_code_size do
+                           byte_size(runtime_code) > @max_code_size do
                         create_failed(
                           %{state_after_touch | db: db_after_nonce},
                           stack
@@ -150,7 +150,7 @@ defmodule EEVM.Opcodes.System.Creation do
                         # execution -- so init code gas is already consumed but no code is
                         # deposited. Empty runtime code is explicitly allowed.
                         if HardforkConfig.enabled?(child_result.config.hardfork, :eip_3541) and
-                           reject_eip_3541_runtime_code?(runtime_code) do
+                             reject_eip_3541_runtime_code?(runtime_code) do
                           create_failed(
                             %{state_after_touch | db: db_after_nonce},
                             stack

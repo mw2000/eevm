@@ -78,7 +78,10 @@ defmodule EEVM.Opcodes.StackMemoryStorage.MemoryOps do
           {:ok, MachineState.advance_pc(%{state | stack: s3})}
         else
           max_offset = max(src + length, dst + length)
-          expansion_cost = GasMemory.memory_expansion_cost(Memory.size(state.memory), 0, max_offset)
+
+          expansion_cost =
+            GasMemory.memory_expansion_cost(Memory.size(state.memory), 0, max_offset)
+
           dynamic_cost = Dynamic.copy_cost(length) + expansion_cost
 
           case MachineState.consume_gas(%{state | stack: s3}, dynamic_cost) do

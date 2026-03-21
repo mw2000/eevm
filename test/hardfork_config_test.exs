@@ -176,11 +176,24 @@ defmodule EEVM.HardforkConfigTest do
       code =
         <<
           # PUSH2 0xDEAD, PUSH1 0 (offset), MSTORE
-          0x61, 0xDE, 0xAD, 0x60, 0x00, 0x52,
+          0x61,
+          0xDE,
+          0xAD,
+          0x60,
+          0x00,
+          0x52,
           # PUSH1 32 (len), PUSH1 0 (src), PUSH1 32 (dst), MCOPY
-          0x60, 0x20, 0x60, 0x00, 0x60, 0x20, 0x5E,
+          0x60,
+          0x20,
+          0x60,
+          0x00,
+          0x60,
+          0x20,
+          0x5E,
           # PUSH1 32, MLOAD
-          0x60, 0x20, 0x51,
+          0x60,
+          0x20,
+          0x51,
           0x00
         >>
 
@@ -288,11 +301,11 @@ defmodule EEVM.HardforkConfigTest do
       berlin_gas_used = 100_000 - berlin_result.gas
       assert berlin_gas_used == 3 + 2100
 
-      # Pre-Berlin: no cold/warm distinction
+      # Pre-Berlin: no cold/warm distinction — storage_access_cost returns {0, state}
       istanbul_result = EEVM.execute(code, hardfork: :istanbul, gas: 100_000)
       istanbul_gas_used = 100_000 - istanbul_result.gas
-      # PUSH1(3) + SLOAD warm(100) = 103
-      assert istanbul_gas_used == 3 + 100
+      # PUSH1(3) + SLOAD(0 extra, no cold/warm penalty) = 3
+      assert istanbul_gas_used == 3
     end
   end
 
