@@ -91,7 +91,8 @@ defmodule EEVM.Opcodes.System.Creation do
                   do: derive_create_address(creator, nonce),
                   else: derive_create2_address(creator, salt, init_code)
 
-              state_after_touch = MachineState.touch_address(state_after_initcode_cost, new_address)
+              state_after_touch =
+                MachineState.touch_address(state_after_initcode_cost, new_address)
 
               can_create = can_create_account?(db_after_nonce, new_address)
 
