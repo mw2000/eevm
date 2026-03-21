@@ -120,6 +120,16 @@ defmodule EEVM.Database do
               key :: non_neg_integer()
             ) :: non_neg_integer()
 
+  @doc "Return all known account addresses in the backend state."
+  @callback account_addresses(state :: term()) :: [non_neg_integer()]
+
+  @doc "Return all storage slots currently tracked for an address."
+  @callback storage_slots(state :: term(), address :: non_neg_integer()) ::
+              [{non_neg_integer(), non_neg_integer()}]
+
+  @doc "Return addresses that currently have tracked storage entries."
+  @callback storage_addresses(state :: term()) :: [non_neg_integer()]
+
   @doc "Store a 256-bit value into a storage slot for the given contract address."
   @callback storage_store(
               state :: term(),
@@ -215,6 +225,21 @@ defmodule EEVM.Database do
   @spec storage_load(t(), non_neg_integer(), non_neg_integer()) :: non_neg_integer()
   def storage_load(%__MODULE__{impl: impl, state: state}, address, key) do
     impl.storage_load(state, address, key)
+  end
+
+  @spec account_addresses(t()) :: [non_neg_integer()]
+  def account_addresses(%__MODULE__{impl: impl, state: state}) do
+    impl.account_addresses(state)
+  end
+
+  @spec storage_slots(t(), non_neg_integer()) :: [{non_neg_integer(), non_neg_integer()}]
+  def storage_slots(%__MODULE__{impl: impl, state: state}, address) do
+    impl.storage_slots(state, address)
+  end
+
+  @spec storage_addresses(t()) :: [non_neg_integer()]
+  def storage_addresses(%__MODULE__{impl: impl, state: state}) do
+    impl.storage_addresses(state)
   end
 
   @spec storage_store(t(), non_neg_integer(), non_neg_integer(), non_neg_integer()) :: t()
