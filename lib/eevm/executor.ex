@@ -32,7 +32,9 @@ defmodule EEVM.Executor do
     their semantics.
   """
 
-  alias EEVM.MachineState
+  alias EEVM.{HardforkConfig, MachineState}
+  alias EEVM.Database
+  alias EEVM.Gas.Static
   alias EEVM.Database
   alias EEVM.Gas.Static
 
@@ -142,7 +144,12 @@ defmodule EEVM.Executor do
 
   defp apply_refund(%MachineState{} = state, initial_gas) do
     gas_used = initial_gas - state.gas
-    effective_refund = min(state.refund, div(gas_used, 5))
+    # EIP-3529 (London+): cap refunds at 1/5 of gas used.
+    # Pre-London: cap was 1/2 of gas used.
+    refund_cap_divisor =
+      if HardforkConfig.enabled?(state.config.hardfork, :eip_3529), do: 5, else: 2
+
+    effective_refund = min(state.refund, div(gas_used, refund_cap_divisor))
     %{state | gas: state.gas + effective_refund, refund: 0}
   end
 
