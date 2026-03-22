@@ -2,15 +2,35 @@ defmodule EEVM.Config do
   @moduledoc """
   Runtime configuration for EEVM execution.
 
-  Currently supports custom precompile registration at arbitrary addresses.
+  Holds both the hardfork specification (which EIP rules are active) and
+  custom precompile registration.
   """
 
-  @type t :: %__MODULE__{precompiles: %{optional(non_neg_integer()) => module()}}
+  alias EEVM.HardforkConfig
 
-  defstruct precompiles: %{}
+  @type t :: %__MODULE__{
+          hardfork: HardforkConfig.t(),
+          precompiles: %{optional(non_neg_integer()) => module()}
+        }
 
-  @spec new() :: t()
-  def new, do: %__MODULE__{}
+  defstruct hardfork: nil,
+            precompiles: %{}
+
+  @doc """
+  Creates a new config with the given hardfork (default: `:cancun`).
+
+  ## Examples
+
+      iex> EEVM.Config.new()
+      %EEVM.Config{hardfork: %EEVM.HardforkConfig{spec_id: :cancun}, precompiles: %{}}
+
+      iex> EEVM.Config.new(:berlin)
+      %EEVM.Config{hardfork: %EEVM.HardforkConfig{spec_id: :berlin}, precompiles: %{}}
+  """
+  @spec new(HardforkConfig.spec_id()) :: t()
+  def new(spec_id \\ :cancun) do
+    %__MODULE__{hardfork: HardforkConfig.new(spec_id)}
+  end
 
   @spec register_precompile(t(), non_neg_integer(), module()) :: t()
   def register_precompile(%__MODULE__{precompiles: precompiles} = config, address, module)

@@ -15,6 +15,7 @@ defmodule EEVM.Opcodes.StackMemoryStorage.MemoryOps do
   alias EEVM.{MachineState, Memory, Stack}
   alias EEVM.Gas.Dynamic
   alias EEVM.Gas.Memory, as: GasMemory
+  alias EEVM.HardforkConfig
   alias EEVM.Opcodes.Helpers
 
   @spec execute(non_neg_integer(), MachineState.t()) ::
@@ -66,28 +67,37 @@ defmodule EEVM.Opcodes.StackMemoryStorage.MemoryOps do
     Helpers.push_value(state, size)
   end
 
-  def execute(0x5E, state) do
-    with {:ok, dst, s1} <- Stack.pop(state.stack),
-         {:ok, src, s2} <- Stack.pop(s1),
-         {:ok, length, s3} <- Stack.pop(s2) do
-      if length == 0 do
-        {:ok, MachineState.advance_pc(%{state | stack: s3})}
-      else
-        max_offset = max(src + length, dst + length)
-        expansion_cost = GasMemory.memory_expansion_cost(Memory.size(state.memory), 0, max_offset)
-        dynamic_cost = Dynamic.copy_cost(length) + expansion_cost
+  # MCOPY (EIP-5656, Cancun+): copies a region of memory to another location.
+  # Pre-Cancun, 0x5E is undefined → :invalid.
+  def execute(0x5E, %{config: %{hardfork: hardfork}} = state) do
+    if HardforkConfig.enabled?(hardfork, :eip_5656) do
+      with {:ok, dst, s1} <- Stack.pop(state.stack),
+           {:ok, src, s2} <- Stack.pop(s1),
+           {:ok, length, s3} <- Stack.pop(s2) do
+        if length == 0 do
+          {:ok, MachineState.advance_pc(%{state | stack: s3})}
+        else
+          max_offset = max(src + length, dst + length)
 
-        case MachineState.consume_gas(%{state | stack: s3}, dynamic_cost) do
-          {:ok, s4} ->
-            new_memory = Memory.copy(s4.memory, dst, src, length)
-            {:ok, MachineState.advance_pc(%{s4 | memory: new_memory})}
+          expansion_cost =
+            GasMemory.memory_expansion_cost(Memory.size(state.memory), 0, max_offset)
 
-          {:error, :out_of_gas, halted_state} ->
-            {:error, :out_of_gas, halted_state}
+          dynamic_cost = Dynamic.copy_cost(length) + expansion_cost
+
+          case MachineState.consume_gas(%{state | stack: s3}, dynamic_cost) do
+            {:ok, s4} ->
+              new_memory = Memory.copy(s4.memory, dst, src, length)
+              {:ok, MachineState.advance_pc(%{s4 | memory: new_memory})}
+
+            {:error, :out_of_gas, halted_state} ->
+              {:error, :out_of_gas, halted_state}
+          end
         end
+      else
+        {:error, reason} -> {:error, reason, state}
       end
     else
-      {:error, reason} -> {:error, reason, state}
+      {:ok, MachineState.halt(state, :invalid)}
     end
   end
 

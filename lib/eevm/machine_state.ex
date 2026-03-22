@@ -103,7 +103,7 @@ defmodule EEVM.MachineState do
       - `:storage` — legacy initial storage (default: empty, backward-compat)
       - `:tx` — transaction context (default: empty)
       - `:block` — block context (default: empty)
-      - `:contract` — contract/message context (default: empty)
+      - `:hardfork` — hardfork spec id (e.g. `:cancun`, `:berlin`; default: `:cancun`)
       - `:world_state` — legacy external account state (default: empty, backward-compat)
       - `:call_stack` — internal frame stack (default: `[]`)
       - `:frame_return_offset` — parent memory write-back offset (default: `0`)
@@ -123,7 +123,7 @@ defmodule EEVM.MachineState do
     contract = Keyword.get(opts, :contract, Contract.new())
     tx = Keyword.get(opts, :tx, Transaction.new())
     block = Keyword.get(opts, :block, Block.new())
-    config = Keyword.get(opts, :config, Config.new())
+    config = Keyword.get(opts, :config, Config.new(Keyword.get(opts, :hardfork, :cancun)))
 
     %__MODULE__{
       code: code,

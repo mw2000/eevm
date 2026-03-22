@@ -23,7 +23,7 @@ defmodule EEVM.Gas.Access do
   - [EIP-2929: Gas cost increases for state access opcodes](https://eips.ethereum.org/EIPS/eip-2929)
   """
 
-  alias EEVM.MachineState
+  alias EEVM.{HardforkConfig, MachineState}
 
   # EIP-2929: first access to an account address
   @cold_account_access_cost 2600
@@ -35,24 +35,36 @@ defmodule EEVM.Gas.Access do
   @spec address_access_cost(MachineState.t(), non_neg_integer()) ::
           {non_neg_integer(), MachineState.t()}
   def address_access_cost(state, address) do
-    if MapSet.member?(state.accessed_addresses, address) do
-      {@warm_storage_read_cost, state}
+    if HardforkConfig.enabled?(state.config.hardfork, :eip_2929) do
+      if MapSet.member?(state.accessed_addresses, address) do
+        {@warm_storage_read_cost, state}
+      else
+        new_state = %{state | accessed_addresses: MapSet.put(state.accessed_addresses, address)}
+        {@cold_account_access_cost, new_state}
+      end
     else
-      new_state = %{state | accessed_addresses: MapSet.put(state.accessed_addresses, address)}
-      {@cold_account_access_cost, new_state}
+      # Pre-EIP-2929 (pre-Berlin): flat warm cost — the static cost table already
+      # encodes the pre-Berlin prices for most opcodes; access.ex adds nothing extra.
+      {@warm_storage_read_cost, state}
     end
   end
 
   @spec storage_access_cost(MachineState.t(), non_neg_integer(), non_neg_integer()) ::
           {non_neg_integer(), MachineState.t()}
   def storage_access_cost(state, address, slot) do
-    key = {address, slot}
+    if HardforkConfig.enabled?(state.config.hardfork, :eip_2929) do
+      key = {address, slot}
 
-    if MapSet.member?(state.accessed_storage_keys, key) do
-      {@warm_storage_read_cost, state}
+      if MapSet.member?(state.accessed_storage_keys, key) do
+        {@warm_storage_read_cost, state}
+      else
+        new_state = %{state | accessed_storage_keys: MapSet.put(state.accessed_storage_keys, key)}
+        {@cold_sload_cost, new_state}
+      end
     else
-      new_state = %{state | accessed_storage_keys: MapSet.put(state.accessed_storage_keys, key)}
-      {@cold_sload_cost, new_state}
+      # Pre-EIP-2929: flat warm cost (pre-Berlin SLOAD was 800, but our static costs
+      # already reflect post-Berlin values, so we return 0 to avoid double-counting).
+      {0, state}
     end
   end
 
