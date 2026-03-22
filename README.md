@@ -116,6 +116,23 @@ iex -S mix
 
 Requires Elixir 1.18+ and Erlang/OTP 28+.
 
+## Official State Tests
+
+This repo now includes an initial harness for `ethereum/tests` `GeneralStateTests` so you can compare `eevm` against the same fixture format other EVM implementations use.
+
+```bash
+# Fetch official GeneralStateTests fixtures into test/fixtures/state_tests/official/
+python3 scripts/fetch_state_tests.py --clean
+
+# Run only the StateTest harness
+mix test test/state_test_test.exs
+```
+
+- Checked-in smoke fixtures live in `test/fixtures/state_tests/smoke/`.
+- Imported official fixtures live in `test/fixtures/state_tests/official/`.
+- Use `test/fixtures/state_tests/skip.txt` to temporarily skip known unsupported fixtures.
+- Override discovery with `EEVM_STATE_TEST_GLOB` if you want to run only a subset.
+
 ## Elixir Concepts Covered
 
 This project is designed as a learning tool. Each module demonstrates specific Elixir patterns:
