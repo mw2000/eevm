@@ -69,7 +69,7 @@ defmodule EEVM.TestSupport.StateTestRunner do
   defp apply_top_level_value(db, %{value: 0}), do: {:ok, db}
   defp apply_top_level_value(db, %{origin: origin, to: to, value: value}), do: Database.transfer(db, origin, to, value)
 
-  defp settle_state(db_after_nonce, machine, true), do: db_after_nonce
+  defp settle_state(db_after_nonce, _machine, true), do: db_after_nonce
   defp settle_state(_db_after_nonce, machine, false), do: machine.db
 
   defp finalize_fees(db_after_nonce, machine, tx, block) do
@@ -122,10 +122,8 @@ defmodule EEVM.TestSupport.StateTestRunner do
 
   defp validate_failure(reason, %PostExpectation{expect_exception: exception})
        when is_binary(exception) and exception != "" do
-    case reason do
-      {:validation, _} -> :ok
-      _ -> :ok
-    end
+    _ = reason
+    :ok
   end
 
   defp validate_failure(reason, _expectation), do: {:error, reason}

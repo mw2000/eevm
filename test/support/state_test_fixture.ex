@@ -314,7 +314,7 @@ defmodule EEVM.TestSupport.StateTestFixture do
     raw_public_key =
       case public_key do
         <<4, key::binary-size(64)>> -> key
-        <<_::binary-size(64)>> = key -> key
+        key when byte_size(key) == 64 -> key
       end
 
     <<_::binary-size(12), address::binary-size(20)>> = ExKeccak.hash_256(raw_public_key)
