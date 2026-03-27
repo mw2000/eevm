@@ -136,7 +136,8 @@ defmodule EEVM.TestSupport.StateTestFixture do
       ) do
     origin = secret_key_to_address(tx_template.secret_key)
 
-    base_gas_price = if tx_template.type in [:eip1559, :eip4844], do: 0, else: tx_template.gas_price
+    base_gas_price =
+      if tx_template.type in [:eip1559, :eip4844], do: 0, else: tx_template.gas_price
 
     Transaction.new(
       origin: origin,
