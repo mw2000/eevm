@@ -71,6 +71,7 @@ defmodule EEVM.TestSupport.StateTestRunner do
 
   defp apply_top_level_value(db, %{to: nil}), do: {:ok, db}
   defp apply_top_level_value(db, %{value: 0}), do: {:ok, db}
+
   defp apply_top_level_value(db, %{origin: origin, to: to, value: value}),
     do: Database.transfer(db, origin, to, value)
 
