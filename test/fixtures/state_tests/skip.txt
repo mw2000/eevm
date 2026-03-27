@@ -1,0 +1,5 @@
+# One entry per line.
+# Formats:
+# - test/fixtures/state_tests/official/some/path/file.json
+# - test/fixtures/state_tests/official/some/path/file.json#test_name
+# - test_name
