@@ -6,7 +6,10 @@ defmodule EEVM.TestSupport.StateTestRunner do
   alias EEVM.TestSupport.StateTestFixture.{Case, PostExpectation}
   alias EEVM.Transaction.{IntrinsicGas, Validator}
 
-  @empty_logs_hash Base.decode16!("1DCC4DE8DEC75D7AAB85B567B6CCD41AD312451B948A7413F0A142FD40D49347", case: :mixed)
+  @empty_logs_hash Base.decode16!(
+                     "1DCC4DE8DEC75D7AAB85B567B6CCD41AD312451B948A7413F0A142FD40D49347",
+                     case: :mixed
+                   )
 
   def run_case(%Case{} = state_test, %PostExpectation{} = expectation) do
     db = InMemory.new(accounts: state_test.pre_accounts, storage: state_test.pre_storage)
@@ -58,7 +61,8 @@ defmodule EEVM.TestSupport.StateTestRunner do
         db: db,
         tx: tx,
         block: block,
-        contract: Contract.new(address: tx.to, caller: tx.origin, callvalue: tx.value, calldata: tx.data),
+        contract:
+          Contract.new(address: tx.to, caller: tx.origin, callvalue: tx.value, calldata: tx.data),
         config: Config.new(hardfork)
       )
 
@@ -67,7 +71,8 @@ defmodule EEVM.TestSupport.StateTestRunner do
 
   defp apply_top_level_value(db, %{to: nil}), do: {:ok, db}
   defp apply_top_level_value(db, %{value: 0}), do: {:ok, db}
-  defp apply_top_level_value(db, %{origin: origin, to: to, value: value}), do: Database.transfer(db, origin, to, value)
+  defp apply_top_level_value(db, %{origin: origin, to: to, value: value}),
+    do: Database.transfer(db, origin, to, value)
 
   defp settle_state(db_after_nonce, _machine, true), do: db_after_nonce
   defp settle_state(_db_after_nonce, machine, false), do: machine.db

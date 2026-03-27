@@ -10,7 +10,11 @@ defmodule EEVM.TestSupport.StateTestFixture do
             pre_accounts: %{non_neg_integer() => map()},
             pre_storage: %{non_neg_integer() => %{non_neg_integer() => non_neg_integer()}},
             transaction: EEVM.TestSupport.StateTestFixture.TransactionTemplate.t(),
-            post: %{EEVM.HardforkConfig.spec_id() => [EEVM.TestSupport.StateTestFixture.PostExpectation.t()]}
+            post: %{
+              EEVM.HardforkConfig.spec_id() => [
+                EEVM.TestSupport.StateTestFixture.PostExpectation.t()
+              ]
+            }
           }
 
     defstruct [:name, :env, :pre_accounts, :pre_storage, :transaction, :post]
@@ -126,7 +130,10 @@ defmodule EEVM.TestSupport.StateTestFixture do
   end
 
   @spec build_transaction(Case.t(), PostExpectation.t()) :: Transaction.t()
-  def build_transaction(%Case{transaction: tx_template}, %PostExpectation{indexes: indexes, hardfork: hardfork}) do
+  def build_transaction(
+        %Case{transaction: tx_template},
+        %PostExpectation{indexes: indexes, hardfork: hardfork}
+      ) do
     origin = secret_key_to_address(tx_template.secret_key)
 
     base_gas_price =
@@ -160,7 +167,8 @@ defmodule EEVM.TestSupport.StateTestFixture do
       gas_limit: parse_quantity!(Map.get(env, "currentGasLimit", "0x0")),
       base_fee: parse_quantity!(Map.get(env, "currentBaseFee", "0x0")),
       blob_base_fee: parse_quantity!(Map.get(env, "currentBlobBaseFee", "0x0")),
-      prevrandao: parse_quantity!(Map.get(env, "currentRandom", Map.get(env, "currentDifficulty", "0x0"))),
+      prevrandao:
+        parse_quantity!(Map.get(env, "currentRandom", Map.get(env, "currentDifficulty", "0x0"))),
       chain_id: parse_quantity!(Map.get(env, "currentChainId", "0x1")),
       hashes: %{}
     }
@@ -245,7 +253,10 @@ defmodule EEVM.TestSupport.StateTestFixture do
     access_lists
     |> hd()
     |> Enum.map(fn entry ->
-      {parse_address!(Map.fetch!(entry, "address")), Enum.map(Map.get(entry, "storageKeys", []), &parse_quantity!/1)}
+      {
+        parse_address!(Map.fetch!(entry, "address")),
+        Enum.map(Map.get(entry, "storageKeys", []), &parse_quantity!/1)
+      }
     end)
   end
 
@@ -309,7 +320,11 @@ defmodule EEVM.TestSupport.StateTestFixture do
   defp parse_bytes!(value) when is_binary(value), do: value
 
   defp secret_key_to_address(secret_key) when is_binary(secret_key) do
-    public_key = :crypto.generate_key(:ecdh, :secp256k1, secret_key)
+    public_key =
+      case :crypto.generate_key(:ecdh, :secp256k1, secret_key) do
+        {public_key, _private_key} -> public_key
+        public_key -> public_key
+      end
 
     raw_public_key =
       case public_key do

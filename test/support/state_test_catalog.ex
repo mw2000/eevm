@@ -29,8 +29,13 @@ defmodule EEVM.TestSupport.StateTestCatalog do
 
   defp fixture_globs do
     case System.get_env("EEVM_STATE_TEST_GLOB") do
-      nil -> [@default_glob]
-      value -> value |> String.split(Path.path_separator(), trim: true) |> Enum.map(&String.trim/1)
+      nil ->
+        [@default_glob]
+
+      value ->
+        value
+        |> String.split(",", trim: true)
+        |> Enum.map(&String.trim/1)
     end
   end
 

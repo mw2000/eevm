@@ -13,7 +13,7 @@ defmodule EEVM.StateTestTest do
     @tag :state_tests
     test "#{state_test.name} on #{expectation.hardfork} from #{Path.basename(fixture_path)}" do
       case StateTestCatalog.skipped?(unquote(fixture_path), unquote(state_test.name)) do
-        {:ok, reason} -> ExUnit.Callbacks.skip(reason)
+        {:ok, _reason} -> :ok
         false -> :ok
       end
 
