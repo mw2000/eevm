@@ -122,7 +122,7 @@ This repo now includes an initial harness for `ethereum/tests` `GeneralStateTest
 
 ```bash
 # Fetch official GeneralStateTests fixtures into test/fixtures/state_tests/official/
-python3 scripts/fetch_state_tests.py --clean
+mix fetch_state_tests --clean
 
 # Run only the StateTest harness
 mix test test/state_test_test.exs

@@ -7,7 +7,7 @@
 Fetch the official GeneralStateTests bundle with:
 
 ```bash
-python3 scripts/fetch_state_tests.py --clean
+mix fetch_state_tests --clean
 ```
 
 That downloads `fixtures_general_state_tests.tgz` from `ethereum/tests` and extracts it into `test/fixtures/state_tests/official/`.
