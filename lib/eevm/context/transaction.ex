@@ -43,8 +43,18 @@ defmodule EEVM.Context.Transaction do
           max_fee_per_gas: non_neg_integer(),
           max_priority_fee_per_gas: non_neg_integer(),
           access_list: [{non_neg_integer(), [non_neg_integer()]}],
+          authorization_list: [authorization()],
           max_fee_per_blob_gas: non_neg_integer(),
-          type: :legacy | :eip2930 | :eip1559 | :eip4844
+          type: :legacy | :eip2930 | :eip1559 | :eip4844 | :eip7702
+        }
+
+  @type authorization :: %{
+          required(:chain_id) => non_neg_integer(),
+          required(:address) => non_neg_integer(),
+          required(:nonce) => non_neg_integer(),
+          required(:y_parity) => 0 | 1,
+          required(:r) => non_neg_integer(),
+          required(:s) => non_neg_integer()
         }
 
   defstruct origin: 0,
@@ -58,6 +68,7 @@ defmodule EEVM.Context.Transaction do
             max_fee_per_gas: 0,
             max_priority_fee_per_gas: 0,
             access_list: [],
+            authorization_list: [],
             max_fee_per_blob_gas: 0,
             type: :legacy
 
