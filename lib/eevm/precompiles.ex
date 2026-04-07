@@ -1,6 +1,6 @@
 defmodule EEVM.Precompiles do
   @moduledoc """
-  Dispatcher for EVM precompiled contracts (addresses 0x01–0x0A).
+  Dispatcher for EVM precompiled contracts.
 
   Precompiled contracts are built-in functions at fixed addresses that provide
   cryptographic and utility operations too expensive to implement in EVM bytecode.
@@ -21,12 +21,27 @@ defmodule EEVM.Precompiles do
   | 0x08 | BN256 PAIRING — bilinear pairing check on alt_bn128 | EIP-197 |
   | 0x09 | BLAKE2F — BLAKE2b compression function | EIP-152 |
   | 0x0A | KZG Point Evaluation — verify KZG commitment | EIP-4844 |
+  | 0x0B | BLS12 G1ADD — add two BLS12-381 G1 points | EIP-2537 |
+  | 0x0C | BLS12 G1MSM — multiscalar multiplication over BLS12-381 G1 | EIP-2537 |
+  | 0x0D | BLS12 G2ADD — add two BLS12-381 G2 points | EIP-2537 |
+  | 0x0E | BLS12 G2MSM — multiscalar multiplication over BLS12-381 G2 | EIP-2537 |
+  | 0x0F | BLS12 PAIRING — pairing check over BLS12-381 | EIP-2537 |
+  | 0x10 | BLS12 MAP_FP_TO_G1 — map Fp element into BLS12-381 G1 | EIP-2537 |
+  | 0x11 | BLS12 MAP_FP2_TO_G2 — map Fp2 element into BLS12-381 G2 | EIP-2537 |
   """
 
   alias EEVM.Config
+  alias EEVM.HardforkConfig
   alias EEVM.Precompiles.BN256Add
   alias EEVM.Precompiles.BN256Mul
   alias EEVM.Precompiles.BN256Pairing
+  alias EEVM.Precompiles.BLS12MapFp2ToG2
+  alias EEVM.Precompiles.BLS12MapFpToG1
+  alias EEVM.Precompiles.BLS12Pairing
+  alias EEVM.Precompiles.BLS12G1Add
+  alias EEVM.Precompiles.BLS12G1MSM
+  alias EEVM.Precompiles.BLS12G2Add
+  alias EEVM.Precompiles.BLS12G2MSM
   alias EEVM.Precompiles.Blake2F
   alias EEVM.Precompiles.ECRecover
   alias EEVM.Precompiles.Identity
@@ -46,6 +61,16 @@ defmodule EEVM.Precompiles do
     0x08 => BN256Pairing,
     0x09 => Blake2F,
     0x0A => KZGPointEval
+  }
+
+  @eip_2537_registry %{
+    0x0B => BLS12G1Add,
+    0x0C => BLS12G1MSM,
+    0x0D => BLS12G2Add,
+    0x0E => BLS12G2MSM,
+    0x0F => BLS12Pairing,
+    0x10 => BLS12MapFpToG1,
+    0x11 => BLS12MapFp2ToG2
   }
 
   @spec precompile?(non_neg_integer()) :: boolean()
@@ -81,7 +106,14 @@ defmodule EEVM.Precompiles do
   end
 
   @spec registry(Config.t()) :: %{optional(non_neg_integer()) => module()}
-  def registry(%Config{precompiles: custom_precompiles}) do
-    Map.merge(@default_registry, custom_precompiles)
+  def registry(%Config{hardfork: hardfork, precompiles: custom_precompiles}) do
+    hardfork_registry =
+      if HardforkConfig.enabled?(hardfork, :eip_2537) do
+        Map.merge(@default_registry, @eip_2537_registry)
+      else
+        @default_registry
+      end
+
+    Map.merge(hardfork_registry, custom_precompiles)
   end
 end
