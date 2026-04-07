@@ -3,6 +3,7 @@ defmodule EEVM.Transaction.ValidatorTest do
 
   alias EEVM.Context.{Block, Transaction}
   alias EEVM.Database.InMemory
+  alias EEVM.HardforkConfig
   alias EEVM.Transaction.Validator
 
   @origin 0xA11CE
@@ -21,6 +22,20 @@ defmodule EEVM.Transaction.ValidatorTest do
 
       assert {:error, :intrinsic_gas_too_low} =
                Validator.validate(tx, db_for_sender(), valid_block())
+    end
+
+    test "Prague enforces calldata floor gas for validity" do
+      tx = valid_tx(data: <<0x00>>, gas_limit: 21_004)
+
+      assert {:error, :intrinsic_gas_too_low} =
+               Validator.validate(tx, db_for_sender(), valid_block(), HardforkConfig.new(:prague))
+    end
+
+    test "pre-Prague validation only checks standard intrinsic gas" do
+      tx = valid_tx(data: <<0x00>>, gas_limit: 21_004)
+
+      assert :ok =
+               Validator.validate(tx, db_for_sender(), valid_block(), HardforkConfig.new(:cancun))
     end
 
     test "returns gas limit exceeds block" do
