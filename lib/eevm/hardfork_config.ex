@@ -25,7 +25,7 @@ defmodule EEVM.HardforkConfig do
   | `:paris`         | The Merge (PREVRANDAO replaces DIFFICULTY) |
   | `:shanghai`      | EIP-3651 (COINBASE pre-warm), EIP-3855 (PUSH0), EIP-3860 (initcode limit) |
   | `:cancun`        | EIP-1153 (TLOAD/TSTORE), EIP-4844 (blobs), EIP-5656 (MCOPY), EIP-6780 (SELFDESTRUCT) |
-   | `:prague`        | EIP-7623 (calldata floor), EIP-7702 (set-code) |
+   | `:prague`        | EIP-2537 (BLS12-381 precompiles), EIP-7623 (calldata floor), EIP-7702 (set-code) |
 
   ## Elixir Learning Notes
 
@@ -106,6 +106,9 @@ defmodule EEVM.HardforkConfig do
     eip_5656: :cancun,
     # EIP-6780 (Cancun): SELFDESTRUCT only deletes if created this tx
     eip_6780: :cancun,
+    # EIP-2537 (Prague): BLS12-381 precompiles at 0x0B-0x11
+    eip_2537: :prague,
+    # EIP-7623 (Prague): calldata floor pricing
     eip_7623: :prague
   }
 
