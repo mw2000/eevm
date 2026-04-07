@@ -53,7 +53,7 @@ defmodule EEVM.Opcodes.PrecompileTest do
       assert result.return_data == <<0x2A>>
     end
 
-    test "precompile detection for addresses 0x01 through 0x0A" do
+    test "precompile detection for addresses 0x01 through 0x0A on Cancun" do
       alias EEVM.Precompiles
 
       for addr <- 0x01..0x0A do
@@ -63,6 +63,18 @@ defmodule EEVM.Opcodes.PrecompileTest do
       assert Precompiles.precompile?(0x00) == false
       assert Precompiles.precompile?(0x0B) == false
       assert Precompiles.precompile?(0xFF) == false
+    end
+
+    test "precompile detection for addresses 0x0B through 0x11 is Prague-gated" do
+      alias EEVM.Precompiles
+
+      cancun = Config.new(:cancun)
+      prague = Config.new(:prague)
+
+      for addr <- 0x0B..0x11 do
+        refute Precompiles.precompile?(addr, cancun)
+        assert Precompiles.precompile?(addr, prague)
+      end
     end
 
     test "DELEGATECALL to unimplemented precompile pushes 0" do
