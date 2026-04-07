@@ -1,0 +1,4 @@
+[submodule "test/fixtures/state_tests/ethereum-tests"]
+	path = test/fixtures/state_tests/ethereum-tests
+	url = https://github.com/ethereum/tests.git
+	shallow = true

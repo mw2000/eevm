@@ -1,13 +1,18 @@
 # StateTest Fixtures
 
 - `smoke/` contains tiny checked-in fixtures that exercise the harness itself.
-- `official/` is where imported `ethereum/tests` GeneralStateTests fixtures live.
+- `ethereum-tests/` is a pinned git submodule pointing at an `ethereum/tests` snapshot that still contains `GeneralStateTests/`.
 - `skip.txt` lists fixtures or test names to skip while the runner support grows.
 
-Fetch the official GeneralStateTests bundle with:
+Initialize the upstream fixture submodule with:
 
 ```bash
-mix fetch_state_tests --clean
+git submodule update --init test/fixtures/state_tests/ethereum-tests
 ```
 
-That downloads `fixtures_general_state_tests.tgz` from `ethereum/tests` and extracts it into `test/fixtures/state_tests/official/`.
+Run a focused official subset with:
+
+```bash
+EEVM_STATE_TEST_GLOB='test/fixtures/state_tests/ethereum-tests/GeneralStateTests/stExample/*.json' \
+  mix test test/state_test_test.exs
+```

@@ -1,5 +1,6 @@
 defmodule EEVM.TestSupport.StateTestCatalog do
-  @default_glob "test/fixtures/state_tests/**/*.json"
+  @default_glob "test/fixtures/state_tests/smoke/*.json"
+  @official_glob "test/fixtures/state_tests/ethereum-tests/GeneralStateTests/**/*.json"
   @default_skip_file "test/fixtures/state_tests/skip.txt"
 
   @spec fixture_paths() :: [binary()]
@@ -38,6 +39,9 @@ defmodule EEVM.TestSupport.StateTestCatalog do
         |> Enum.map(&String.trim/1)
     end
   end
+
+  @spec official_glob() :: binary()
+  def official_glob, do: @official_glob
 
   defp skip_entries do
     skip_file = System.get_env("EEVM_STATE_TEST_SKIP_FILE", @default_skip_file)

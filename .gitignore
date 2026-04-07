@@ -13,9 +13,6 @@
 # Temporary files, for example, from tests.
 /tmp/
 
-# Downloaded official Ethereum fixture corpus
-/test/fixtures/state_tests/official/
-
 # If the VM crashes, it generates a dump, let's ignore it too.
 erl_crash.dump
 
