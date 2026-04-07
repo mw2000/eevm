@@ -40,4 +40,19 @@ defmodule EEVM.Transaction.IntrinsicGasTest do
                21_000 + 32_000 + 33 * 16 + 2 * 2
     end
   end
+
+  describe "minimum_gas_limit/2" do
+    test "keeps the standard intrinsic gas formula before Prague" do
+      tx = Transaction.new(to: 0xCAFE, data: <<0x00>>)
+
+      assert IntrinsicGas.minimum_gas_limit(tx, EEVM.HardforkConfig.new(:cancun)) == 21_004
+    end
+
+    test "uses calldata floor pricing from Prague onward" do
+      tx = Transaction.new(to: 0xCAFE, data: <<0x00, 0x01>>)
+
+      assert IntrinsicGas.calldata_floor_gas_cost(tx, EEVM.HardforkConfig.new(:prague)) == 21_050
+      assert IntrinsicGas.minimum_gas_limit(tx, EEVM.HardforkConfig.new(:prague)) == 21_050
+    end
+  end
 end
