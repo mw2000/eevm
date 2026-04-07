@@ -1,4 +1,6 @@
 defmodule EEVM.TestSupport.StateTestCatalog do
+  @moduledoc "Discovers StateTest JSON fixtures on disk and filters them against the skip list."
+
   @default_glob "test/fixtures/state_tests/smoke/*.json"
   @official_glob "test/fixtures/state_tests/ethereum-tests/GeneralStateTests/**/*.json"
   @default_skip_file "test/fixtures/state_tests/skip.txt"

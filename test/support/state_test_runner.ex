@@ -1,4 +1,6 @@
 defmodule EEVM.TestSupport.StateTestRunner do
+  @moduledoc "Executes a single StateTest case and validates the post-state root and logs hash."
+
   alias EEVM.{Config, Database, StateRoot}
   alias EEVM.Context.Contract
   alias EEVM.Database.InMemory

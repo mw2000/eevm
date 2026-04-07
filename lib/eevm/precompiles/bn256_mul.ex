@@ -1,5 +1,5 @@
 defmodule EEVM.Precompiles.BN256Mul do
-  @moduledoc false
+  @moduledoc "Precompile 0x07 — BN256 scalar multiplication. Delegates to `BN256.execute_mul/2`."
   @behaviour EEVM.Precompile
 
   alias EEVM.Precompiles.BN256
