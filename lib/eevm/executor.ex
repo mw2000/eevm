@@ -35,6 +35,7 @@ defmodule EEVM.Executor do
   alias EEVM.{HardforkConfig, MachineState}
   alias EEVM.Database
   alias EEVM.Gas.Static
+  alias EEVM.Transaction.IntrinsicGas
   alias EEVM.Database
   alias EEVM.Gas.Static
 
@@ -150,7 +151,20 @@ defmodule EEVM.Executor do
       if HardforkConfig.enabled?(state.config.hardfork, :eip_3529), do: 5, else: 2
 
     effective_refund = min(state.refund, div(gas_used, refund_cap_divisor))
-    %{state | gas: state.gas + effective_refund, refund: 0}
+
+    refunded_gas = state.gas + effective_refund
+
+    calldata_floor_gas =
+      IntrinsicGas.calldata_floor_gas_cost(state.tx, state.config.hardfork)
+
+    gas_after_floor =
+      if calldata_floor_gas > 0 and state.tx.gas_limit > 0 do
+        min(refunded_gas, max(state.tx.gas_limit - calldata_floor_gas, 0))
+      else
+        refunded_gas
+      end
+
+    %{state | gas: gas_after_floor, refund: 0}
   end
 
   defp cleanup_touched_empty_accounts(%MachineState{status: :stopped} = state) do

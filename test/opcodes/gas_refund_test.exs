@@ -4,6 +4,8 @@ defmodule EEVM.Opcodes.GasRefundTest do
   alias EEVM.{CallFrame, Executor, MachineState, Memory, Stack}
   alias EEVM.Context.Contract
   alias EEVM.Gas.Static
+  alias EEVM.Context.Transaction
+  alias EEVM.Transaction.IntrinsicGas
 
   test "refund counter defaults to 0" do
     result = EEVM.execute(<<0x00>>)
@@ -40,6 +42,34 @@ defmodule EEVM.Opcodes.GasRefundTest do
     assert result.status == :stopped
     assert result.gas == expected_gas
     assert result.refund == 0
+  end
+
+  test "Prague floors final charged gas after refunds to calldata floor cost" do
+    tx = Transaction.new(gas_limit: 22_000, to: 0xCAFE, data: <<0x00>>)
+    initial_execution_gas = tx.gas_limit - IntrinsicGas.calculate(tx)
+
+    prague_result =
+      EEVM.execute(<<0x60, 0x01, 0x50, 0x00>>,
+        gas: initial_execution_gas,
+        tx: tx,
+        hardfork: :prague,
+        refund: 100
+      )
+
+    cancun_result =
+      EEVM.execute(<<0x60, 0x01, 0x50, 0x00>>,
+        gas: initial_execution_gas,
+        tx: tx,
+        hardfork: :cancun,
+        refund: 100
+      )
+
+    assert prague_result.status == :stopped
+    assert prague_result.refund == 0
+    assert tx.gas_limit - prague_result.gas == 21_010
+
+    assert cancun_result.status == :stopped
+    assert tx.gas_limit - cancun_result.gas == 21_008
   end
 
   test "top-level revert resets refund to 0" do
