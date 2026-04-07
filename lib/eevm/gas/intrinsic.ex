@@ -26,9 +26,11 @@ defmodule EEVM.Gas.Intrinsic do
   - Module attributes (`@tx_data_zero_gas`) make constants auditable in one place.
   """
 
+  @tx_base_gas 21_000
   # EIP-2028 (Istanbul): non-zero calldata reduced from 68 → 16 gas.
   @tx_data_zero_gas 4
   @tx_data_non_zero_gas 16
+  @tx_calldata_floor_token_cost 10
 
   @doc """
   Returns the intrinsic gas cost for zero-byte calldata.
@@ -45,6 +47,10 @@ defmodule EEVM.Gas.Intrinsic do
   """
   @spec tx_data_non_zero_gas() :: non_neg_integer()
   def tx_data_non_zero_gas, do: @tx_data_non_zero_gas
+
+  @doc "Returns the Prague calldata floor gas charged per token."
+  @spec tx_calldata_floor_token_cost() :: non_neg_integer()
+  def tx_calldata_floor_token_cost, do: @tx_calldata_floor_token_cost
 
   @doc """
   Computes the total intrinsic calldata gas cost for the given binary.
@@ -67,5 +73,20 @@ defmodule EEVM.Gas.Intrinsic do
       acc when byte == 0 -> acc + @tx_data_zero_gas
       acc -> acc + @tx_data_non_zero_gas
     end
+  end
+
+  @doc "Counts EIP-7623 calldata floor tokens (zero=1, non-zero=4)."
+  @spec calldata_floor_tokens(binary()) :: non_neg_integer()
+  def calldata_floor_tokens(data) when is_binary(data) do
+    for <<byte <- data>>, reduce: 0 do
+      acc when byte == 0 -> acc + 1
+      acc -> acc + 4
+    end
+  end
+
+  @doc "Computes the Prague calldata floor gas cost for the given calldata."
+  @spec calldata_floor_cost(binary()) :: non_neg_integer()
+  def calldata_floor_cost(data) when is_binary(data) do
+    @tx_base_gas + @tx_calldata_floor_token_cost * calldata_floor_tokens(data)
   end
 end
