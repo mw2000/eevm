@@ -1,5 +1,5 @@
 defmodule EEVM.TestSupport.BytecodeHelpers do
-  @moduledoc false
+  @moduledoc "Helpers for building raw EVM bytecode programs in tests (CREATE/CREATE2 init-code writers)."
 
   @spec build_create_program(binary(), :create, non_neg_integer()) :: binary()
   def build_create_program(init_code, :create, value) do

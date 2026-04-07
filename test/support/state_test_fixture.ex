@@ -1,4 +1,6 @@
 defmodule EEVM.TestSupport.StateTestFixture do
+  @moduledoc "Parses official StateTest JSON fixtures into typed structs for the test runner."
+
   alias EEVM.Context.{Block, Transaction}
 
   @empty_logs_hash "0x1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347"

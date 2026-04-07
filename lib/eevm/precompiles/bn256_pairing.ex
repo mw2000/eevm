@@ -1,5 +1,5 @@
 defmodule EEVM.Precompiles.BN256Pairing do
-  @moduledoc false
+  @moduledoc "Precompile 0x08 — BN256 pairing check. Delegates to `BN256.execute_pairing/2`."
   @behaviour EEVM.Precompile
 
   alias EEVM.Precompiles.BN256
