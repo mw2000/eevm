@@ -48,6 +48,11 @@ defmodule EEVM.HardforkConfigTest do
       refute HardforkConfig.enabled?(HardforkConfig.new(:shanghai), :eip_6780)
     end
 
+    test "EIP-7623 (calldata floor pricing) is enabled from Prague onward" do
+      assert HardforkConfig.enabled?(HardforkConfig.new(:prague), :eip_7623)
+      refute HardforkConfig.enabled?(HardforkConfig.new(:cancun), :eip_7623)
+    end
+
     test "EIP-2929 (cold/warm access) is enabled from Berlin onward" do
       assert HardforkConfig.enabled?(HardforkConfig.new(:berlin), :eip_2929)
       assert HardforkConfig.enabled?(HardforkConfig.new(:london), :eip_2929)

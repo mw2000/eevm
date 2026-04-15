@@ -25,7 +25,7 @@ defmodule EEVM.TestSupport.StateTestRunner do
   end
 
   defp execute_transaction(tx, db, block, hardfork) do
-    case Validator.validate(tx, db, block) do
+    case Validator.validate(tx, db, block, Config.new(hardfork).hardfork) do
       :ok ->
         db_after_nonce = Database.increment_nonce(db, tx.origin)
 

@@ -17,6 +17,7 @@ defmodule EEVM.Transaction.Validator do
 
   alias EEVM.Context.{Block, Transaction}
   alias EEVM.Database
+  alias EEVM.HardforkConfig
   alias EEVM.Transaction.IntrinsicGas
 
   @blob_gas_per_blob 131_072
@@ -24,7 +25,18 @@ defmodule EEVM.Transaction.Validator do
 
   @spec validate(Transaction.t(), Database.t(), Block.t()) :: :ok | {:error, atom()}
   def validate(%Transaction{} = tx, %Database{} = db, %Block{} = block) do
-    with :ok <- validate_intrinsic_gas(tx),
+    validate(tx, db, block, HardforkConfig.default())
+  end
+
+  @spec validate(Transaction.t(), Database.t(), Block.t(), HardforkConfig.t()) ::
+          :ok | {:error, atom()}
+  def validate(
+        %Transaction{} = tx,
+        %Database{} = db,
+        %Block{} = block,
+        %HardforkConfig{} = hardfork
+      ) do
+    with :ok <- validate_intrinsic_gas(tx, hardfork),
          :ok <- validate_gas_limit_vs_block(tx, block),
          :ok <- validate_nonce(tx, db),
          :ok <- validate_eip1559_fees(tx, block),
@@ -35,8 +47,8 @@ defmodule EEVM.Transaction.Validator do
     end
   end
 
-  defp validate_intrinsic_gas(%Transaction{} = tx) do
-    if tx.gas_limit >= IntrinsicGas.calculate(tx),
+  defp validate_intrinsic_gas(%Transaction{} = tx, %HardforkConfig{} = hardfork) do
+    if tx.gas_limit >= IntrinsicGas.minimum_gas_limit(tx, hardfork),
       do: :ok,
       else: {:error, :intrinsic_gas_too_low}
   end
