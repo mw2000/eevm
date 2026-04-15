@@ -105,6 +105,15 @@ defmodule EEVM.HardforkConfigTest do
       refute HardforkConfig.enabled?(HardforkConfig.new(:cancun), :eip_9999)
     end
 
+    test "EIP-2537 (BLS12-381 precompiles) is enabled from Prague onward" do
+      assert HardforkConfig.enabled?(HardforkConfig.new(:prague), :eip_2537)
+    end
+
+    test "EIP-2537 (BLS12-381 precompiles) is disabled before Prague" do
+      refute HardforkConfig.enabled?(HardforkConfig.new(:cancun), :eip_2537)
+      refute HardforkConfig.enabled?(HardforkConfig.new(:shanghai), :eip_2537)
+    end
+
     test "default config is Cancun" do
       assert HardforkConfig.default().spec_id == :cancun
     end
@@ -114,6 +123,24 @@ defmodule EEVM.HardforkConfigTest do
       frontier_idx = Enum.find_index(ids, &(&1 == :frontier))
       cancun_idx = Enum.find_index(ids, &(&1 == :cancun))
       assert frontier_idx < cancun_idx
+    end
+  end
+
+  describe "EIP-2537 BLS12-381 precompile hardfork guard" do
+    test "BLS12-381 precompiles are registered on Prague" do
+      config = EEVM.Config.new(:prague)
+
+      for address <- 0x0B..0x11 do
+        assert EEVM.Precompiles.precompile?(address, config)
+      end
+    end
+
+    test "BLS12-381 precompiles are not registered before Prague" do
+      config = EEVM.Config.new(:cancun)
+
+      for address <- 0x0B..0x11 do
+        refute EEVM.Precompiles.precompile?(address, config)
+      end
     end
   end
 
