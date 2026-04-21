@@ -248,7 +248,8 @@ defmodule EEVM.Opcodes.System.Calls do
                 accessed_storage_keys: state_after_touch.accessed_storage_keys,
                 created_addresses: state_after_touch.created_addresses,
                 is_static: state_after_touch.is_static,
-                depth: state_after_touch.depth + 1
+                depth: state_after_touch.depth + 1,
+                tracer: state_after_touch.tracer
               )
 
             child_result = Executor.run_loop(child_state)
@@ -302,6 +303,7 @@ defmodule EEVM.Opcodes.System.Calls do
              |> Map.put(:created_addresses, created_addresses_result)
              |> Map.put(:touched_addresses, touched_addresses_result)
              |> Map.put(:gas, state_after_forward.gas + child_result.gas)
+             |> Map.put(:tracer, child_result.tracer)
              |> MachineState.advance_pc()}
           end
 
@@ -403,7 +405,8 @@ defmodule EEVM.Opcodes.System.Calls do
                 accessed_storage_keys: state_after_touch.accessed_storage_keys,
                 created_addresses: state_after_touch.created_addresses,
                 is_static: state_after_touch.is_static,
-                depth: state_after_touch.depth + 1
+                depth: state_after_touch.depth + 1,
+                tracer: state_after_touch.tracer
               )
 
             child_result = Executor.run_loop(child_state)
@@ -457,6 +460,7 @@ defmodule EEVM.Opcodes.System.Calls do
              |> Map.put(:created_addresses, created_addresses_result)
              |> Map.put(:touched_addresses, touched_addresses_result)
              |> Map.put(:gas, state_after_forward.gas + child_result.gas)
+             |> Map.put(:tracer, child_result.tracer)
              |> MachineState.advance_pc()}
           end
 
