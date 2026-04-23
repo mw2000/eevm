@@ -35,8 +35,11 @@ jobs:
     - name: Restore build cache
       uses: actions/cache@v4
       with:
-        path: _build
-        key: ${{ runner.os }}-build-${{ hashFiles('**/mix.lock') }}
+        path: |
+          _build
+          priv/native
+          native/eevm_bls/target
+        key: ${{ runner.os }}-build-${{ hashFiles('**/mix.lock', 'native/**/Cargo.lock', 'native/**/Cargo.toml', 'native/**/src/**') }}
         restore-keys: ${{ runner.os }}-build-
     - name: Install dependencies
       run: mix deps.get
@@ -69,8 +72,11 @@ jobs:
     - name: Restore build cache
       uses: actions/cache@v4
       with:
-        path: _build
-        key: ${{ runner.os }}-build-${{ hashFiles('**/mix.lock') }}
+        path: |
+          _build
+          priv/native
+          native/eevm_bls/target
+        key: ${{ runner.os }}-build-${{ hashFiles('**/mix.lock', 'native/**/Cargo.lock', 'native/**/Cargo.toml', 'native/**/src/**') }}
         restore-keys: ${{ runner.os }}-build-
     - name: Install dependencies
       run: mix deps.get
