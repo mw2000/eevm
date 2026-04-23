@@ -22,6 +22,14 @@ defmodule EEVM.Context.Block do
   | `blob_base_fee` | BLOBBASEFEE (0x4A) | Block blob base fee from EIP-7516 |
   | `chain_id` | CHAINID (0x46) | Network ID (1=mainnet, 137=Polygon, etc.) |
   | `hashes` | BLOCKHASH (0x40) | Map of recent block numbers to their hashes |
+  | `parent_beacon_block_root` | (no opcode) | Parent beacon block root (EIP-4788) |
+
+  ### parent_beacon_block_root
+
+  Added in Cancun (EIP-4788). Not exposed through an opcode — instead, the EL
+  client performs a system call into the beacon-roots contract at block start
+  to record this value keyed by the parent block's timestamp. User contracts
+  then `CALL` that contract to read historical beacon roots.
 
   ### PREVRANDAO
 
@@ -45,7 +53,8 @@ defmodule EEVM.Context.Block do
           basefee: non_neg_integer(),
           blob_base_fee: non_neg_integer(),
           chain_id: non_neg_integer(),
-          hashes: %{non_neg_integer() => non_neg_integer()}
+          hashes: %{non_neg_integer() => non_neg_integer()},
+          parent_beacon_block_root: non_neg_integer()
         }
 
   defstruct number: 0,
@@ -56,7 +65,8 @@ defmodule EEVM.Context.Block do
             basefee: 0,
             blob_base_fee: 0,
             chain_id: 1,
-            hashes: %{}
+            hashes: %{},
+            parent_beacon_block_root: 0
 
   @doc "Creates a new block context with default values."
   @spec new() :: t()

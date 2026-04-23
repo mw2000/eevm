@@ -106,6 +106,8 @@ defmodule EEVM.HardforkConfig do
     eip_5656: :cancun,
     # EIP-6780 (Cancun): SELFDESTRUCT only deletes if created this tx
     eip_6780: :cancun,
+    # EIP-4788 (Cancun): parent beacon block root system contract at 0x000F3df6...Beac02
+    eip_4788: :cancun,
     # EIP-2537 (Prague): BLS12-381 precompiles at 0x0B-0x11
     eip_2537: :prague,
     # EIP-7623 (Prague): calldata floor pricing
