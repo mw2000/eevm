@@ -32,12 +32,11 @@ defmodule EEVM.Executor do
     their semantics.
   """
 
-  alias EEVM.{HardforkConfig, MachineState}
+  alias EEVM.{HardforkConfig, MachineState, Memory, Stack, Tracer}
   alias EEVM.Database
   alias EEVM.Gas.Static
   alias EEVM.Transaction.IntrinsicGas
-  alias EEVM.Database
-  alias EEVM.Gas.Static
+  alias EEVM.Tracer.TraceStep
 
   alias EEVM.Opcodes.{
     Arithmetic,
@@ -109,17 +108,25 @@ defmodule EEVM.Executor do
 
       opcode ->
         static_cost = if opcode == 0xFE, do: state.gas, else: Static.static_cost(opcode)
+        traced_state = trace_opcode(state, opcode, static_cost)
 
-        case MachineState.consume_gas(state, static_cost) do
+        case MachineState.consume_gas(traced_state, static_cost) do
           {:ok, state_after_gas} ->
             case execute_opcode(opcode, state_after_gas) do
-              {:ok, new_state} -> run_loop(new_state)
-              {:error, :out_of_gas, halted_state} -> halted_state
-              {:error, reason, error_state} -> MachineState.halt(error_state, {:error, reason})
+              {:ok, new_state} ->
+                run_loop(new_state)
+
+              {:error, :out_of_gas, halted_state} ->
+                annotate_last_error(halted_state, :out_of_gas)
+
+              {:error, reason, error_state} ->
+                error_state
+                |> MachineState.halt({:error, reason})
+                |> annotate_last_error(reason)
             end
 
           {:error, :out_of_gas, halted_state} ->
-            halted_state
+            annotate_last_error(halted_state, :out_of_gas)
         end
     end
   end
@@ -248,4 +255,33 @@ defmodule EEVM.Executor do
     do: Termination.execute(op, state)
 
   defp execute_opcode(_op, state), do: {:ok, MachineState.halt(state, :invalid)}
+
+  # Trace bookkeeping is a no-op when no tracer is attached — one pattern match,
+  # one return. All helpers below keep this fast path.
+
+  defp trace_opcode(%MachineState{tracer: nil} = state, _opcode, _static_cost), do: state
+
+  defp trace_opcode(%MachineState{tracer: tracer} = state, opcode, static_cost) do
+    step = %TraceStep{
+      pc: state.pc,
+      op: Tracer.op_name(opcode),
+      op_byte: opcode,
+      gas_remaining: state.gas,
+      gas_cost: static_cost,
+      stack: Stack.to_list(state.stack),
+      memory_size: Memory.size(state.memory),
+      depth: state.depth,
+      refund: state.refund,
+      return_data: state.return_data,
+      error: nil
+    }
+
+    %{state | tracer: Tracer.record(tracer, step)}
+  end
+
+  defp annotate_last_error(%MachineState{tracer: nil} = state, _reason), do: state
+
+  defp annotate_last_error(%MachineState{tracer: tracer} = state, reason) do
+    %{state | tracer: Tracer.set_last_error(tracer, reason)}
+  end
 end

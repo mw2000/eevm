@@ -34,7 +34,7 @@ defmodule EEVM do
   - **Typespecs** — `@spec` annotations for documentation and Dialyzer
   """
 
-  alias EEVM.{Executor, MachineState, Stack}
+  alias EEVM.{Executor, MachineState, Stack, Tracer}
 
   @doc """
   Executes EVM bytecode and returns the final machine state.
@@ -51,6 +51,28 @@ defmodule EEVM do
   @spec execute(binary(), keyword()) :: EEVM.MachineState.t()
   def execute(bytecode, opts \\ []) do
     Executor.run(bytecode, opts)
+  end
+
+  @doc """
+  Executes bytecode with an opcode-level tracer attached.
+
+  Returns `{final_state, tracer}`. The tracer holds one `TraceStep` per
+  executed opcode (see `EEVM.Tracer`). Use `EEVM.Tracer.to_json/1` to emit
+  a trace in EIP-3155 / geth `--json` format.
+
+  ## Example
+
+      iex> {state, tracer} = EEVM.trace(<<0x60, 0x01, 0x60, 0x02, 0x01, 0x00>>)
+      iex> state.status
+      :stopped
+      iex> length(EEVM.Tracer.steps(tracer))
+      4
+  """
+  @spec trace(binary(), keyword()) :: {MachineState.t(), Tracer.t()}
+  def trace(bytecode, opts \\ []) do
+    opts_with_tracer = Keyword.put(opts, :tracer, Tracer.new())
+    state = Executor.run(bytecode, opts_with_tracer)
+    {state, state.tracer}
   end
 
   @doc """

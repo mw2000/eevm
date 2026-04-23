@@ -25,7 +25,7 @@ defmodule EEVM.MachineState do
   - The `alias` keyword lets us reference modules by their short name.
   """
 
-  alias EEVM.{CallFrame, Memory, Stack}
+  alias EEVM.{CallFrame, Memory, Stack, Tracer}
   alias EEVM.Config
   alias EEVM.Database
   alias EEVM.Database.InMemory, as: InMemoryDB
@@ -59,7 +59,8 @@ defmodule EEVM.MachineState do
           status: status(),
           return_data: binary(),
           logs: [%{address: non_neg_integer(), data: binary(), topics: [non_neg_integer()]}],
-          code: binary()
+          code: binary(),
+          tracer: Tracer.t() | nil
         }
 
   @enforce_keys [:code]
@@ -87,7 +88,8 @@ defmodule EEVM.MachineState do
             status: :running,
             return_data: <<>>,
             logs: [],
-            code: <<>>
+            code: <<>>,
+            tracer: nil
 
   @doc """
   Creates a new machine state for executing the given bytecode.
@@ -111,6 +113,7 @@ defmodule EEVM.MachineState do
       - `:is_static` — static context flag for this frame (default: `false`)
       - `:depth` — current call depth (default: `0`)
       - `:refund` — gas refund counter (default: `0`)
+      - `:tracer` — optional `EEVM.Tracer` to record per-opcode trace (default: `nil`)
 
   ## Example
 
@@ -148,7 +151,8 @@ defmodule EEVM.MachineState do
       depth: Keyword.get(opts, :depth, 0),
       return_data: Keyword.get(opts, :return_data, <<>>),
       gas: Keyword.get(opts, :gas, 1_000_000),
-      refund: Keyword.get(opts, :refund, 0)
+      refund: Keyword.get(opts, :refund, 0),
+      tracer: Keyword.get(opts, :tracer)
     }
   end
 

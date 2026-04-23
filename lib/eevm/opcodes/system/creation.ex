@@ -128,21 +128,25 @@ defmodule EEVM.Opcodes.System.Creation do
                         accessed_storage_keys: state_after_touch.accessed_storage_keys,
                         created_addresses: state_after_touch.created_addresses,
                         is_static: state_after_touch.is_static,
-                        depth: state_after_touch.depth + 1
+                        depth: state_after_touch.depth + 1,
+                        tracer: state_after_touch.tracer
                       )
 
                     child_result = Executor.run_loop(child_state)
                     deployment_success = child_result.status == :stopped
+
+                    post_child_fail_state = %{
+                      state_after_touch
+                      | db: db_after_nonce,
+                        tracer: child_result.tracer
+                    }
 
                     if deployment_success do
                       runtime_code = child_result.return_data
 
                       if HardforkConfig.enabled?(child_result.config.hardfork, :eip_170) and
                            byte_size(runtime_code) > @max_code_size do
-                        create_failed(
-                          %{state_after_touch | db: db_after_nonce},
-                          stack
-                        )
+                        create_failed(post_child_fail_state, stack)
                       else
                         # EIP-3541 (London+): reject runtime code whose first byte is 0xEF.
                         # The 0xEF prefix is reserved for the EVM Object Format (EOF).
@@ -151,10 +155,7 @@ defmodule EEVM.Opcodes.System.Creation do
                         # deposited. Empty runtime code is explicitly allowed.
                         if HardforkConfig.enabled?(child_result.config.hardfork, :eip_3541) and
                              reject_eip_3541_runtime_code?(runtime_code) do
-                          create_failed(
-                            %{state_after_touch | db: db_after_nonce},
-                            stack
-                          )
+                          create_failed(post_child_fail_state, stack)
                         else
                           deposit_cost = Dynamic.code_deposit_cost(byte_size(runtime_code))
 
@@ -187,18 +188,16 @@ defmodule EEVM.Opcodes.System.Creation do
                              |> Map.put(:touched_addresses, child_result.touched_addresses)
                              |> Map.put(:gas, child_result.gas - deposit_cost)
                              |> Map.put(:return_data, child_result.return_data)
+                             |> Map.put(:tracer, child_result.tracer)
                              |> MachineState.advance_pc()}
                           else
-                            create_failed(
-                              %{state_after_touch | db: db_after_nonce},
-                              stack
-                            )
+                            create_failed(post_child_fail_state, stack)
                           end
                         end
                       end
                     else
                       create_failed(
-                        %{state_after_touch | db: db_after_nonce},
+                        post_child_fail_state,
                         stack
                       )
                     end
