@@ -67,7 +67,7 @@ defmodule EEVM.Transaction.Executor do
   }
 
   @type wire_tx ::
-          Legacy.t() | AccessList.t() | FeeMarket.t() | Blob.t() | SetCode.t() | binary()
+          Legacy.t() | AccessList.t() | FeeMarket.t() | Blob.t() | binary()
 
   @type opts :: [
           hardfork: HardforkConfig.spec_id(),
@@ -126,7 +126,7 @@ defmodule EEVM.Transaction.Executor do
   defp ensure_decoded(%AccessList{} = tx), do: {:ok, tx}
   defp ensure_decoded(%FeeMarket{} = tx), do: {:ok, tx}
   defp ensure_decoded(%Blob{} = tx), do: {:ok, tx}
-  defp ensure_decoded(%SetCode{} = tx), do: {:ok, tx}
+  defp ensure_decoded(%SetCode{}), do: {:error, :set_code_not_supported}
   defp ensure_decoded(bytes) when is_binary(bytes), do: Envelope.decode(bytes)
   defp ensure_decoded(_), do: {:error, :invalid_transaction_input}
 
@@ -220,9 +220,6 @@ defmodule EEVM.Transaction.Executor do
      )}
   end
 
-  defp build_tx_context(%SetCode{}, _sender_bytes), do: {:error, :set_code_not_supported}
-
-  defp optional_address(nil), do: nil
   defp optional_address(<<>>), do: nil
 
   defp optional_address(bytes) when is_binary(bytes) and byte_size(bytes) == 20,
