@@ -21,10 +21,7 @@ defmodule EEVM.Interpreter.Instructions.System.Creation do
   @initcode_word_cost 2
 
   alias EEVM.{Database, HardforkConfig, Interpreter}
-  alias EEVM.Interpreter.{MachineState, Memory, Stack}
-  alias EEVM.Gas.Dynamic
-  alias EEVM.Gas.Memory, as: GasMemory
-  alias EEVM.Context.Contract
+  alias EEVM.Interpreter.{Journal, MachineState, Memory, Stack}
   alias EEVM.Gas.Dynamic
   alias EEVM.Gas.Memory, as: GasMemory
   alias EEVM.Context.Contract
@@ -168,28 +165,20 @@ defmodule EEVM.Interpreter.Instructions.System.Creation do
 
                             {:ok, stack_after_create} = Stack.push(stack, new_address)
 
-                            created_addresses_after =
-                              MapSet.put(child_result.created_addresses, new_address)
+                            merged =
+                              Journal.merge_child_result(state_after_initcode_cost, child_result)
 
                             {:ok,
-                             state_after_initcode_cost
+                             merged
                              |> Map.put(:stack, stack_after_create)
                              |> Map.put(:memory, memory_after_read)
                              |> Map.put(:db, db_after_deploy)
                              |> Map.put(
-                               :logs,
-                               state_after_initcode_cost.logs ++ child_result.logs
+                               :created_addresses,
+                               MapSet.put(merged.created_addresses, new_address)
                              )
-                             |> Map.put(:accessed_addresses, child_result.accessed_addresses)
-                             |> Map.put(
-                               :accessed_storage_keys,
-                               child_result.accessed_storage_keys
-                             )
-                             |> Map.put(:created_addresses, created_addresses_after)
-                             |> Map.put(:touched_addresses, child_result.touched_addresses)
                              |> Map.put(:gas, child_result.gas - deposit_cost)
                              |> Map.put(:return_data, child_result.return_data)
-                             |> Map.put(:tracer, child_result.tracer)
                              |> MachineState.advance_pc()}
                           else
                             create_failed(post_child_fail_state, stack)
