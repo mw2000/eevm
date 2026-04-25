@@ -16,7 +16,8 @@ defmodule EEVM.Handler.PostExecution do
     struct that callers consume.
   """
 
-  alias EEVM.{Bloom, Database, TransactionResult}
+  alias EEVM.{Database, TransactionResult}
+  alias EEVM.Block.Bloom
   alias EEVM.Context.{Block, Transaction}
   alias EEVM.Handler.{PreExecution, Validation}
   alias EEVM.Interpreter.MachineState

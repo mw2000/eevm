@@ -1,7 +1,7 @@
 defmodule EEVM.BloomTest do
   use ExUnit.Case, async: true
 
-  alias EEVM.Bloom
+  alias EEVM.Block.Bloom
   alias EEVM.Context.Contract
 
   describe "empty bloom" do

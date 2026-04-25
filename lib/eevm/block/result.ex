@@ -1,4 +1,4 @@
-defmodule EEVM.BlockResult do
+defmodule EEVM.Block.Result do
   @moduledoc """
   The outcome of executing a block — the post-state database plus every
   commitment derived from it.
@@ -27,8 +27,8 @@ defmodule EEVM.BlockResult do
     mutators live here.
   """
 
-  alias EEVM.Block.Receipt
-  alias EEVM.{Bloom, Database}
+  alias EEVM.Block.{Bloom, Receipt}
+  alias EEVM.Database
 
   @type t :: %__MODULE__{
           post_state_db: Database.t(),

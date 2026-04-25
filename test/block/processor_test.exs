@@ -1,8 +1,8 @@
 defmodule EEVM.Block.ProcessorTest do
   use ExUnit.Case, async: true
 
-  alias EEVM.Block.{Header, Processor, Receipt}
-  alias EEVM.{Bloom, BlockResult, Database, StateRoot}
+  alias EEVM.Block.{Bloom, Header, Processor, Receipt, Result}
+  alias EEVM.{Database, StateRoot}
   alias EEVM.Database.InMemory
   alias EEVM.MPT.Trie
 
@@ -74,7 +74,7 @@ defmodule EEVM.Block.ProcessorTest do
         Database.set_balance(db_in, 0xB, 2)
       end
 
-      {:ok, %BlockResult{} = result} =
+      {:ok, %Result{} = result} =
         run(header, [], db, system_calls: [hook_a, hook_b])
 
       assert Agent.get(call_log, &Enum.reverse(&1)) == [:a, :b]
@@ -179,7 +179,7 @@ defmodule EEVM.Block.ProcessorTest do
         tx(id: 2, gas_limit: 30_000, gas_used: 30_000)
       ]
 
-      assert {:ok, %BlockResult{gas_used: 60_000}} = run(header, txs, db)
+      assert {:ok, %Result{gas_used: 60_000}} = run(header, txs, db)
     end
   end
 

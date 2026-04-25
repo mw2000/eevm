@@ -1,4 +1,4 @@
-defmodule EEVM.Bloom do
+defmodule EEVM.Block.Bloom do
   @moduledoc """
   Ethereum logs bloom filter — 2048-bit probabilistic filter for log indexing.
 

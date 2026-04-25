@@ -13,7 +13,7 @@ defmodule EEVM.Handler.Validation do
   `{:error, reason}` for any failure.
   """
 
-  alias EEVM.{Config, Database}
+  alias EEVM.{Config, Database, HardforkConfig}
   alias EEVM.Context.{Block, Transaction}
 
   alias EEVM.Transaction.{
@@ -56,7 +56,7 @@ defmodule EEVM.Handler.Validation do
         ) :: {:ok, binary()} | {:error, atom()}
   defdelegate recover_sender(tx, chain_id), to: Signer
 
-  @spec validate(Transaction.t(), Database.t(), Block.t(), atom()) ::
+  @spec validate(Transaction.t(), Database.t(), Block.t(), HardforkConfig.t()) ::
           :ok | {:error, atom()}
   defdelegate validate(tx_ctx, db, block, hardfork), to: Validator
 

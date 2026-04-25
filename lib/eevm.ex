@@ -35,6 +35,7 @@ defmodule EEVM do
   """
 
   alias EEVM.{Interpreter, Tracer}
+  alias EEVM.Block.Bloom
   alias EEVM.Interpreter.{MachineState, Stack}
 
   @doc """
@@ -91,9 +92,9 @@ defmodule EEVM do
   def logs(%MachineState{} = state), do: state.logs
 
   @doc "Computes the 256-byte logs bloom filter for the executed transaction."
-  @spec logs_bloom(MachineState.t()) :: EEVM.Bloom.t()
+  @spec logs_bloom(MachineState.t()) :: Bloom.t()
   def logs_bloom(%MachineState{} = state) do
-    EEVM.Bloom.from_logs(state.logs)
+    Bloom.from_logs(state.logs)
   end
 
   @doc """
