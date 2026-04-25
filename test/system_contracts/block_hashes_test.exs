@@ -2,7 +2,8 @@ defmodule EEVM.SystemContracts.BlockHashesTest do
   use ExUnit.Case, async: true
 
   alias EEVM.Database.InMemory
-  alias EEVM.{Database, HardforkConfig, MachineState}
+  alias EEVM.{Database, HardforkConfig}
+  alias EEVM.Interpreter.MachineState
   alias EEVM.Context.{Block, Contract, Transaction}
   alias EEVM.SystemContracts.BlockHashes
 
@@ -125,6 +126,6 @@ defmodule EEVM.SystemContracts.BlockHashesTest do
       },
       gas: 1_000_000
     )
-    |> EEVM.Executor.run_loop()
+    |> EEVM.Interpreter.run_loop()
   end
 end

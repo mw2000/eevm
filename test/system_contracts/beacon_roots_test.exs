@@ -2,7 +2,8 @@ defmodule EEVM.SystemContracts.BeaconRootsTest do
   use ExUnit.Case, async: true
 
   alias EEVM.Database.InMemory
-  alias EEVM.{Database, HardforkConfig, MachineState}
+  alias EEVM.{Database, HardforkConfig}
+  alias EEVM.Interpreter.MachineState
   alias EEVM.Context.{Block, Contract, Transaction}
   alias EEVM.SystemContracts.BeaconRoots
 
@@ -103,7 +104,7 @@ defmodule EEVM.SystemContracts.BeaconRootsTest do
           },
           gas: 1_000_000
         )
-        |> EEVM.Executor.run_loop()
+        |> EEVM.Interpreter.run_loop()
 
       assert final_state.status == :stopped
       assert byte_size(final_state.return_data) == 32
@@ -125,7 +126,7 @@ defmodule EEVM.SystemContracts.BeaconRootsTest do
           },
           gas: 1_000_000
         )
-        |> EEVM.Executor.run_loop()
+        |> EEVM.Interpreter.run_loop()
 
       assert final_state.status == :reverted
     end

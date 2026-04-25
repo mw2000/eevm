@@ -17,11 +17,11 @@ defmodule EEVM do
 
   ## Architecture
 
-  - `EEVM.Stack` — LIFO stack (max 1024, uint256 values)
-  - `EEVM.Memory` — Byte-addressable linear memory
-  - `EEVM.MachineState` — Combined execution state
-  - `EEVM.Opcodes.Registry` — Opcode definitions and metadata
-  - `EEVM.Executor` — The fetch-decode-execute loop
+  - `EEVM.Interpreter.Stack` — LIFO stack (max 1024, uint256 values)
+  - `EEVM.Interpreter.Memory` — Byte-addressable linear memory
+  - `EEVM.Interpreter.MachineState` — Combined execution state
+  - `EEVM.Interpreter.Instructions.Registry` — Opcode definitions and metadata
+  - `EEVM.Interpreter` — The fetch-decode-execute loop
 
   ## Elixir Concepts Demonstrated
 
@@ -34,7 +34,9 @@ defmodule EEVM do
   - **Typespecs** — `@spec` annotations for documentation and Dialyzer
   """
 
-  alias EEVM.{Executor, MachineState, Stack, Tracer}
+  alias EEVM.{Interpreter, Tracer}
+  alias EEVM.Block.Bloom
+  alias EEVM.Interpreter.{MachineState, Stack}
 
   @doc """
   Executes EVM bytecode and returns the final machine state.
@@ -48,9 +50,9 @@ defmodule EEVM do
       iex> EEVM.stack_values(result)
       [30]
   """
-  @spec execute(binary(), keyword()) :: EEVM.MachineState.t()
+  @spec execute(binary(), keyword()) :: EEVM.Interpreter.MachineState.t()
   def execute(bytecode, opts \\ []) do
-    Executor.run(bytecode, opts)
+    Interpreter.run(bytecode, opts)
   end
 
   @doc """
@@ -71,7 +73,7 @@ defmodule EEVM do
   @spec trace(binary(), keyword()) :: {MachineState.t(), Tracer.t()}
   def trace(bytecode, opts \\ []) do
     opts_with_tracer = Keyword.put(opts, :tracer, Tracer.new())
-    state = Executor.run(bytecode, opts_with_tracer)
+    state = Interpreter.run(bytecode, opts_with_tracer)
     {state, state.tracer}
   end
 
@@ -80,7 +82,7 @@ defmodule EEVM do
 
   Convenience wrapper for inspecting results.
   """
-  @spec stack_values(EEVM.MachineState.t()) :: [non_neg_integer()]
+  @spec stack_values(EEVM.Interpreter.MachineState.t()) :: [non_neg_integer()]
   def stack_values(state) do
     Stack.to_list(state.stack)
   end
@@ -90,9 +92,9 @@ defmodule EEVM do
   def logs(%MachineState{} = state), do: state.logs
 
   @doc "Computes the 256-byte logs bloom filter for the executed transaction."
-  @spec logs_bloom(MachineState.t()) :: EEVM.Bloom.t()
+  @spec logs_bloom(MachineState.t()) :: Bloom.t()
   def logs_bloom(%MachineState{} = state) do
-    EEVM.Bloom.from_logs(state.logs)
+    Bloom.from_logs(state.logs)
   end
 
   @doc """
@@ -111,7 +113,7 @@ defmodule EEVM do
   defp disassemble_loop(bytecode, pc, acc) when pc < byte_size(bytecode) do
     opcode = :binary.at(bytecode, pc)
 
-    case EEVM.Opcodes.Registry.info(opcode) do
+    case EEVM.Interpreter.Instructions.Registry.info(opcode) do
       {:ok, %{push_bytes: n} = info} ->
         # PUSH instruction — read the immediate bytes
         data =

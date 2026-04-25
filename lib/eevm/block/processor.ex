@@ -57,12 +57,12 @@ defmodule EEVM.Block.Processor do
   - The receipts / transactions trie roots use `EEVM.MPT.Trie.root_hash/1`
     (non-secure — keys are RLP-encoded indices, not hashes), matching the
     Yellow Paper's specification for block-level tries.
-  - The logs-bloom aggregation reuses `EEVM.Bloom.merge/2`: a 256-byte
+  - The logs-bloom aggregation reuses `EEVM.Block.Bloom.merge/2`: a 256-byte
     bitwise OR already optimised in the bloom module.
   """
 
-  alias EEVM.Block.{Header, Receipt}
-  alias EEVM.{Bloom, BlockResult, Database, StateRoot}
+  alias EEVM.Block.{Bloom, Header, Receipt, Result}
+  alias EEVM.{Database, StateRoot}
   alias EEVM.Context.Block, as: BlockCtx
   alias EEVM.MPT.Trie
   alias EEVM.Transaction.Envelope
@@ -93,21 +93,21 @@ defmodule EEVM.Block.Processor do
           | {:tx_failed, non_neg_integer(), term()}
 
   @doc """
-  Execute every phase of the block and produce a `%EEVM.BlockResult{}`.
+  Execute every phase of the block and produce a `%EEVM.Block.Result{}`.
 
   The caller owns `pre_state_db` and must pass an injected `:tx_executor`.
   See the module doc for the full option list.
 
   Returns:
 
-  - `{:ok, %BlockResult{}}` on success.
+  - `{:ok, %Result{}}` on success.
   - `{:error, :block_gas_limit_exceeded}` when `sum(tx.gas_limit)` exceeds
     `header.gas_limit`.
   - `{:error, {:tx_failed, index, reason}}` when the injected executor
     rejects a transaction. `index` is 0-based in `transactions` order.
   """
   @spec process_block(Header.t(), [term()], Database.t(), process_opts()) ::
-          {:ok, BlockResult.t()} | {:error, process_error()}
+          {:ok, Result.t()} | {:error, process_error()}
   def process_block(%Header{} = header, transactions, %Database{} = pre_state_db, opts)
       when is_list(transactions) and is_list(opts) do
     tx_executor = fetch_executor!(opts)
@@ -210,9 +210,9 @@ defmodule EEVM.Block.Processor do
           [term()],
           non_neg_integer(),
           tx_encoder()
-        ) :: BlockResult.t()
+        ) :: Result.t()
   defp build_result(post_db, receipts, transactions, gas_used, tx_encoder) do
-    %BlockResult{
+    %Result{
       post_state_db: post_db,
       receipts: receipts,
       state_root: StateRoot.compute_state_root(post_db),

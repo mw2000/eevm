@@ -12,13 +12,13 @@ defmodule EEVM.Error do
 
   | Error | Source | Meaning |
   |-------|--------|---------|
-  | `:stack_underflow` | `EEVM.Stack` | Attempted to pop/peek from an empty stack |
-  | `:stack_overflow` | `EEVM.Stack` | Attempted to push onto a full stack (1,024 elements) |
-  | `:out_of_gas` | `EEVM.MachineState` | Gas consumed exceeds available gas |
-  | `:invalid_jump_destination` | `EEVM.Opcodes.ControlFlow` | JUMP/JUMPI target is not a JUMPDEST |
+  | `:stack_underflow` | `EEVM.Interpreter.Stack` | Attempted to pop/peek from an empty stack |
+  | `:stack_overflow` | `EEVM.Interpreter.Stack` | Attempted to push onto a full stack (1,024 elements) |
+  | `:out_of_gas` | `EEVM.Interpreter.MachineState` | Gas consumed exceeds available gas |
+  | `:invalid_jump_destination` | `EEVM.Interpreter.Instructions.ControlFlow` | JUMP/JUMPI target is not a JUMPDEST |
   | `:insufficient_balance` | `EEVM.WorldState` | Transfer amount exceeds account balance |
-  | `:max_call_depth` | `EEVM.MachineState` | Nested call depth exceeds 1,024 |
-  | `:empty_call_stack` | `EEVM.MachineState` | Attempted to pop a frame with no frames on stack |
+  | `:max_call_depth` | `EEVM.Interpreter.MachineState` | Nested call depth exceeds 1,024 |
+  | `:empty_call_stack` | `EEVM.Interpreter.MachineState` | Attempted to pop a frame with no frames on stack |
 
   ## Precompile Errors
 
@@ -38,7 +38,7 @@ defmodule EEVM.Error do
 
   | Error | Source | Meaning |
   |-------|--------|---------|
-  | `:unknown_opcode` | `EEVM.Opcodes.Registry` | Opcode byte has no known metadata |
+  | `:unknown_opcode` | `EEVM.Interpreter.Instructions.Registry` | Opcode byte has no known metadata |
 
   ## Machine State Status Values
 

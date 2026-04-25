@@ -17,7 +17,7 @@ defmodule EEVM.Tracer do
   pattern-match-and-return. Trace capture is opt-in at the call site.
   """
 
-  alias EEVM.Opcodes.Registry
+  alias EEVM.Interpreter.Instructions.Registry
 
   defmodule TraceStep do
     @moduledoc "A single recorded step: one opcode execution in the trace."

@@ -39,7 +39,8 @@ defmodule EEVM.TransactionResult do
     cheap and keeps serializers flexible.
   """
 
-  alias EEVM.{Bloom, Database}
+  alias EEVM.Database
+  alias EEVM.Block.Bloom
 
   @type status :: :success | :reverted | :failed_validation
 

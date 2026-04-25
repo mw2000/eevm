@@ -5,7 +5,7 @@ defmodule EEVM.WorldState do
   ## EVM Concepts
 
   The EVM distinguishes between the current execution frame and global account state.
-  `EEVM.MachineState` stores frame-local execution data (pc, stack, memory), while
+  `EEVM.Interpreter.MachineState` stores frame-local execution data (pc, stack, memory), while
   this module stores account-level data used by external inspection opcodes:
 
   - `EXTCODESIZE` (0x3B)

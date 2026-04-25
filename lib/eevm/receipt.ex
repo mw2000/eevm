@@ -47,7 +47,7 @@ defmodule EEVM.Receipt do
     the module sees regular integers.
   """
 
-  alias EEVM.Bloom
+  alias EEVM.Block.Bloom
 
   @type status :: 0 | 1
 
