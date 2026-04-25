@@ -18,7 +18,7 @@ defmodule EEVM.Interpreter.Instructions.System.Calls do
   """
 
   alias EEVM.{Database, Interpreter}
-  alias EEVM.Interpreter.{MachineState, Memory, Stack}
+  alias EEVM.Interpreter.{Journal, MachineState, Memory, Stack}
   alias EEVM.Gas.Dynamic
   alias EEVM.Gas.Memory, as: GasMemory
   alias EEVM.Context.Contract
@@ -254,57 +254,20 @@ defmodule EEVM.Interpreter.Instructions.System.Calls do
               )
 
             child_result = Interpreter.run_loop(child_state)
-            call_succeeded = child_result.status == :stopped
-
-            db_result =
-              if call_succeeded,
-                do: child_result.db,
-                else: state_after_forward.db
-
-            logs_result =
-              if call_succeeded,
-                do: state_after_forward.logs ++ child_result.logs,
-                else: state_after_forward.logs
-
-            accessed_addresses_result =
-              if call_succeeded,
-                do: child_result.accessed_addresses,
-                else: state_after_forward.accessed_addresses
-
-            accessed_storage_keys_result =
-              if call_succeeded,
-                do: child_result.accessed_storage_keys,
-                else: state_after_forward.accessed_storage_keys
-
-            created_addresses_result =
-              if call_succeeded,
-                do: child_result.created_addresses,
-                else: state_after_forward.created_addresses
-
-            touched_addresses_result =
-              if call_succeeded,
-                do: child_result.touched_addresses,
-                else: state_after_forward.touched_addresses
+            merged = Journal.merge_child_result(state_after_forward, child_result)
 
             memory_result =
               write_return_data(memory_after_read, ret_offset, ret_size, child_result.return_data)
 
-            result_flag = if(call_succeeded, do: 1, else: 0)
+            result_flag = if child_result.status == :stopped, do: 1, else: 0
             {:ok, stack_after_call} = Stack.push(state_after_forward.stack, result_flag)
 
             {:ok,
-             state_after_forward
+             merged
              |> Map.put(:stack, stack_after_call)
              |> Map.put(:memory, memory_result)
              |> Map.put(:return_data, child_result.return_data)
-             |> Map.put(:db, db_result)
-             |> Map.put(:logs, logs_result)
-             |> Map.put(:accessed_addresses, accessed_addresses_result)
-             |> Map.put(:accessed_storage_keys, accessed_storage_keys_result)
-             |> Map.put(:created_addresses, created_addresses_result)
-             |> Map.put(:touched_addresses, touched_addresses_result)
              |> Map.put(:gas, state_after_forward.gas + child_result.gas)
-             |> Map.put(:tracer, child_result.tracer)
              |> MachineState.advance_pc()}
           end
 
@@ -411,57 +374,20 @@ defmodule EEVM.Interpreter.Instructions.System.Calls do
               )
 
             child_result = Interpreter.run_loop(child_state)
-            call_succeeded = child_result.status == :stopped
-
-            db_result =
-              if call_succeeded,
-                do: child_result.db,
-                else: state_after_forward.db
-
-            logs_result =
-              if call_succeeded,
-                do: state_after_forward.logs ++ child_result.logs,
-                else: state_after_forward.logs
-
-            accessed_addresses_result =
-              if call_succeeded,
-                do: child_result.accessed_addresses,
-                else: state_after_forward.accessed_addresses
-
-            accessed_storage_keys_result =
-              if call_succeeded,
-                do: child_result.accessed_storage_keys,
-                else: state_after_forward.accessed_storage_keys
-
-            created_addresses_result =
-              if call_succeeded,
-                do: child_result.created_addresses,
-                else: state_after_forward.created_addresses
-
-            touched_addresses_result =
-              if call_succeeded,
-                do: child_result.touched_addresses,
-                else: state_after_forward.touched_addresses
+            merged = Journal.merge_child_result(state_after_forward, child_result)
 
             memory_result =
               write_return_data(memory_after_read, ret_offset, ret_size, child_result.return_data)
 
-            result_flag = if(call_succeeded, do: 1, else: 0)
+            result_flag = if child_result.status == :stopped, do: 1, else: 0
             {:ok, stack_after_call} = Stack.push(state_after_forward.stack, result_flag)
 
             {:ok,
-             state_after_forward
+             merged
              |> Map.put(:stack, stack_after_call)
              |> Map.put(:memory, memory_result)
              |> Map.put(:return_data, child_result.return_data)
-             |> Map.put(:db, db_result)
-             |> Map.put(:logs, logs_result)
-             |> Map.put(:accessed_addresses, accessed_addresses_result)
-             |> Map.put(:accessed_storage_keys, accessed_storage_keys_result)
-             |> Map.put(:created_addresses, created_addresses_result)
-             |> Map.put(:touched_addresses, touched_addresses_result)
              |> Map.put(:gas, state_after_forward.gas + child_result.gas)
-             |> Map.put(:tracer, child_result.tracer)
              |> MachineState.advance_pc()}
           end
 
