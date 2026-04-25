@@ -27,7 +27,7 @@ defmodule EEVM.Transaction.Executor do
      populated so opcode implementations (ORIGIN, CALLER, CALLVALUE, CHAINID, …)
      read consistent values.
   7. **Pre-warm access set** — EIP-2929/EIP-3651 pre-warming is done by
-     `EEVM.MachineState.new/2`; additional access-list entries are merged into
+     `EEVM.Interpreter.MachineState.new/2`; additional access-list entries are merged into
      `accessed_addresses` and `accessed_storage_keys` before execution.
   8. **Execute** — a normal call hands off to `EEVM.Interpreter.run/2`. A contract
      deployment (`to == nil`) runs the initcode, deploys the returned runtime
@@ -51,7 +51,8 @@ defmodule EEVM.Transaction.Executor do
     so the top-level pipeline does not depend on the opcode module's internals.
   """
 
-  alias EEVM.{Bloom, Config, Database, HardforkConfig, MachineState, TransactionResult}
+  alias EEVM.{Bloom, Config, Database, HardforkConfig, TransactionResult}
+  alias EEVM.Interpreter.MachineState
   alias EEVM.Context.{Block, Contract, Transaction}
 
   alias EEVM.Transaction.{

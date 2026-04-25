@@ -36,13 +36,14 @@ defmodule EEVM.Interpreter do
     their semantics.
   """
 
-  alias EEVM.{HardforkConfig, MachineState, Memory, Stack, Tracer}
+  alias EEVM.{HardforkConfig, Tracer}
+  alias EEVM.Interpreter.{MachineState, Memory, Stack}
   alias EEVM.Database
   alias EEVM.Gas.Static
   alias EEVM.Transaction.IntrinsicGas
   alias EEVM.Tracer.TraceStep
 
-  alias EEVM.Opcodes.{
+  alias EEVM.Interpreter.Instructions.{
     Arithmetic,
     Bitwise,
     Comparison,

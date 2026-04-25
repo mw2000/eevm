@@ -23,7 +23,8 @@ defmodule EEVM.Gas.Access do
   - [EIP-2929: Gas cost increases for state access opcodes](https://eips.ethereum.org/EIPS/eip-2929)
   """
 
-  alias EEVM.{HardforkConfig, MachineState}
+  alias EEVM.HardforkConfig
+  alias EEVM.Interpreter.MachineState
 
   # EIP-2929: first access to an account address
   @cold_account_access_cost 2600

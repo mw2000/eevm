@@ -2,7 +2,8 @@ defmodule EEVM.SystemContracts.BeaconRootsTest do
   use ExUnit.Case, async: true
 
   alias EEVM.Database.InMemory
-  alias EEVM.{Database, HardforkConfig, MachineState}
+  alias EEVM.{Database, HardforkConfig}
+  alias EEVM.Interpreter.MachineState
   alias EEVM.Context.{Block, Contract, Transaction}
   alias EEVM.SystemContracts.BeaconRoots
 
