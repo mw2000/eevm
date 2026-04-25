@@ -176,12 +176,17 @@ defmodule EEVM.TestSupport.BlockchainTestFixture do
 
   defp parse_blocks(blocks) when is_list(blocks) do
     Enum.map(blocks, fn block ->
+      decoded = Map.get(block, "rlp_decoded") || %{}
+      header_payload = Map.get(block, "blockHeader") || Map.get(decoded, "blockHeader")
+      tx_payload = Map.get(block, "transactions") || Map.get(decoded, "transactions") || []
+      wd_payload = Map.get(block, "withdrawals") || Map.get(decoded, "withdrawals") || []
+
       %Block{
         block_number: parse_quantity!(Map.get(block, "blocknumber", "0")),
-        header: parse_optional_header(Map.get(block, "blockHeader")),
+        header: parse_optional_header(header_payload),
         rlp: parse_bytes!(Map.fetch!(block, "rlp")),
-        transactions: Enum.map(Map.get(block, "transactions", []), &parse_transaction/1),
-        withdrawals: Enum.map(Map.get(block, "withdrawals", []) || [], &parse_withdrawal/1),
+        transactions: Enum.map(tx_payload, &parse_transaction/1),
+        withdrawals: Enum.map(wd_payload, &parse_withdrawal/1),
         expect_exception: Map.get(block, "expectException")
       }
     end)
@@ -229,7 +234,7 @@ defmodule EEVM.TestSupport.BlockchainTestFixture do
     type = parse_tx_type(Map.get(tx, "type"))
 
     %TransactionFields{
-      sender: parse_address!(Map.fetch!(tx, "sender")),
+      sender: parse_optional_address(Map.get(tx, "sender", "")),
       nonce: parse_quantity!(Map.fetch!(tx, "nonce")),
       type: type,
       to: parse_optional_address(Map.get(tx, "to", "")),

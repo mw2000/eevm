@@ -26,6 +26,7 @@ defmodule EEVM.TestSupport.BlockchainTestRunner do
   alias EEVM.Database.InMemory
   alias EEVM.Handler.Execution
   alias EEVM.SystemContracts.{BeaconRoots, BlockHashes}
+  alias EEVM.TestSupport.BlockchainHeaderValidator, as: HeaderValidator
   alias EEVM.TestSupport.BlockchainTestFixture.{Account, Case, TransactionFields, Withdrawal}
   alias EEVM.TestSupport.BlockchainTestFixture.Block, as: FixtureBlock
   alias EEVM.Transaction.{IntrinsicGas, Validator}
@@ -38,8 +39,9 @@ defmodule EEVM.TestSupport.BlockchainTestRunner do
     config = Config.new(test.network)
     db = build_pre_state(test.pre, config)
 
-    with {:ok, final_db} <- run_blocks(test.blocks, db, config) do
-      verify_post_state(final_db, test.post)
+    case run_blocks(test.blocks, db, config, test.genesis_header) do
+      {:ok, final_db} -> verify_post_state(final_db, test.post)
+      {:error, _} = error -> error
     end
   end
 
@@ -61,18 +63,54 @@ defmodule EEVM.TestSupport.BlockchainTestRunner do
     |> BlockHashes.install_if_enabled(config.hardfork)
   end
 
-  defp run_blocks(blocks, db, config) do
-    Enum.reduce_while(blocks, {:ok, db}, fn block, {:ok, db_acc} ->
-      case run_block(block, db_acc, config) do
-        {:ok, new_db} -> {:cont, {:ok, new_db}}
-        {:error, reason} -> {:halt, {:error, {:block_failed, block.block_number, reason}}}
+  defp run_blocks(blocks, db, config, genesis_header) do
+    Enum.reduce_while(blocks, {:ok, db, genesis_header}, fn block, {:ok, db_acc, parent} ->
+      case attempt_block(block, db_acc, parent, config) do
+        {:ok, new_db, new_parent} -> {:cont, {:ok, new_db, new_parent}}
+        {:halt, reason} -> {:halt, {:error, reason}}
       end
     end)
+    |> case do
+      {:ok, db, _parent} -> {:ok, db}
+      {:error, _} = error -> error
+    end
   end
 
-  defp run_block(%FixtureBlock{header: nil}, _db, _config), do: {:error, :missing_block_header}
+  # Wraps run_block with `expect_exception` semantics: when a block declares an
+  # exception, an error from run_block is the expected outcome (we move on with
+  # the same db/parent), and a successful application is itself the test
+  # failure. When no exception is expected, errors are reported as block_failed.
+  defp attempt_block(%FixtureBlock{expect_exception: nil} = block, db, parent, config) do
+    case run_block(block, db, parent, config) do
+      {:ok, new_db} ->
+        {:ok, new_db, block.header}
 
-  defp run_block(%FixtureBlock{header: header} = block, db, config) do
+      {:error, reason} ->
+        {:halt, {:block_failed, block.block_number, reason}}
+    end
+  end
+
+  defp attempt_block(%FixtureBlock{expect_exception: exception} = block, db, parent, config)
+       when is_binary(exception) do
+    case run_block(block, db, parent, config) do
+      {:ok, _} ->
+        {:halt, {:expected_exception_not_raised, block.block_number, exception}}
+
+      {:error, _reason} ->
+        {:ok, db, parent}
+    end
+  end
+
+  defp run_block(%FixtureBlock{header: nil}, _db, _parent, _config),
+    do: {:error, :missing_block_header}
+
+  defp run_block(%FixtureBlock{header: header} = block, db, parent, config) do
+    with :ok <- HeaderValidator.validate(header, parent) do
+      do_run_block(block, db, config)
+    end
+  end
+
+  defp do_run_block(%FixtureBlock{header: header} = block, db, config) do
     eevm_header = to_eevm_header(header)
     transactions = Enum.map(block.transactions, &to_context_transaction/1)
 
@@ -84,17 +122,29 @@ defmodule EEVM.TestSupport.BlockchainTestRunner do
 
     case Processor.process_block(eevm_header, transactions, db, opts) do
       {:ok, result} ->
-        final_db = apply_withdrawals(result.post_state_db, block.withdrawals)
-        final_state_root = StateRoot.compute_state_root(final_db)
-
-        if final_state_root == header.state_root do
-          {:ok, final_db}
-        else
-          {:error, {:state_root_mismatch, expected: header.state_root, actual: final_state_root}}
-        end
+        verify_post_block(result, header, block.withdrawals)
 
       {:error, _} = error ->
         error
+    end
+  end
+
+  defp verify_post_block(result, header, withdrawals) do
+    final_db = apply_withdrawals(result.post_state_db, withdrawals)
+    final_state_root = StateRoot.compute_state_root(final_db)
+
+    cond do
+      result.gas_used != header.gas_used ->
+        {:error, {:invalid_gas_used, expected: header.gas_used, actual: result.gas_used}}
+
+      result.logs_bloom != header.logs_bloom ->
+        {:error, :invalid_logs_bloom}
+
+      final_state_root != header.state_root ->
+        {:error, {:state_root_mismatch, expected: header.state_root, actual: final_state_root}}
+
+      true ->
+        {:ok, final_db}
     end
   end
 
