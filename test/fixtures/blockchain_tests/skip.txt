@@ -1,0 +1,7 @@
+# BlockchainTests skip list.
+#
+# One entry per line.
+# Formats:
+# - test/fixtures/state_tests/ethereum-tests/BlockchainTests/some/path/file.json
+# - test/fixtures/state_tests/ethereum-tests/BlockchainTests/some/path/file.json#test_name
+# - test_name
