@@ -1,11 +1,10 @@
-defmodule EEVM.Transaction.ExecutorTest do
+defmodule EEVM.HandlerTest do
   use ExUnit.Case, async: true
 
   alias EEVM.Context.Block
-  alias EEVM.Database
+  alias EEVM.{Database, Handler, TransactionResult}
   alias EEVM.Database.InMemory
-  alias EEVM.Transaction.{Executor, FeeMarket, Legacy, Signer}
-  alias EEVM.TransactionResult
+  alias EEVM.Transaction.{FeeMarket, Legacy, Signer}
 
   @priv_key <<
     120,
@@ -189,7 +188,7 @@ defmodule EEVM.Transaction.ExecutorTest do
   end
 
   defp run(tx, db, block \\ simple_block()) do
-    Executor.execute(tx, block, db, chain_id: @chain_id)
+    Handler.execute(tx, block, db, chain_id: @chain_id)
   end
 
   defp legacy_value_transfer(opts) do
