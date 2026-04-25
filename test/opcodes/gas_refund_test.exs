@@ -1,7 +1,7 @@
 defmodule EEVM.Opcodes.GasRefundTest do
   use ExUnit.Case, async: true
 
-  alias EEVM.{CallFrame, Executor, MachineState, Memory, Stack}
+  alias EEVM.{CallFrame, Interpreter, MachineState, Memory, Stack}
   alias EEVM.Context.Contract
   alias EEVM.Gas.Static
   alias EEVM.Context.Transaction
@@ -99,7 +99,7 @@ defmodule EEVM.Opcodes.GasRefundTest do
     {:ok, state_after_push} = MachineState.push_frame(parent_state, child_frame)
     child_halted = %{state_after_push | status: :stopped, refund: 12}
 
-    result = Executor.run_loop(child_halted)
+    result = Interpreter.run_loop(child_halted)
 
     assert result.status == :stopped
     assert result.call_stack == []
@@ -126,7 +126,7 @@ defmodule EEVM.Opcodes.GasRefundTest do
     {:ok, state_after_push} = MachineState.push_frame(parent_state, child_frame)
     child_reverted = %{state_after_push | status: :reverted, refund: 12}
 
-    result = Executor.run_loop(child_reverted)
+    result = Interpreter.run_loop(child_reverted)
 
     assert result.status == :stopped
     assert result.call_stack == []

@@ -29,11 +29,11 @@ defmodule EEVM.Transaction.Executor do
   7. **Pre-warm access set** — EIP-2929/EIP-3651 pre-warming is done by
      `EEVM.MachineState.new/2`; additional access-list entries are merged into
      `accessed_addresses` and `accessed_storage_keys` before execution.
-  8. **Execute** — a normal call hands off to `EEVM.Executor.run/2`. A contract
+  8. **Execute** — a normal call hands off to `EEVM.Interpreter.run/2`. A contract
      deployment (`to == nil`) runs the initcode, deploys the returned runtime
      code at a CREATE-derived address, and charges code deposit cost.
   9. **Apply refund** — `min(refund, gas_used / 5)` is added back; already
-     performed by `EEVM.Executor.run/2`'s `apply_refund/2` helper.
+     performed by `EEVM.Interpreter.run/2`'s `apply_refund/2` helper.
   10. **Settle fees** — the sender is debited `gas_used * effective_gas_price`;
       the coinbase is credited `gas_used * (effective_gas_price - base_fee)`.
   11. **Build receipt** — status, cumulative gas, logs, logs bloom.

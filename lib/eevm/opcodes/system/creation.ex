@@ -20,7 +20,7 @@ defmodule EEVM.Opcodes.System.Creation do
   @max_initcode_size 49_152
   @initcode_word_cost 2
 
-  alias EEVM.{Database, Executor, HardforkConfig, MachineState, Memory, Stack}
+  alias EEVM.{Database, HardforkConfig, Interpreter, MachineState, Memory, Stack}
   alias EEVM.Gas.Dynamic
   alias EEVM.Gas.Memory, as: GasMemory
   alias EEVM.Context.Contract
@@ -132,7 +132,7 @@ defmodule EEVM.Opcodes.System.Creation do
                         tracer: state_after_touch.tracer
                       )
 
-                    child_result = Executor.run_loop(child_state)
+                    child_result = Interpreter.run_loop(child_state)
                     deployment_success = child_result.status == :stopped
 
                     post_child_fail_state = %{

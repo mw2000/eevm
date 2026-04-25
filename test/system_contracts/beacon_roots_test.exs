@@ -103,7 +103,7 @@ defmodule EEVM.SystemContracts.BeaconRootsTest do
           },
           gas: 1_000_000
         )
-        |> EEVM.Executor.run_loop()
+        |> EEVM.Interpreter.run_loop()
 
       assert final_state.status == :stopped
       assert byte_size(final_state.return_data) == 32
@@ -125,7 +125,7 @@ defmodule EEVM.SystemContracts.BeaconRootsTest do
           },
           gas: 1_000_000
         )
-        |> EEVM.Executor.run_loop()
+        |> EEVM.Interpreter.run_loop()
 
       assert final_state.status == :reverted
     end

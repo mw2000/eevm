@@ -21,7 +21,7 @@ defmodule EEVM do
   - `EEVM.Memory` — Byte-addressable linear memory
   - `EEVM.MachineState` — Combined execution state
   - `EEVM.Opcodes.Registry` — Opcode definitions and metadata
-  - `EEVM.Executor` — The fetch-decode-execute loop
+  - `EEVM.Interpreter` — The fetch-decode-execute loop
 
   ## Elixir Concepts Demonstrated
 
@@ -34,7 +34,7 @@ defmodule EEVM do
   - **Typespecs** — `@spec` annotations for documentation and Dialyzer
   """
 
-  alias EEVM.{Executor, MachineState, Stack, Tracer}
+  alias EEVM.{Interpreter, MachineState, Stack, Tracer}
 
   @doc """
   Executes EVM bytecode and returns the final machine state.
@@ -50,7 +50,7 @@ defmodule EEVM do
   """
   @spec execute(binary(), keyword()) :: EEVM.MachineState.t()
   def execute(bytecode, opts \\ []) do
-    Executor.run(bytecode, opts)
+    Interpreter.run(bytecode, opts)
   end
 
   @doc """
@@ -71,7 +71,7 @@ defmodule EEVM do
   @spec trace(binary(), keyword()) :: {MachineState.t(), Tracer.t()}
   def trace(bytecode, opts \\ []) do
     opts_with_tracer = Keyword.put(opts, :tracer, Tracer.new())
-    state = Executor.run(bytecode, opts_with_tracer)
+    state = Interpreter.run(bytecode, opts_with_tracer)
     {state, state.tracer}
   end
 

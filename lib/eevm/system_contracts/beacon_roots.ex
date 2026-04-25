@@ -50,7 +50,7 @@ defmodule EEVM.SystemContracts.BeaconRoots do
     small for higher layers that aren't yet aware of full EVM state.
   """
 
-  alias EEVM.{Database, Executor, HardforkConfig, MachineState}
+  alias EEVM.{Database, HardforkConfig, Interpreter, MachineState}
   alias EEVM.Context.{Block, Contract, Transaction}
 
   @address 0x000F3DF6D732807EF1319FB7B8BB8522D0BEAC02
@@ -131,7 +131,7 @@ defmodule EEVM.SystemContracts.BeaconRoots do
         },
         gas: @system_call_gas
       )
-      |> Executor.run_loop()
+      |> Interpreter.run_loop()
 
     # RETURN and STOP both halt with :stopped in this VM; the distinction is
     # whether return_data was populated. A :reverted status means the contract

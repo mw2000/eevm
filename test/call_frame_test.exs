@@ -1,7 +1,7 @@
 defmodule EEVM.CallFrameTest do
   use ExUnit.Case, async: true
 
-  alias EEVM.{CallFrame, Executor, MachineState, Memory, Stack}
+  alias EEVM.{CallFrame, Interpreter, MachineState, Memory, Stack}
   alias EEVM.Context.Contract
 
   test "push_frame stores parent frame and switches execution context" do
@@ -84,7 +84,7 @@ defmodule EEVM.CallFrameTest do
     {:ok, state_after_push} = MachineState.push_frame(parent_state, child_frame)
     child_halted = %{state_after_push | status: :stopped}
 
-    result = Executor.run_loop(child_halted)
+    result = Interpreter.run_loop(child_halted)
 
     assert result.status == :stopped
     assert result.contract.address == 10

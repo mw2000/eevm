@@ -17,7 +17,7 @@ defmodule EEVM.Opcodes.System.Calls do
   All call opcodes use EIP-150 gas forwarding: `min(requested, available - available/64)`.
   """
 
-  alias EEVM.{Database, Executor, MachineState, Memory, Stack}
+  alias EEVM.{Database, Interpreter, MachineState, Memory, Stack}
   alias EEVM.Gas.Dynamic
   alias EEVM.Gas.Memory, as: GasMemory
   alias EEVM.Context.Contract
@@ -252,7 +252,7 @@ defmodule EEVM.Opcodes.System.Calls do
                 tracer: state_after_touch.tracer
               )
 
-            child_result = Executor.run_loop(child_state)
+            child_result = Interpreter.run_loop(child_state)
             call_succeeded = child_result.status == :stopped
 
             db_result =
@@ -409,7 +409,7 @@ defmodule EEVM.Opcodes.System.Calls do
                 tracer: state_after_touch.tracer
               )
 
-            child_result = Executor.run_loop(child_state)
+            child_result = Interpreter.run_loop(child_state)
             call_succeeded = child_result.status == :stopped
 
             db_result =

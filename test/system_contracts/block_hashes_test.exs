@@ -125,6 +125,6 @@ defmodule EEVM.SystemContracts.BlockHashesTest do
       },
       gas: 1_000_000
     )
-    |> EEVM.Executor.run_loop()
+    |> EEVM.Interpreter.run_loop()
   end
 end

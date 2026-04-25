@@ -20,7 +20,7 @@ defmodule EEVM.CallFrame do
   ## Elixir Learning Notes
 
   - This struct is a plain value object; frame transitions are handled in
-    `EEVM.MachineState` and `EEVM.Executor`.
+    `EEVM.MachineState` and `EEVM.Interpreter`.
   - `from_state/2` acts as a focused constructor that copies only the fields
     needed to suspend and restore execution.
   """

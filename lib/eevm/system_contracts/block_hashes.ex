@@ -68,7 +68,7 @@ defmodule EEVM.SystemContracts.BlockHashes do
     if the caller knows the slot was written.
   """
 
-  alias EEVM.{Database, Executor, HardforkConfig, MachineState}
+  alias EEVM.{Database, HardforkConfig, Interpreter, MachineState}
   alias EEVM.Context.{Block, Contract, Transaction}
 
   @address 0x0000F90827F1C53A10CB7A02335B175320002935
@@ -150,7 +150,7 @@ defmodule EEVM.SystemContracts.BlockHashes do
         },
         gas: @system_call_gas
       )
-      |> Executor.run_loop()
+      |> Interpreter.run_loop()
 
     # RETURN and STOP both halt with :stopped in this VM; the distinction is
     # whether return_data was populated. A :reverted status means the contract

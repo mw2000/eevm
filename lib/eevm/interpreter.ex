@@ -1,6 +1,10 @@
-defmodule EEVM.Executor do
+defmodule EEVM.Interpreter do
   @moduledoc """
-  The EVM execution engine — fetches, decodes, and dispatches opcodes.
+  The EVM interpreter — fetches, decodes, and dispatches opcodes in a loop.
+
+  This is the core opcode-execution engine. It is invoked by the
+  `EEVM.Transaction.Executor` (the transaction-level pipeline) and by system
+  contracts that need to evaluate bytecode against an existing world state.
 
   ## EVM Concepts
 
