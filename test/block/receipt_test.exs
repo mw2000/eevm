@@ -1,8 +1,7 @@
-defmodule EEVM.ReceiptTest do
+defmodule EEVM.Block.ReceiptTest do
   use ExUnit.Case, async: true
 
-  alias EEVM.Receipt
-  alias EEVM.Block.Bloom
+  alias EEVM.Block.{Bloom, Receipt}
 
   describe "new/0" do
     test "returns a successful, empty receipt" do
