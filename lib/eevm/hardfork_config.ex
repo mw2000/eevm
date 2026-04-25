@@ -111,7 +111,9 @@ defmodule EEVM.HardforkConfig do
     # EIP-2537 (Prague): BLS12-381 precompiles at 0x0B-0x11
     eip_2537: :prague,
     # EIP-7623 (Prague): calldata floor pricing
-    eip_7623: :prague
+    eip_7623: :prague,
+    # EIP-2935 (Prague): historical block hashes system contract at 0x0000F908...2935
+    eip_2935: :prague
   }
 
   @doc """
