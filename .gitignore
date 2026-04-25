@@ -25,3 +25,6 @@ eevm_tmp-*.tar
 # Rustler/NIF build artifacts for BLS12-381 precompiles.
 /native/eevm_bls/target/
 /priv/native/*.so
+
+# macOS Finder metadata.
+.DS_Store
