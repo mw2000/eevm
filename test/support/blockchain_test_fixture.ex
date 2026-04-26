@@ -293,6 +293,7 @@ defmodule EEVM.TestSupport.BlockchainTestFixture do
 
   defp parse_network!("Frontier"), do: :frontier
   defp parse_network!("Homestead"), do: :homestead
+  defp parse_network!("Dao"), do: :homestead
   defp parse_network!("EIP150"), do: :tangerine_whistle
   defp parse_network!("EIP158"), do: :spurious_dragon
   defp parse_network!("Byzantium"), do: :byzantium
@@ -306,7 +307,21 @@ defmodule EEVM.TestSupport.BlockchainTestFixture do
   defp parse_network!("Shanghai"), do: :shanghai
   defp parse_network!("Cancun"), do: :cancun
   defp parse_network!("Prague"), do: :prague
-  defp parse_network!(other), do: raise(ArgumentError, "unsupported network #{inspect(other)}")
+
+  defp parse_network!(other) when is_binary(other) do
+    # Synthetic transition names look like "<From>To<To>At<...>". The runner
+    # cannot model mid-chain fork switching, so we surface the destination
+    # fork and let problem cases land in skip.txt.
+    head =
+      other
+      |> String.split("At", parts: 2)
+      |> hd()
+
+    case String.split(head, "To") do
+      [_, to_fork] when to_fork != "" -> parse_network!(to_fork)
+      _ -> raise ArgumentError, "unsupported network #{inspect(other)}"
+    end
+  end
 
   defp parse_optional_address(""), do: nil
   defp parse_optional_address("0x"), do: nil

@@ -3,8 +3,12 @@
 - `smoke/` is a place for tiny checked-in fixtures that exercise the harness
   itself.
 - Official `BlockchainTests` live in the `ethereum-tests` submodule under
-  `test/fixtures/state_tests/ethereum-tests/BlockchainTests/`.
-- `skip.txt` lists fixtures or test names to skip.
+  `test/fixtures/state_tests/ethereum-tests/BlockchainTests/` and cover three
+  families: `ValidBlocks/`, `InvalidBlocks/`, and `TransitionTests/`.
+- `skip.txt` lists fixtures or test names to skip. `TransitionTests` are
+  currently skipped wholesale because the runner does not yet switch forks
+  mid-chain — it picks the destination fork from the synthetic network name
+  (e.g. `BerlinToLondonAt5` → `:london`) and runs every block on it.
 
 Initialize the upstream fixture submodule with:
 
