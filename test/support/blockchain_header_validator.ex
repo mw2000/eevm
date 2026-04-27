@@ -34,9 +34,8 @@ defmodule EEVM.TestSupport.BlockchainHeaderValidator do
     with :ok <- check_parent_hash(child, parent),
          :ok <- check_number(child, parent),
          :ok <- check_timestamp(child, parent),
-         :ok <- check_extra_data(child),
-         :ok <- check_gas_limit(child, parent) do
-      :ok
+         :ok <- check_extra_data(child) do
+      check_gas_limit(child, parent)
     end
   end
 
