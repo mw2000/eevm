@@ -1,38 +1,12 @@
 defmodule EEVM.HardforkConfig do
   @moduledoc """
-  Hardfork configuration controlling which EIP rules are active during execution.
+  Hardfork-level feature gating: `enabled?(config, :eip_*)` answers whether
+  a given EIP is active for the configured `spec_id` (Frontier through
+  Prague). Hardforks are totally ordered by `@spec_order`; each is a
+  superset of all earlier rules.
 
-  ## EVM Concepts
-
-  Ethereum upgrades via *hardforks* — coordinated rule changes activated at a
-  specific block number (or, post-Merge, timestamp). Each hardfork is a superset
-  of all previous rules plus its own additions. The `spec_id` atom identifies the
-  target hardfork, and `enabled?/2` answers whether a given EIP is active.
-
-  Hardfork timeline (oldest → newest):
-
-  | Hardfork         | Notable EIPs |
-  |------------------|--------------|
-  | `:frontier`      | baseline     |
-  | `:homestead`     | —            |
-  | `:tangerine_whistle` | EIP-150 gas repricing |
-  | `:spurious_dragon` | EIP-155, EIP-161, EIP-170 (code size limit) |
-  | `:byzantium`     | REVERT, RETURNDATASIZE, RETURNDATACOPY, STATICCALL |
-  | `:constantinople` | CREATE2, SHL/SHR/SAR, EXTCODEHASH |
-  | `:istanbul`      | EIP-1344 (CHAINID), EIP-1884 (SELFBALANCE), EIP-2200 (SSTORE) |
-  | `:berlin`        | EIP-2929 (cold/warm access), EIP-2930 (access lists) |
-  | `:london`        | EIP-1559 (basefee), EIP-3529 (refund cap), EIP-3541 (0xEF rejection) |
-  | `:paris`         | The Merge (PREVRANDAO replaces DIFFICULTY) |
-  | `:shanghai`      | EIP-3651 (COINBASE pre-warm), EIP-3855 (PUSH0), EIP-3860 (initcode limit) |
-  | `:cancun`        | EIP-1153 (TLOAD/TSTORE), EIP-4844 (blobs), EIP-5656 (MCOPY), EIP-6780 (SELFDESTRUCT) |
-   | `:prague`        | EIP-2537 (BLS12-381 precompiles), EIP-7623 (calldata floor), EIP-7702 (set-code) |
-
-  ## Elixir Learning Notes
-
-  - We represent ordering as a map from atom to integer. This lets us compare
-    hardforks with simple integer arithmetic rather than a cumbersome `cond` chain.
-  - `@spec_order` is a module attribute — a compile-time constant. Using it as the
-    default argument in `enabled?/2`'s guard keeps the function head readable.
+  `default/0` returns Cancun for backwards compatibility with existing
+  call sites that don't pass a config.
   """
 
   @type spec_id ::
@@ -57,7 +31,6 @@ defmodule EEVM.HardforkConfig do
   @enforce_keys [:spec_id]
   defstruct [:spec_id]
 
-  # Numeric ordinals for hardfork comparison. Higher = newer.
   @spec_order %{
     frontier: 0,
     homestead: 1,
@@ -117,9 +90,7 @@ defmodule EEVM.HardforkConfig do
   }
 
   @doc """
-  Creates a new hardfork config for the given `spec_id`.
-
-  ## Example
+  Creates a new config for the given `spec_id`.
 
       iex> EEVM.HardforkConfig.new(:cancun)
       %EEVM.HardforkConfig{spec_id: :cancun}
@@ -157,18 +128,11 @@ defmodule EEVM.HardforkConfig do
     end
   end
 
-  @doc """
-  Returns the default hardfork config — Cancun, the most-tested hardfork.
-
-  Callers that don't specify a hardfork explicitly get Cancun semantics,
-  preserving backwards compatibility with all existing tests.
-  """
+  @doc "Default config (Cancun) for callers that don't specify a hardfork."
   @spec default() :: t()
   def default, do: new(:cancun)
 
-  @doc """
-  Returns a list of all known spec IDs in chronological order.
-  """
+  @doc "All known spec IDs in chronological order."
   @spec all_spec_ids() :: [spec_id()]
   def all_spec_ids do
     @spec_order

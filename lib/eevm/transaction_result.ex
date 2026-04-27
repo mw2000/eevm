@@ -1,42 +1,14 @@
 defmodule EEVM.TransactionResult do
   @moduledoc """
-  Result of running a single transaction through the end-to-end execution pipeline.
+  Output of a single transaction through `EEVM.Handler`: status atom, gas
+  accounting, logs and bloom, the receipt map (Yellow Paper §4.3.1 shape),
+  the post-state database, top-level return data, and `contract_address`
+  for CREATE transactions.
 
-  ## EVM Concepts
-
-  Every Ethereum transaction that passes validation produces three things:
-
-  - A **receipt** — status flag, cumulative gas used, logs, and logs bloom —
-    which is what nodes hash into the block's receipts trie. See Yellow Paper
-    §4.3.1.
-  - A **post-state database** — the world state after the transaction's side
-    effects (balance moves, storage writes, nonce bumps, code deployment).
-  - **Return data / contract address** — the raw output of the top-level call,
-    or the newly deployed address for a CREATE transaction (`to == nil`).
-
-  This struct bundles those outputs for consumers (test harnesses, block
-  executors, RPC layers). Transactions that fail validation *before* execution
-  never produce a `TransactionResult` — the pipeline returns `{:error, reason}`
-  in that case and the caller is expected not to apply any state changes.
-
-  ### `status` values
-
-  - `:success` — top-level execution terminated with STOP or RETURN. Receipt
-    status byte is `1`.
-  - `:reverted` — execution halted via REVERT. Receipt status byte is `0` and
-    state changes are rolled back, but the sender is still charged for gas.
-  - `:failed_validation` — used internally by helpers that need to describe
-    a pre-execution failure in the same shape; the pipeline itself returns
-    `{:error, reason}` for these cases rather than a struct.
-
-  ## Elixir Learning Notes
-
-  - Using an atom tag (`:success | :reverted | :failed_validation`) for the
-    result status lets consumers pattern match on success vs. failure without
-    poking at numeric receipt flags.
-  - The `receipt` field is a plain map (not a nested struct) because the
-    Ethereum receipt shape is small and stable — a map keeps construction
-    cheap and keeps serializers flexible.
+  `status` is `:success` (STOP/RETURN, receipt byte 1), `:reverted`
+  (REVERT — sender pays gas, state rolled back, byte 0), or
+  `:failed_validation`. Pre-execution validation failures return
+  `{:error, reason}` directly, never this struct.
   """
 
   alias EEVM.Database

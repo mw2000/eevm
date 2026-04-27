@@ -1,29 +1,17 @@
 defmodule EEVM.MPT.HexPrefix do
   @moduledoc """
-  Hex-prefix (aka compact) encoding used by Ethereum's Merkle Patricia Trie.
+  Hex-prefix (compact) encoding for MPT leaf and extension paths.
 
-  ## EVM Concepts
+  Packs a nibble list plus two flag bits — leaf-vs-extension and
+  odd-vs-even-length — into bytes. The first nibble is `2*leaf + odd`:
 
-  Trie leaf and extension nodes do not store nibble paths directly. Instead, they
-  store a compact byte representation that combines:
+  - `0x0` extension, even
+  - `0x1` extension, odd
+  - `0x2` leaf, even
+  - `0x3` leaf, odd
 
-  - node kind bit (`leaf` vs `extension`)
-  - path parity bit (`odd` vs `even` nibble length)
-  - the path nibbles themselves
-
-  The first nibble contains the flags:
-
-  - `0x0` = extension, even path length
-  - `0x1` = extension, odd path length
-  - `0x2` = leaf, even path length
-  - `0x3` = leaf, odd path length
-
-  ## Elixir Learning Notes
-
-  - We keep paths as nibble lists (`[0..15]`) for clarity while building trie
-    nodes.
-  - Encoding/decoding uses small pure helper functions and binary pattern
-    matching, so the module stays deterministic and side-effect free.
+  An even-length path is preceded by an extra `0` nibble so the encoding
+  always lands on byte boundaries.
   """
 
   @typedoc "Nibble values used in hex-prefix paths."

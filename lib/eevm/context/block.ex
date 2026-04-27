@@ -1,47 +1,10 @@
 defmodule EEVM.Context.Block do
   @moduledoc """
-  Block-level context — information about the block being executed.
-
-  ## EVM Concepts
-
-  The EVM has access to the block it's executing within. Smart contracts
-  use this to read timestamps, block numbers, and randomness (PREVRANDAO).
-
-  In revm, this is the `Block` trait — the second of three context layers.
-
-  ### Fields
-
-  | Field | Opcode | Description |
-  |-------|--------|-------------|
-  | `number` | NUMBER (0x43) | Current block number |
-  | `timestamp` | TIMESTAMP (0x42) | Block timestamp (seconds since epoch) |
-  | `coinbase` | COINBASE (0x41) | Address of the block producer |
-  | `gaslimit` | GASLIMIT (0x45) | Block gas limit |
-  | `prevrandao` | PREVRANDAO (0x44) | Previous block's RANDAO mix (post-Merge) |
-  | `basefee` | BASEFEE (0x48) | Block base fee from EIP-1559 |
-  | `blob_base_fee` | BLOBBASEFEE (0x4A) | Block blob base fee from EIP-7516 |
-  | `chain_id` | CHAINID (0x46) | Network ID (1=mainnet, 137=Polygon, etc.) |
-  | `hashes` | BLOCKHASH (0x40) | Map of recent block numbers to their hashes |
-  | `parent_beacon_block_root` | (no opcode) | Parent beacon block root (EIP-4788) |
-
-  ### parent_beacon_block_root
-
-  Added in Cancun (EIP-4788). Not exposed through an opcode — instead, the EL
-  client performs a system call into the beacon-roots contract at block start
-  to record this value keyed by the parent block's timestamp. User contracts
-  then `CALL` that contract to read historical beacon roots.
-
-  ### PREVRANDAO
-
-  Before The Merge, opcode 0x44 was DIFFICULTY. Post-Merge, the same opcode
-  returns the RANDAO mix from the Beacon Chain — a source of on-chain randomness.
-
-  ## Elixir Learning Notes
-
-  - The `hashes` field is a Map — Elixir maps provide O(log n) lookup.
-  - `hash/2` validates that the requested block is within the last 256 blocks,
-    matching the EVM spec's constraint.
-  - `max/2` is a Kernel function — we use it to avoid negative numbers.
+  Block-level context exposed to opcodes: NUMBER, TIMESTAMP, COINBASE,
+  GASLIMIT, PREVRANDAO (post-Merge; was DIFFICULTY pre-Merge), BASEFEE
+  (EIP-1559), BLOBBASEFEE (EIP-7516), CHAINID, BLOCKHASH (last 256
+  ancestors), and `parent_beacon_block_root` (EIP-4788, accessed via the
+  beacon-roots contract — no dedicated opcode).
   """
 
   @type t :: %__MODULE__{
@@ -87,11 +50,8 @@ defmodule EEVM.Context.Block do
   end
 
   @doc """
-  Returns the block hash for a given block number.
-
-  Returns 0 if the block number is not in the last 256 blocks or is the
-  current/future block. This matches the EVM spec — BLOCKHASH can only
-  access the most recent 256 ancestors.
+  BLOCKHASH lookup. Returns 0 outside the last 256 ancestors or for the
+  current / a future block.
   """
   @spec hash(t(), non_neg_integer()) :: non_neg_integer()
   def hash(%__MODULE__{hashes: hashes, number: current}, block_number) do

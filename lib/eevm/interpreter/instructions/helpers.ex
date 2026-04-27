@@ -1,34 +1,8 @@
 defmodule EEVM.Interpreter.Instructions.Helpers do
   @moduledoc """
-  Shared utilities for opcode implementations.
-
-  ## EVM Concepts
-
-  Many opcode categories (arithmetic, comparison, bitwise) share the same
-  structural patterns: pop operands, compute, push result, advance PC. Pulling
-  those patterns into helpers keeps each opcode module focused on what makes it
-  unique and avoids duplicating error-handling boilerplate.
-
-  Key responsibilities:
-
-  1. **Signed arithmetic** — the EVM stack stores everything as uint256, but
-     several opcodes (SLT, SGT, SDIV, SMOD, SAR) interpret values as signed.
-     Two's complement conversion is the bridge between the two representations.
-  2. **Modular exponentiation** — the EXP opcode raises a base to an exponent
-     mod 2^256. A naive loop would be impossibly slow for large exponents, so
-     we use square-and-multiply (binary exponentiation).
-  3. **Jump validation** — JUMP and JUMPI must land on a JUMPDEST (0x5B) byte.
-     Any other destination is invalid and halts execution.
-
-  ## Elixir Learning Notes
-
-  - These helpers are `def` (public) so any opcode module can call them.
-    Each module keeps its own private helpers private (`defp`) to avoid
-    polluting the shared namespace.
-  - `with` chains let us sequence fallible stack operations cleanly. If any
-    step returns `{:error, reason}`, execution jumps to the `else` clause.
-  - Pattern matching in `to_signed/1` guards (`when value >= @sign_bit`)
-    avoids a conditional branch — the correct clause is selected at call time.
+  Shared opcode primitives: stack-poppers for binary/comparison/bitwise ops,
+  signed/unsigned uint256 conversion, modular exponentiation, push-and-advance,
+  and JUMPDEST validity.
   """
   import Bitwise
 
@@ -38,10 +12,7 @@ defmodule EEVM.Interpreter.Instructions.Helpers do
   @sign_bit 1 <<< 255
 
   @doc """
-  Pops two values from the stack, applies a comparison, and pushes 1 or 0.
-
-  Used by LT (0x10), GT (0x11), and EQ (0x14). The comparison function `fun`
-  receives `a` (first pop) and `b` (second pop) as unsigned integers.
+  Pops `a` and `b`, pushes `1` if `fun.(a, b)` is true else `0`. Operands are uint256.
   """
   @spec comparison_op(MachineState.t(), (non_neg_integer(), non_neg_integer() -> boolean())) ::
           {:ok, MachineState.t()} | {:error, atom(), MachineState.t()}
@@ -57,10 +28,7 @@ defmodule EEVM.Interpreter.Instructions.Helpers do
   end
 
   @doc """
-  Same as `comparison_op/2` but interprets both values as signed 256-bit integers.
-
-  Used by SLT (0x12) and SGT (0x13). Converts each uint256 operand to two's
-  complement before applying the comparison, then pushes 1 or 0.
+  Like `comparison_op/2` but converts both operands to two's-complement signed integers first.
   """
   @spec signed_comparison_op(
           MachineState.t(),
@@ -78,10 +46,7 @@ defmodule EEVM.Interpreter.Instructions.Helpers do
   end
 
   @doc """
-  Pops two values, applies a bitwise function, and pushes the result.
-
-  Used by AND (0x16), OR (0x17), and XOR (0x18). The function `fun` receives
-  `a` and `b` as uint256 values and must return a uint256.
+  Pops `a` and `b`, pushes `fun.(a, b)`. The result must already fit in uint256.
   """
   @spec bitwise_op(MachineState.t(), (non_neg_integer(), non_neg_integer() -> non_neg_integer())) ::
           {:ok, MachineState.t()} | {:error, atom(), MachineState.t()}
@@ -96,33 +61,19 @@ defmodule EEVM.Interpreter.Instructions.Helpers do
     end
   end
 
-  @doc """
-  Converts a uint256 value to a signed 256-bit integer (two's complement).
-
-  Any value with the 255th bit set (>= 2^255) is treated as negative. For
-  example, the uint256 representation of -1 is 2^256 - 1 (all bits set).
-  """
+  @doc "Reinterprets a uint256 as a two's-complement signed integer."
   @spec to_signed(non_neg_integer()) :: integer()
   def to_signed(value) when value >= @sign_bit, do: value - (@max_uint256 + 1)
   def to_signed(value), do: value
 
-  @doc """
-  Converts a signed integer back to its uint256 (two's complement) representation.
-
-  Negative values are mapped to the upper half of the uint256 range. Positive
-  values (and zero) pass through unchanged.
-  """
+  @doc "Inverse of `to_signed/1`: maps signed integers into the uint256 range."
   @spec to_unsigned(integer()) :: non_neg_integer()
 
   def to_unsigned(value) when value < 0, do: value + @max_uint256 + 1
   def to_unsigned(value), do: value
 
   @doc """
-  Computes `base^exp mod m` using square-and-multiply (binary exponentiation).
-
-  Used by EXP (0x0A). The naive approach of multiplying `base` by itself `exp`
-  times would be O(exp) — unusable for 256-bit exponents. Square-and-multiply
-  is O(log exp), making it practical even for large values.
+  `base^exp mod m` via square-and-multiply (O(log exp)). Used by EXP.
   """
   @spec mod_pow(non_neg_integer(), non_neg_integer(), pos_integer()) :: non_neg_integer()
 
@@ -140,12 +91,7 @@ defmodule EEVM.Interpreter.Instructions.Helpers do
     end
   end
 
-  @doc """
-  Pushes a value onto the stack and advances the program counter by 1.
-
-  This is the final step in almost every opcode: after computing a result,
-  push it and move to the next instruction.
-  """
+  @doc "Pushes `value` and advances `pc` by 1."
   @spec push_value(MachineState.t(), non_neg_integer()) ::
           {:ok, MachineState.t()}
   def push_value(state, value) do
@@ -154,12 +100,10 @@ defmodule EEVM.Interpreter.Instructions.Helpers do
   end
 
   @doc """
-  Returns true if `dest` is a valid JUMPDEST in the given bytecode.
+  Checks whether `dest` is a JUMPDEST byte (0x5B) in `code`.
 
-  A valid jump destination must be the opcode byte 0x5B at position `dest`.
-  Bytes that are part of PUSH data (e.g., the `0x5B` argument to PUSH1 0x5B)
-  are not valid destinations, though this implementation checks only the byte
-  value — full push-data exclusion happens at the executor level.
+  The PUSH-immediate-data exclusion required by the spec is enforced upstream
+  in the interpreter dispatch table; this only verifies the byte value at `dest`.
   """
   @spec valid_jumpdest?(binary(), non_neg_integer()) :: boolean()
   def valid_jumpdest?(code, dest) when dest < byte_size(code) do

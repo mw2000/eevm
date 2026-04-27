@@ -1,53 +1,21 @@
 defmodule EEVM.SystemContracts.BeaconRoots do
   @moduledoc """
-  EIP-4788 beacon block root contract.
+  EIP-4788 beacon block root (Cancun+).
 
-  ## EVM Concepts
+  Bridges the consensus-layer beacon root into the EVM. A contract at
+  `0x000F3df6D732807Ef1319fB7B8bB8522d0Beac02` holds an 8191-slot ring buffer
+  keyed by `block.timestamp`. The block-start system call from `SYSTEM_ADDRESS`
+  writes:
 
-  Before Cancun the consensus-layer (CL) beacon block root was invisible to
-  the EVM. EIP-4788 bridges that gap with an ordinary contract deployed at a
-  well-known address:
+      storage[timestamp mod 8191]          = timestamp
+      storage[(timestamp mod 8191) + 8191] = beacon_root
 
-      0x000F3df6D732807Ef1319fB7B8bB8522d0Beac02
+  On read the contract checks the timestamp slot matches the query, so
+  ring-buffer collisions return empty rather than a stale root.
 
-  At the start of every block the execution client performs a *system call*
-  into this contract with the parent beacon-block root as calldata, signed as
-  coming from the SYSTEM_ADDRESS (`0xff..fe`). The contract keys the root by
-  the current block timestamp and stashes it in a ring buffer of
-  `HISTORY_BUFFER_LENGTH = 8191` slots. User contracts later `CALL` the same
-  address with a 32-byte timestamp to read back the root.
-
-  Storage layout (per the EIP):
-
-  - `storage[timestamp % 8191]`           = timestamp
-  - `storage[(timestamp % 8191) + 8191]`  = beacon_root
-
-  On read, the contract verifies the timestamp slot matches the queried
-  timestamp (so collisions from the ring buffer return an empty result
-  instead of a stale root).
-
-  ## Design
-
-  We do not invent a custom precompile. Instead we install the exact deployed
-  bytecode specified by the EIP at the canonical address and drive it through
-  the normal executor — the same code path any CALL would take. This keeps
-  behavior faithful to mainnet and means any future changes to CALL semantics
-  come along for free.
-
-  - `install/1` — place the deployed bytecode into a `Database`.
-  - `commit/3`  — perform the block-start system call that stores a root.
-  - `lookup/2`  — read a stored root directly from storage (convenience).
-
-  `commit/3` returns `{:ok, updated_db}` on success and `{:error, reason, db}`
-  on an execution failure; the caller decides what to do about it.
-
-  ## Elixir Learning Notes
-
-  - The deployed bytecode lives as a compile-time constant via `@deployed_code`
-    so there is no per-call decoding cost.
-  - `install/1` and `commit/3` both work on plain `Database` values — no
-    `MachineState` is exposed to callers — keeping the integration surface
-    small for higher layers that aren't yet aware of full EVM state.
+  Three entry points (`install/1`, `commit/3`, `lookup/2`) on a plain
+  `Database`. `commit/3` runs the canonical bytecode through the regular
+  interpreter and surfaces unexpected reverts as `{:error, status, db}`.
   """
 
   alias EEVM.{Database, HardforkConfig, Interpreter}
@@ -83,34 +51,23 @@ defmodule EEVM.SystemContracts.BeaconRoots do
   @spec deployed_bytecode() :: binary()
   def deployed_bytecode, do: @deployed_code
 
-  @doc """
-  Installs the beacon-roots contract into `db` at the canonical address.
-
-  Idempotent — re-installing leaves storage untouched and only ensures the
-  code is present.
-  """
+  @doc "Writes the canonical bytecode at the contract address. Idempotent."
   @spec install(Database.t()) :: Database.t()
   def install(%Database{} = db) do
     Database.put_code(db, @address, @deployed_code)
   end
 
-  @doc """
-  Installs only if EIP-4788 is active in the given hardfork config. Callers
-  setting up a pre-Cancun genesis get a no-op.
-  """
+  @doc "No-op for pre-Cancun configs; otherwise calls `install/1`."
   @spec install_if_enabled(Database.t(), HardforkConfig.t()) :: Database.t()
   def install_if_enabled(%Database{} = db, %HardforkConfig{} = config) do
     if HardforkConfig.enabled?(config, :eip_4788), do: install(db), else: db
   end
 
   @doc """
-  Executes the block-start system call that records `beacon_root` under
-  `block.timestamp`.
+  Block-start system call: records `beacon_root` under `block.timestamp`.
 
-  Uses SYSTEM_ADDRESS as the caller so the contract takes its storage branch.
-  Returns the updated database, or an error tuple if the call reverted (which
-  should never happen with the canonical bytecode, but we surface it rather
-  than swallow it).
+  Caller is SYSTEM_ADDRESS so the contract takes its storage branch. Surfaces
+  unexpected reverts as `{:error, status, db}` rather than swallowing them.
   """
   @spec commit(Database.t(), Block.t(), non_neg_integer()) ::
           {:ok, Database.t()} | {:error, atom(), Database.t()}
@@ -134,9 +91,6 @@ defmodule EEVM.SystemContracts.BeaconRoots do
       )
       |> Interpreter.run_loop()
 
-    # RETURN and STOP both halt with :stopped in this VM; the distinction is
-    # whether return_data was populated. A :reverted status means the contract
-    # rejected the call (malformed calldata / bad caller).
     case final_state.status do
       :stopped -> {:ok, final_state.db}
       other -> {:error, other, final_state.db}
@@ -144,11 +98,9 @@ defmodule EEVM.SystemContracts.BeaconRoots do
   end
 
   @doc """
-  Reads a previously-committed beacon root by timestamp, directly from the
-  contract's storage slots.
-
-  Returns `{:ok, root}` when the slot at `timestamp % 8191` matches
-  `timestamp` (i.e. no ring-buffer collision), and `:not_found` otherwise.
+  Looks up a beacon root by timestamp. Returns `{:ok, root}` when the slot
+  at `timestamp mod 8191` still holds `timestamp`; `:not_found` on a
+  ring-buffer collision or missing entry.
   """
   @spec lookup(Database.t(), non_neg_integer()) :: {:ok, non_neg_integer()} | :not_found
   def lookup(%Database{} = db, timestamp) when is_integer(timestamp) and timestamp >= 0 do

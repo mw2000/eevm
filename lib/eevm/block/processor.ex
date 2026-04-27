@@ -1,64 +1,25 @@
 defmodule EEVM.Block.Processor do
   @moduledoc """
-  Execute a block end-to-end: system calls, then transactions in order, then
-  the commitments a consensus-level verifier will check.
+  End-to-end block execution: system calls, then transactions, then header
+  commitments.
 
-  ## EVM Concepts
+  Pipeline:
 
-  A block is not just a bag of transactions. The execution client must:
+  1. Reject if the sum of `tx.gas_limit` exceeds `header.gas_limit`.
+  2. Apply each `:system_calls` hook (EIP-4788 beacon roots, EIP-2935 block
+     hashes) against `pre_state_db` in order.
+  3. Fold transactions left-to-right; each call sees the post-state of every
+     prior tx and produces a receipt whose `cumulative_gas_used` is the
+     running total. A failing tx halts the block and returns the index.
+  4. Build `%Result{}` with `state_root`, `transactions_root`, `receipts_root`,
+     aggregated `logs_bloom`, and total `gas_used`.
 
-  1. Fire any *system calls* the active hardfork mandates before user code
-     runs. Post-Cancun this is EIP-4788 (beacon roots) and post-Prague this
-     is EIP-2935 (historical block hashes).
-  2. Reject the block outright if the transactions, taken together, declare
-     more gas than the header allows.
-  3. Execute each transaction against the evolving state, recording a receipt
-     whose `cumulative_gas_used` is the running total across the block.
-  4. Produce the three MPT roots — `state_root`, `transactions_root`,
-     `receipts_root` — plus the aggregated `logs_bloom` and the block
-     `gas_used` figure. These are what external verifiers compare against the
-     header.
-
-  If any transaction fails (the injected executor returns an `{:error, _}`)
-  the processor halts and reports the failing index. The post-state database
-  is left at whatever the last *successful* transaction produced — this
-  processor does not attempt optimistic rollback.
-
-  ## Design: dependency injection
-
-  The issues that own the real transaction executor (#83) and the real
-  system-call hooks (#81 EIP-2935 / #82 EIP-4788) are being developed on
-  parallel branches and are not yet merged. To keep this PR independently
-  mergeable, we do not `alias` those modules here — callers pass them in:
-
-  - `:tx_executor` — `(tx, %Context.Block{}, %Database{}) ->
-    {:ok, tx_result} | {:error, reason}`. Each call receives the *current*
-    database after all prior transactions and system calls have been
-    applied. The returned `tx_result` is a map with keys `:status`,
-    `:gas_used`, `:logs`, and `:db`.
-  - `:system_calls` — list of hooks, each `(%Database{}, %Context.Block{})
-    -> %Database{}`. Executed in order, strictly before any transaction.
-    The default is `[]`.
-  - `:tx_encoder` — `(tx) -> binary` used to compute the
-    `transactions_root`. Defaults to `EEVM.Transaction.Envelope.encode/1`,
-    which handles every typed envelope this codebase knows about. Tests
-    using plain maps supply their own.
-  - `:hardfork` — optional atom, purely informational today; the real
-    executor will consume it once wired in.
-
-  Once #83 / #81 / #82 land, a follow-up PR will set sensible defaults for
-  `:tx_executor` and supply the real system-call hooks; until then callers
-  inject their own.
-
-  ## Elixir Learning Notes
-
-  - The transaction fold uses `Enum.reduce_while/3` so we can bail out
-    early on the first executor error without recursing manually.
-  - The receipts / transactions trie roots use `EEVM.MPT.Trie.root_hash/1`
-    (non-secure — keys are RLP-encoded indices, not hashes), matching the
-    Yellow Paper's specification for block-level tries.
-  - The logs-bloom aggregation reuses `EEVM.Block.Bloom.merge/2`: a 256-byte
-    bitwise OR already optimised in the bloom module.
+  Callers inject `:tx_executor` (`(tx, %Context.Block{}, %Database{}) ->
+  {:ok, %{status, gas_used, logs, db}} | {:error, reason}`), an optional
+  `:system_calls` list, and an optional `:tx_encoder` (defaults to
+  `EEVM.Transaction.Envelope.encode/1`) for the transactions trie. No
+  optimistic rollback — a tx failure leaves the post-state at the last
+  successful tx.
   """
 
   alias EEVM.Block.{Bloom, Header, Receipt, Result}

@@ -1,37 +1,16 @@
 defmodule EEVM do
   @moduledoc """
-  EEVM — An Ethereum Virtual Machine implementation in Elixir.
+  Public façade for executing EVM bytecode.
 
-  This is a learning project that implements the core EVM execution engine.
-  It supports basic arithmetic, stack manipulation, memory operations,
-  and control flow opcodes.
+  For raw opcode execution use `execute/2` and `trace/2`. For full transaction
+  processing (signature recovery, intrinsic gas, refunds, coinbase payment) use
+  `EEVM.Handler.execute/4`. For block processing, see `EEVM.Block.Processor`.
 
-  ## Quick Start
-
-      # Execute raw bytecode: PUSH1 2, PUSH1 3, ADD, STOP
       iex> result = EEVM.execute(<<0x60, 2, 0x60, 3, 0x01, 0x00>>)
       iex> result.status
       :stopped
       iex> EEVM.stack_values(result)
       [5]
-
-  ## Architecture
-
-  - `EEVM.Interpreter.Stack` — LIFO stack (max 1024, uint256 values)
-  - `EEVM.Interpreter.Memory` — Byte-addressable linear memory
-  - `EEVM.Interpreter.MachineState` — Combined execution state
-  - `EEVM.Interpreter.Instructions.Registry` — Opcode definitions and metadata
-  - `EEVM.Interpreter` — The fetch-decode-execute loop
-
-  ## Elixir Concepts Demonstrated
-
-  - **Structs & Maps** — Data structures with compile-time field checks
-  - **Pattern Matching** — Multi-clause functions, destructuring
-  - **Tagged Tuples** — `{:ok, val}` / `{:error, reason}` error handling
-  - **Recursion** — Tail-recursive execution loop (no mutable state)
-  - **Bitwise Operations** — Working with 256-bit integers
-  - **Module Attributes** — Compile-time constants
-  - **Typespecs** — `@spec` annotations for documentation and Dialyzer
   """
 
   alias EEVM.{Interpreter, Tracer}
@@ -115,7 +94,6 @@ defmodule EEVM do
 
     case EEVM.Interpreter.Instructions.Registry.info(opcode) do
       {:ok, %{push_bytes: n} = info} ->
-        # PUSH instruction — read the immediate bytes
         data =
           binary_part(
             bytecode,

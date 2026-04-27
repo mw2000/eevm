@@ -1,21 +1,11 @@
 defmodule EEVM.Block.Bloom do
   @moduledoc """
-  Ethereum logs bloom filter — 2048-bit probabilistic filter for log indexing.
+  256-byte (2048-bit) logs bloom filter per Yellow Paper §4.3.1.
 
-  ## EVM Concepts
-
-  Transaction receipts include a 256-byte (2048-bit) bloom filter that summarizes
-  all logs emitted during execution. Light clients use bloom filters to quickly
-  skip blocks/transactions that definitely don't contain events of interest.
-
-  Each log's address and each indexed topic are added to the bloom using 3 hash
-  probes derived from Keccak-256. The algorithm is defined in Yellow Paper §4.3.1.
-
-  ## Elixir Learning Notes
-
-  - A bloom filter is represented as a fixed-size binary (`<<_::2048>>`).
-  - Bit-twiddling uses `Bitwise` operators (`band`, `bor`, `bsl`) on integers.
-  - We update a single byte inside a binary with pattern matching slices.
+  Each address and indexed topic contributes three bits, each derived from a
+  pair of bytes of its Keccak-256 digest masked to 11 bits. Membership is
+  probabilistic: false positives are possible, false negatives are not.
+  Log `data` is intentionally excluded from the filter.
   """
 
   import Bitwise

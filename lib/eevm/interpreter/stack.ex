@@ -1,16 +1,9 @@
 defmodule EEVM.Interpreter.Stack do
   @moduledoc """
-  The EVM stack — a LIFO data structure with a max depth of 1024.
+  EVM stack: LIFO of uint256 values, depth-bounded at 1024.
 
-  ## Elixir Learning Notes
-
-  - We use a simple list as the underlying data structure. In Elixir, lists are
-    linked lists, so prepending (push) is O(1) and popping the head is O(1).
-  - The `@max_depth` is a module attribute — Elixir's version of a constant.
-  - Pattern matching in function heads (`[top | rest]`) is idiomatic Elixir —
-    we destructure data right where we receive it.
-  - We return tagged tuples like `{:ok, value}` and `{:error, reason}` which is
-    the Elixir convention for fallible operations.
+  Push/pop are O(1) on the head of an Elixir list. Values are masked to 256
+  bits on push so callers can pass raw integers without truncating first.
   """
 
   @max_depth 1024
@@ -27,11 +20,9 @@ defmodule EEVM.Interpreter.Stack do
   def new, do: %__MODULE__{}
 
   @doc """
-  Pushes a value onto the stack.
+  Pushes a uint256 onto the stack. Masks the value to 256 bits.
 
-  Returns `{:ok, stack}` or `{:error, :stack_overflow}` if the stack is full.
-
-  EVM values are 256-bit unsigned integers. We enforce this with a bitmask.
+  Returns `{:error, :stack_overflow}` if the stack is at the 1024-element cap.
   """
   @spec push(t(), non_neg_integer()) :: {:ok, t()} | {:error, :stack_overflow}
   def push(%__MODULE__{size: size}, _value) when size >= @max_depth do
@@ -39,8 +30,7 @@ defmodule EEVM.Interpreter.Stack do
   end
 
   def push(%__MODULE__{elements: elements, size: size}, value) do
-    # Mask to 256 bits — all EVM values are uint256
-    masked = value |> band_256()
+    masked = band_256(value)
     {:ok, %__MODULE__{elements: [masked | elements], size: size + 1}}
   end
 
@@ -98,13 +88,6 @@ defmodule EEVM.Interpreter.Stack do
   @spec to_list(t()) :: [non_neg_integer()]
   def to_list(%__MODULE__{elements: elements}), do: elements
 
-  # --- Private Helpers ---
-
-  # Masks a value to 256 bits. The EVM uses unsigned 256-bit integers.
-  # In Elixir, integers are arbitrary precision, so we manually enforce the limit.
-  #
-  # `Bitwise.band/2` performs a bitwise AND.
-  # `(1 <<< 256) - 1` creates a 256-bit mask of all 1s.
   defp band_256(value) do
     import Bitwise
     band(value, (1 <<< 256) - 1)

@@ -1,42 +1,11 @@
 defmodule EEVM.Context.Contract do
   @moduledoc """
-  Contract/message-level context — the current call frame's environment.
+  Per-frame message context: `address` (ADDRESS), `caller` (CALLER /
+  msg.sender), `callvalue` (CALLVALUE), `calldata`, and a small in-frame
+  `balances` cache used by BALANCE/SELFBALANCE when no `Database` is wired in.
 
-  ## EVM Concepts
-
-  Each call frame (triggered by CALL, DELEGATECALL, etc.) has its own message
-  context. This is the innermost of the three context layers and changes with
-  every nested call.
-
-  In revm, this maps to the `Host` trait's per-frame data.
-
-  ### Fields
-
-  | Field | Opcode | Description |
-  |-------|--------|-------------|
-  | `address` | ADDRESS (0x30) | Address of the executing contract |
-  | `caller` | CALLER (0x33) | Direct caller of this frame (msg.sender) |
-  | `callvalue` | CALLVALUE (0x34) | ETH (wei) sent with this call |
-  | `calldata` | CALLDATALOAD/SIZE/COPY | Input data for this call |
-  | `balances` | BALANCE/SELFBALANCE | Account balance lookup |
-
-  ### Caller vs Origin
-
-  - `caller` (CALLER/msg.sender) = who directly called this contract.
-    Changes with each nested CALL.
-  - `origin` (ORIGIN/tx.origin, in `EEVM.Context.Transaction`) = the EOA that
-    signed the transaction. Never changes.
-
-  Example: EOA → Contract A → Contract B
-  - In Contract B: `caller` = A, `origin` = EOA
-
-  ## Elixir Learning Notes
-
-  - `calldata` is a raw binary (`<<>>`). Elixir's binary pattern matching
-    makes zero-copy slicing trivial via `binary_part/3`.
-  - `calldata_load/2` implements EVM spec behavior: reads 32 bytes from an
-    offset, right-padding with zeros if calldata is shorter than offset+32.
-  - `balances` is a simplified model — a real EVM would query a state database.
+  Pushed and popped with each nested CALL/DELEGATECALL/STATICCALL. `caller`
+  changes with every frame; the surrounding `Transaction.origin` does not.
   """
 
   @type t :: %__MODULE__{
@@ -80,15 +49,8 @@ defmodule EEVM.Context.Contract do
   end
 
   @doc """
-  Reads 32 bytes from calldata starting at the given byte offset.
-
-  Calldata shorter than offset+32 is right-padded with zeros, matching
-  EVM spec behavior. This is what CALLDATALOAD does.
-
-  ## Elixir Learning Note
-
-  We use `binary_part/3` with bounds checking and manual zero-padding.
-  Elixir binaries are immutable byte sequences — slicing them is O(1).
+  CALLDATALOAD: reads 32 bytes from `offset` as a uint256, zero-padding on
+  the right when calldata is shorter than `offset + 32`.
   """
   @spec calldata_load(t(), non_neg_integer()) :: non_neg_integer()
   def calldata_load(%__MODULE__{calldata: calldata}, offset) do

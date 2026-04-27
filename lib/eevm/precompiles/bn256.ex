@@ -1,52 +1,17 @@
 defmodule EEVM.Precompiles.BN256 do
   @moduledoc """
-  BN256 (alt_bn128) curve precompiles — addresses `0x06`, `0x07`, `0x08`.
+  BN256 / alt_bn128 precompiles (EIP-196, EIP-197; repriced by EIP-1108):
 
-  ## EVM Concepts
+  - `0x06` ecAdd — 150 gas. Input 128 bytes: `(x1, y1) || (x2, y2)`.
+  - `0x07` ecMul — 6_000 gas. Input 96 bytes: `(x, y) || scalar`.
+  - `0x08` ecPairing — 45_000 + 34_000 * k. Input is k 192-byte tuples
+    `(G1, G2)` with G2 encoded as `x_im || x_re || y_im || y_re`.
 
-  The alt_bn128 (also called BN254) is a pairing-friendly elliptic curve
-  introduced into the EVM by EIP-196 and EIP-197. These precompiles enable
-  efficient on-chain verification of **zero-knowledge proofs** (notably Groth16
-  and PLONK), which underpin zkRollups like zkSync and Polygon zkEVM, as well as
-  privacy protocols and decentralized identity systems.
+  Short inputs to ecAdd / ecMul are right-padded with zeros; ecPairing
+  requires `byte_size mod 192 == 0`. The identity point is `(0, 0)`. ecPairing
+  returns 0x...01 when the product of pairings is `FQ12.one()`, else 0x...00.
 
-  Three operations are exposed:
-
-  - **ecAdd** (`0x06`) — adds two G1 points on the curve.
-  - **ecMul** (`0x07`) — performs scalar multiplication on a G1 point.
-  - **ecPairing** (`0x08`) — evaluates an optimal Ate pairing check over a list
-    of (G1, G2) point pairs.
-
-  ### Gas schedule (EIP-1108)
-
-  | Operation | Gas                           |
-  |-----------|-------------------------------|
-  | ecAdd     | 150                           |
-  | ecMul     | 6,000                         |
-  | ecPairing | 45,000 + 34,000 × pair count  |
-
-  ### Input formats
-
-  - **ecAdd**: 128 bytes — two G1 points, each 64 bytes (x, y as big-endian
-    uint256). Short input is right-padded with zeros.
-  - **ecMul**: 96 bytes — one G1 point (64 bytes) + scalar (32 bytes).
-    Short input is right-padded with zeros.
-  - **ecPairing**: `k × 192` bytes — list of (G1, G2) pairs. Each G1 point
-    is 64 bytes; each G2 point is 128 bytes encoded as
-    `x_imaginary(32) || x_real(32) || y_imaginary(32) || y_real(32)`.
-    Input length must be divisible by 192.
-
-  The identity/infinity point is encoded as `(0, 0)`.
-
-  ## Elixir Learning Notes
-
-  - The `bn` hex package provides pure-Elixir BN128 field arithmetic
-    (`BN.FQ`, `BN.FQ2`) and curve operations (`BN.BN128Arithmetic`,
-    `BN.Pairing`), so no NIF compilation is required.
-  - Points are represented as `{BN.FQ.t(), BN.FQ.t()}` tuples for G1 and
-    `{BN.FQP.t(), BN.FQP.t()}` tuples for G2.
-  - `:binary.decode_unsigned/1` converts big-endian binaries to Elixir's
-    arbitrary-precision integers for coordinate parsing.
+  All field arithmetic is pure-Elixir via the `bn` package (FQ, FQ2, Pairing).
   """
 
   alias BN.{FQ, FQ2, BN128Arithmetic, Pairing}

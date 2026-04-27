@@ -1,19 +1,11 @@
 defmodule EEVM.Transaction.IntrinsicGas do
   @moduledoc """
-  Intrinsic transaction gas calculation.
+  Intrinsic gas: the up-front cost paid before EVM execution begins.
 
-  ## EVM Concepts
-
-  Before EVM bytecode starts executing, every transaction pays an upfront
-  intrinsic gas cost. This covers the base transaction envelope plus static
-  costs derived from calldata, contract creation, and access-list entries.
-
-  This module implements the cost components needed by transaction validation.
-
-  ## Elixir Learning Notes
-
-  - `Enum.reduce/3` is used to accumulate byte and access-list costs.
-  - We compute `ceil(n / 32)` with integer arithmetic as `div(n + 31, 32)`.
+  Sums the 21000 base, per-byte calldata cost (zero vs. non-zero), the 32000
+  creation surcharge plus 2/word over initcode for `CREATE` transactions, and
+  EIP-2930 access-list entries (2400/address, 1900/key). Post-Prague, EIP-7623
+  raises the effective floor via `calldata_floor_gas_cost/2`.
   """
 
   alias EEVM.Context.Transaction

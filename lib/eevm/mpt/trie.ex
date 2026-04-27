@@ -1,29 +1,15 @@
 defmodule EEVM.MPT.Trie do
   @moduledoc """
-  Ethereum Merkle Patricia Trie (MPT) root computation.
+  Merkle Patricia Trie root computation, matching the Yellow Paper / execution
+  specs.
 
-  ## EVM Concepts
+  Path-compressed nibble trie with three node kinds (leaf, extension, branch),
+  hex-prefix encoded paths, RLP-encoded nodes, and the 32-byte rule for child
+  references (inline if `byte_size(rlp(node)) < 32`, else `keccak256(rlp)`).
 
-  Ethereum stores account state and contract storage in a Merkle Patricia Trie.
-  This trie is path-compressed and content-addressed:
-
-  - keys are traversed nibble-by-nibble (4-bit steps)
-  - leaves and extensions use hex-prefix compact encoding
-  - each node is RLP-encoded
-  - child references follow the 32-byte rule:
-    - `RLP(node) < 32` bytes => embed inline in parent
-    - `RLP(node) >= 32` bytes => embed `keccak256(RLP(node))`
-
-  This module implements the recursive `patricialize` strategy from Ethereum's
-  execution specs, producing roots compatible with geth/revm for the same inputs.
-
-  ## Elixir Learning Notes
-
-  - The implementation is fully functional (no processes, no ETS, no mutable
-    node database).
-  - We represent trie nodes with tagged tuples and recursively encode bottom-up.
-  - Inline-child handling uses manual RLP list payload assembly so pre-encoded
-    child bytes are embedded as raw RLP elements (not double-encoded).
+  Stateless and read-only: `root_hash/1` and `secure_root_hash/1` build a
+  trie in memory from `[{key, value}]` and emit the 32-byte root. Compatible
+  with geth / revm output for the same input.
   """
 
   alias EEVM.MPT.HexPrefix

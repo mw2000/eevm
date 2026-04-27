@@ -1,54 +1,19 @@
 defmodule EEVM.Precompiles.KZGPointEval do
   @moduledoc """
-  KZG point evaluation precompile — address `0x0A` (EIP-4844).
+  KZG point-evaluation precompile at `0x0A` (EIP-4844). Flat 50_000 gas.
 
-  ## EVM Concepts
+  Input is exactly 192 bytes:
 
-  EIP-4844 (proto-danksharding) introduces **blob transactions** where large data
-  blobs are carried outside normal calldata and represented on-chain by compact
-  **KZG commitments**. Contracts do not process full blobs directly; they verify
-  evaluation claims against commitments.
+      versioned_hash(32) || z(32) || y(32) || commitment(48) || proof(48)
 
-  This precompile performs that evaluation check flow:
+  Validates `versioned_hash == 0x01 || sha256(commitment)[1..]`, that `z`
+  and `y` are below the BLS modulus, and (when a verifier is loaded) the KZG
+  proof for `(commitment, z, y, proof)`. Returns 64 bytes:
+  `FIELD_ELEMENTS_PER_BLOB(4096)` and `BLS_MODULUS`, both as big-endian uint256.
 
-  1. Validate the `versioned_hash` derived from the commitment.
-  2. Validate field element bounds for the evaluation point `z` and value `y`.
-  3. Verify the KZG proof for `(commitment, z, y, proof)`.
-
-  ### Gas schedule
-
-  Flat **50,000 gas** per call.
-
-  ### Input format (exactly 192 bytes)
-
-  - bytes `0..31`   — `versioned_hash` (32 bytes)
-  - bytes `32..63`  — `z` evaluation point (32 bytes, big-endian field element)
-  - bytes `64..95`  — `y` claimed evaluation (32 bytes, big-endian field element)
-  - bytes `96..143` — `commitment` (48 bytes)
-  - bytes `144..191` — `proof` (48 bytes)
-
-  ### Output format
-
-  Exactly 64 bytes: two big-endian uint256 values:
-
-  - `FIELD_ELEMENTS_PER_BLOB` (`4096`)
-  - `BLS_MODULUS`
-
-  ## Elixir Learning Notes
-
-  - Binary pattern matching (`<<...>>`) gives direct fixed-offset parsing with no
-    manual indexing.
-  - `:binary.decode_unsigned/1` converts 32-byte big-endian field elements to
-    arbitrary-precision Elixir integers for range checks.
-  - `:crypto.hash(:sha256, commitment)` computes the versioned hash preimage.
-
-  ### Verification implementation note
-
-  Full KZG proof verification requires trusted setup parameters and a native
-  verifier (for example `c-kzg-4844` via `kzg_elixir`/`ckzg`). This project does
-  not currently bundle that verifier. Therefore, this module implements all
-  EIP-4844 parsing, gas metering, and deterministic validation rules, and treats
-  the cryptographic proof step as successful when no verifier is available.
+  KZG proof verification dispatches to `KzgElixir.verify_kzg_proof/4` when
+  available; without it, parsing/gas/range checks still run and the
+  cryptographic step is treated as success.
   """
 
   @behaviour EEVM.Precompile

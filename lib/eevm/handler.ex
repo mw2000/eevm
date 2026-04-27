@@ -1,30 +1,19 @@
 defmodule EEVM.Handler do
   @moduledoc """
-  End-to-end transaction handler.
+  Top-level transaction handler.
 
-  ## EVM Concepts
+  Orchestrates a single transaction across four phases, each in its own module:
 
-  A signed Ethereum transaction is not a single operation — it is a sequence
-  of well-defined steps the client must perform against current world state.
-  This module orchestrates those steps, deferring each phase to a sibling
-  module so the layering stays inspectable:
-
-  - `EEVM.Handler.Validation`    — decode → recover sender → validate
-  - `EEVM.Handler.PreExecution`  — charge upfront → intrinsic gas → bump nonce
+  - `EEVM.Handler.Validation`    — decode, recover sender, validate
+  - `EEVM.Handler.PreExecution`  — charge upfront fee, deduct intrinsic gas, bump nonce
   - `EEVM.Handler.Execution`     — top-level CALL or CREATE through the EVM
-  - `EEVM.Handler.PostExecution` — settle refund, credit coinbase, build result
+  - `EEVM.Handler.PostExecution` — apply refund, pay coinbase, build result
 
-  This split mirrors revm's `handler/` crate (`validation.rs`,
-  `pre_execution.rs`, `execution.rs`, `post_execution.rs`) and keeps each
-  phase independently testable.
+  The phase split mirrors revm's `handler/` crate.
 
-  ## Elixir Learning Notes
-
-  - The pipeline is a `with` chain: each step returns `{:ok, …}` or
-    `{:error, reason}`, and the chain short-circuits on the first failure.
-  - The sender is represented two ways: as a 20-byte binary (from the wire
-    and from `Signer.recover_sender/2`) and as an integer (inside
-    `EEVM.Context.Transaction` and `EEVM.Database`'s key space).
+  Sender addresses cross a representation boundary inside the pipeline: the
+  wire and `Signer.recover_sender/2` produce 20-byte binaries, while
+  `EEVM.Context.Transaction` and `EEVM.Database` key on integer addresses.
   """
 
   alias EEVM.{Config, Database, TransactionResult}

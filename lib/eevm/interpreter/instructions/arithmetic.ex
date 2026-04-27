@@ -1,34 +1,13 @@
 defmodule EEVM.Interpreter.Instructions.Arithmetic do
   @moduledoc """
-  EVM arithmetic opcodes: ADD, MUL, SUB, DIV, SDIV, MOD, SMOD, ADDMOD, MULMOD, EXP, SIGNEXTEND.
+  Arithmetic opcodes: ADD, MUL, SUB, DIV, SDIV, MOD, SMOD, ADDMOD, MULMOD, EXP, SIGNEXTEND.
 
-  ## EVM Concepts
-
-  All arithmetic operates on unsigned 256-bit integers (uint256). Overflow wraps
-  silently modulo 2^256 — there are no exceptions or traps. This means, for
-  example, that `max_uint256 + 1 == 0`.
-
-  Key rules:
-
-  1. **Wrapping arithmetic** — ADD, MUL, SUB all wrap mod 2^256. We enforce
-     this with a bitwise AND mask after each operation.
-  2. **Division by zero returns 0** — unlike most languages, DIV, SDIV, MOD,
-     and SMOD all return 0 when the divisor is zero. No exception is raised.
-  3. **Signed operations use two's complement** — SDIV and SMOD interpret
-     operands as signed 256-bit integers before dividing.
-  4. **ADDMOD and MULMOD use unlimited precision** — they compute `(a + b) mod n`
-     and `(a * b) mod n` without the intermediate result wrapping at 2^256.
-     Elixir's arbitrary-precision integers make this free.
-  5. **EXP has dynamic gas** — cost grows with the byte length of the exponent.
-
-  ## Elixir Learning Notes
-
-  - Elixir integers are arbitrary-precision, so `a * b` never overflows. We
-    apply a `band(..., @max_uint256)` mask to truncate to 256 bits explicitly.
-  - Each opcode clause is a separate `execute/2` head matched by the opcode byte.
-    This is idiomatic pattern matching on function arguments.
-  - `with` chains short-circuit on `{:error, reason}` — each line binds a
-    variable only if the previous step succeeded.
+  Operands are uint256. Overflow wraps mod 2^256 (enforced with a band mask
+  after each op). Division and modulo by zero return 0 instead of trapping.
+  SDIV/SMOD reinterpret operands as two's-complement signed 256-bit ints.
+  ADDMOD/MULMOD compute the unbounded sum/product before reducing mod n —
+  Elixir's bignums avoid the intermediate overflow. EXP has dynamic gas
+  proportional to the byte-length of the exponent (`EEVM.Gas.Dynamic`).
   """
   import Bitwise
 
@@ -39,25 +18,21 @@ defmodule EEVM.Interpreter.Instructions.Arithmetic do
   @max_uint256 (1 <<< 256) - 1
 
   @doc """
-  Dispatches and executes an arithmetic opcode.
+  Executes one arithmetic opcode against `state` and advances `pc`.
 
-  Each clause handles one opcode byte:
-
-  | Byte | Mnemonic  | Operation                          |
-  |------|-----------|------------------------------------|
-  | 0x01 | ADD       | `(a + b) mod 2^256`               |
-  | 0x02 | MUL       | `(a * b) mod 2^256`               |
-  | 0x03 | SUB       | `(a - b) mod 2^256`               |
-  | 0x04 | DIV       | `a / b` (0 if b == 0)             |
-  | 0x05 | SDIV      | signed division (0 if b == 0)     |
-  | 0x06 | MOD       | `a mod b` (0 if b == 0)           |
-  | 0x07 | SMOD      | signed modulo (0 if b == 0)       |
-  | 0x08 | ADDMOD    | `(a + b) mod n` (0 if n == 0)    |
-  | 0x09 | MULMOD    | `(a * b) mod n` (0 if n == 0)    |
-  | 0x0A | EXP       | `a^b mod 2^256`                   |
-  | 0x0B | SIGNEXTEND| sign-extend x from byte width b   |
-
-  Returns `{:ok, new_state}` on success, `{:error, reason, state}` on failure.
+  | Byte | Op         | Effect                            |
+  |------|------------|-----------------------------------|
+  | 0x01 | ADD        | `(a + b) mod 2^256`              |
+  | 0x02 | MUL        | `(a * b) mod 2^256`              |
+  | 0x03 | SUB        | `(a - b) mod 2^256`              |
+  | 0x04 | DIV        | `a / b`, 0 on `b == 0`           |
+  | 0x05 | SDIV       | signed `a / b`, 0 on `b == 0`    |
+  | 0x06 | MOD        | `a mod b`, 0 on `b == 0`         |
+  | 0x07 | SMOD       | signed `a mod b`, 0 on `b == 0`  |
+  | 0x08 | ADDMOD     | `(a + b) mod n`, 0 on `n == 0`   |
+  | 0x09 | MULMOD     | `(a * b) mod n`, 0 on `n == 0`   |
+  | 0x0A | EXP        | `a^b mod 2^256`                   |
+  | 0x0B | SIGNEXTEND | sign-extend `x` from byte `b`    |
   """
   @spec execute(non_neg_integer(), MachineState.t()) ::
           {:ok, MachineState.t()} | {:error, atom(), MachineState.t()}
@@ -105,9 +80,9 @@ defmodule EEVM.Interpreter.Instructions.Arithmetic do
     end
   end
 
-  # SDIV: signed division. Elixir's `div/2` truncates toward zero, matching
-  # the EVM spec for SDIV. Special case: -2^255 / -1 would overflow to 2^255
-  # (outside the signed 256-bit range), so the EVM defines the result as -2^255.
+  # SDIV truncates toward zero. The EVM defines `-2^255 / -1 = -2^255` (the
+  # signed-overflow case) — preserved here because `to_signed/to_unsigned`
+  # round-trips that bit pattern.
   def execute(0x05, state) do
     with {:ok, a, s1} <- Stack.pop(state.stack),
          {:ok, b, s2} <- Stack.pop(s1) do
@@ -138,8 +113,7 @@ defmodule EEVM.Interpreter.Instructions.Arithmetic do
     end
   end
 
-  # SMOD: signed modulo. The result takes the sign of the dividend (a),
-  # matching the behavior of Elixir's `rem/2` for negative numbers.
+  # SMOD: result takes the sign of the dividend (matches `rem/2`).
   def execute(0x07, state) do
     with {:ok, a, s1} <- Stack.pop(state.stack),
          {:ok, b, s2} <- Stack.pop(s1) do
@@ -197,11 +171,8 @@ defmodule EEVM.Interpreter.Instructions.Arithmetic do
     end
   end
 
-  # SIGNEXTEND: treats x as a (b+1)-byte signed integer and sign-extends it
-  # to 256 bits. If b >= 31 the value is already full-width, so x is returned
-  # unchanged. Otherwise, if the sign bit of the b-th byte is 1 (negative),
-  # all higher bits are set to 1 (bnot mask); if 0 (positive), higher bits
-  # are cleared.
+  # SIGNEXTEND: treat `x` as a `(b+1)`-byte signed integer and extend to 256
+  # bits. `b >= 31` returns `x` unchanged.
   def execute(0x0B, state) do
     with {:ok, b, s1} <- Stack.pop(state.stack),
          {:ok, x, s2} <- Stack.pop(s1) do

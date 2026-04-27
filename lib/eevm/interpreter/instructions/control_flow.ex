@@ -1,62 +1,24 @@
 defmodule EEVM.Interpreter.Instructions.ControlFlow do
   @moduledoc """
-  Opcodes for program counter manipulation and stack data loading.
+  Branching, PC, JUMPDEST, PUSH0/PUSH1-32, DUP1-16, SWAP1-16.
 
-  ## EVM Concepts
-
-  This module covers everything that moves the program counter and loads data:
-
-  - **Branching**: JUMP (0x56) and JUMPI (0x57) are the only branching
-    instructions in the EVM — there is no native if/else or loop construct at
-    the opcode level. The jump destination must be a JUMPDEST (0x5B) byte in the
-    bytecode. This prevents jumping into the middle of PUSH data, which could
-    be exploited to confuse disassemblers or bypass security checks.
-
-  - **Stack loading (PUSH)**: PUSH0 (0x5F, EIP-3855) pushes zero without
-    consuming any inline bytecode bytes. PUSH1-PUSH32 (0x60-0x7F) read the next
-    1-32 bytes from bytecode and push the value. PUSH0 saves 1 byte of bytecode
-    and 2 gas compared to PUSH1 0x00.
-
-  - **Stack duplication (DUP)**: DUP1-DUP16 (0x80-0x8F) copy an item from deep
-    in the stack and push the copy on top. DUP1 copies the top, DUP2 copies the
-    second item, etc.
-
-  - **Stack swapping (SWAP)**: SWAP1-SWAP16 (0x90-0x9F) exchange the top of
-    stack with an item below it. SWAP1 swaps positions 0 and 1, SWAP16 swaps
-    positions 0 and 16.
-
-  PC (0x58) pushes the current program counter value. JUMPDEST (0x5B) is a
-  no-op marker that costs 1 gas and marks a valid jump target.
-
-  ## Elixir Learning Notes
-
-  - Guard ranges (`when op >= 0x60 and op <= 0x7F`) match all PUSH opcodes in
-    a single clause, avoiding 32 separate function heads.
-  - Binary pattern matching (`MachineState.read_code/3`) extracts raw bytes
-    from the bytecode binary with no intermediate parsing step.
-  - DUP depth is derived by subtracting the base opcode (`op - 0x80`), and
-    SWAP depth adds 1 (`op - 0x90 + 1`) to include the top-of-stack position.
+  JUMP (0x56) and JUMPI (0x57) are the only branching opcodes; the destination
+  must land on a JUMPDEST (0x5B) byte that is not part of PUSH immediate data.
+  PUSH0 (0x5F, EIP-3855, Shanghai+) is `:invalid` on earlier forks.
   """
 
   alias EEVM.Interpreter.{MachineState, Stack}
   alias EEVM.HardforkConfig
-  alias EEVM.Interpreter.Instructions.Registry
-  alias EEVM.Interpreter.Instructions.Helpers
-  alias EEVM.Interpreter.Instructions.Registry
-  alias EEVM.Interpreter.Instructions.Helpers
+  alias EEVM.Interpreter.Instructions.{Helpers, Registry}
 
   @doc """
-  Dispatches a control flow opcode to its implementation.
+  Dispatches one control-flow opcode against `state`.
 
-  Called by the executor for JUMP, JUMPI, PC, JUMPDEST, PUSH0, PUSH1-PUSH32,
-  DUP1-DUP16, and SWAP1-SWAP16. Returns `{:ok, new_state}` on success or
-  `{:error, reason, state}` on failure.
+  Handles JUMP, JUMPI, PC, JUMPDEST, PUSH0, PUSH1-PUSH32, DUP1-DUP16, and
+  SWAP1-SWAP16.
   """
   @spec execute(non_neg_integer(), MachineState.t()) ::
           {:ok, MachineState.t()} | {:error, atom(), MachineState.t()}
-
-  # JUMP — unconditional jump. Pops the destination and validates it is a
-  # JUMPDEST byte in the bytecode. Any other destination is an error.
 
   def execute(0x56, state) do
     with {:ok, dest, s1} <- Stack.pop(state.stack) do
@@ -69,9 +31,6 @@ defmodule EEVM.Interpreter.Instructions.ControlFlow do
       {:error, reason} -> {:error, reason, state}
     end
   end
-
-  # JUMPI — conditional jump. Pops destination and condition.
-  # If condition is non-zero, validates and jumps. If zero, falls through.
 
   def execute(0x57, state) do
     with {:ok, dest, s1} <- Stack.pop(state.stack),
@@ -92,9 +51,7 @@ defmodule EEVM.Interpreter.Instructions.ControlFlow do
 
   def execute(0x58, state), do: Helpers.push_value(state, state.pc)
   def execute(0x5B, state), do: {:ok, MachineState.advance_pc(state)}
-  # PUSH0 (EIP-3855, Shanghai+): pushes the constant 0 onto the stack without
-  # consuming any inline bytecode bytes. Saves 1 byte and 2 gas vs PUSH1 0x00.
-  # Pre-Shanghai, 0x5F is an undefined opcode and halts with :invalid.
+
   def execute(0x5F, %{config: %{hardfork: hardfork}} = state) do
     if HardforkConfig.enabled?(hardfork, :eip_3855) do
       Helpers.push_value(state, 0)
@@ -102,11 +59,6 @@ defmodule EEVM.Interpreter.Instructions.ControlFlow do
       {:ok, MachineState.halt(state, :invalid)}
     end
   end
-
-  # PUSH1-PUSH32 — read `n` bytes immediately following the current PC from
-  # bytecode and push the value as a big-endian unsigned integer.
-  # `Registry.push_bytes/1` derives the byte count from the opcode.
-  # The PC advances by 1 (opcode) + n (push data) in one step.
 
   def execute(op, state) when op >= 0x60 and op <= 0x7F do
     n = Registry.push_bytes(op)
@@ -126,10 +78,6 @@ defmodule EEVM.Interpreter.Instructions.ControlFlow do
     end
   end
 
-  # DUP1-DUP16 — depth is 0-based relative to the top of stack.
-  # DUP1 peeks at depth 0 (the top) and pushes a copy.
-  # `op - 0x80` converts the opcode byte to the peek depth directly.
-
   def execute(op, state) when op >= 0x80 and op <= 0x8F do
     depth = op - 0x80
 
@@ -140,9 +88,6 @@ defmodule EEVM.Interpreter.Instructions.ControlFlow do
       {:error, reason} -> {:error, reason, state}
     end
   end
-
-  # SWAP1-SWAP16 — swaps top of stack with the element at `depth`.
-  # `op - 0x90 + 1` gives the depth: SWAP1 → 1, SWAP2 → 2, SWAP16 → 16.
 
   def execute(op, state) when op >= 0x90 and op <= 0x9F do
     depth = op - 0x90 + 1

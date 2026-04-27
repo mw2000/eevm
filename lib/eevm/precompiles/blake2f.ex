@@ -1,44 +1,15 @@
 defmodule EEVM.Precompiles.Blake2F do
   @moduledoc """
-  Blake2f precompile — address `0x09` (EIP-152).
+  Blake2 `F` compression precompile at `0x09` (EIP-152).
 
-  ## EVM Concepts
+  Input is exactly 213 bytes:
 
-  EIP-152 adds the Blake2b compression function `F` as an EVM precompile so
-  contracts can verify data structures from ecosystems that rely on BLAKE2,
-  especially **Zcash block headers** and **Equihash proofs**, without expensive
-  in-EVM emulation.
+      rounds(u32 big) || h(8 × u64 le) || m(16 × u64 le)
+                      || t(2 × u64 le)  || f(u8, 0 or 1)
 
-  This also benefits interoperability with chains and protocols that use
-  Blake2-based primitives, including **Filecoin proof systems**, where on-chain
-  verification needs the exact compression round function.
-
-  ### Gas schedule
-
-  Gas cost is exactly the `rounds` field from input bytes `0..3` (uint32,
-  big-endian).
-
-  ### Input format
-
-  Input must be **exactly 213 bytes**:
-
-  - bytes `0..3`   — `rounds` (`uint32`, big-endian)
-  - bytes `4..67`  — `h` (8 × 64-bit words, little-endian)
-  - bytes `68..195` — `m` (16 × 64-bit words, little-endian)
-  - bytes `196..211` — `t` (2 × 64-bit words, little-endian)
-  - byte `212`     — `f` final block flag (`0` or `1` only)
-
-  Output is 64 bytes: the 8 updated state words in little-endian.
-
-  ## Elixir Learning Notes
-
-  - Cryptographic compression can be implemented in pure Elixir with
-    `import Bitwise` plus explicit 64-bit masking (`0xFFFFFFFFFFFFFFFF`) after
-    additions to preserve modulo `2^64` behavior.
-  - Binary pattern matching with little-endian fields (`<<w::little-64>>`) is
-    ideal for parsing EIP-152 state/message/counter words directly from input.
-  - Tuple-based state management (`put_elem/3`, `elem/2`) is a practical fit for
-    fixed-size vectors like Blake2b's 16-word working vector.
+  Returns 64 bytes (the 8 updated `h` words, little-endian). Gas equals the
+  `rounds` field. Returns `:invalid_input` for any other length or for
+  `f ∉ {0, 1}`.
   """
 
   @behaviour EEVM.Precompile
@@ -71,17 +42,6 @@ defmodule EEVM.Precompiles.Blake2F do
     {10, 2, 8, 4, 7, 6, 1, 5, 15, 11, 9, 14, 3, 12, 13, 0}
   }
 
-  @doc """
-  Executes the Blake2f precompile.
-
-  Returns `{:ok, output, gas_used}` on success where `output` is 64 bytes and
-  `gas_used == rounds`.
-
-  Returns:
-  - `{:error, :invalid_input}` if input length is not 213 bytes or final flag is
-    not `0` or `1`
-  - `{:error, :out_of_gas}` if `gas_limit < rounds`
-  """
   @spec execute(binary(), non_neg_integer()) ::
           {:ok, binary(), non_neg_integer()} | {:error, :invalid_input | :out_of_gas}
   @impl true

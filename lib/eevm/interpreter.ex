@@ -1,39 +1,15 @@
 defmodule EEVM.Interpreter do
   @moduledoc """
-  The EVM interpreter — fetches, decodes, and dispatches opcodes in a loop.
+  Opcode-level fetch/decode/execute loop.
 
-  This is the core opcode-execution engine. It is invoked by the
-  `EEVM.Handler` (the transaction-level pipeline) and by system
-  contracts that need to evaluate bytecode against an existing world state.
+  Driven by `EEVM.Handler` for transactions and by system contracts that
+  evaluate bytecode against an existing world state. Each iteration reads one
+  byte at `pc`, deducts the static cost from `EEVM.Gas.Static`, and dispatches
+  to the module under `EEVM.Interpreter.Instructions.*` that owns that opcode.
 
-  ## EVM Concepts
-
-  The executor implements the EVM's fetch-decode-execute cycle:
-
-  1. **Fetch**: Read one byte from bytecode at the current program counter.
-  2. **Decode**: Look up the base gas cost and identify which opcode module
-     handles this byte.
-  3. **Execute**: Deduct base gas, delegate to the opcode module, and loop.
-
-  Execution ends when:
-  - A terminating opcode is reached (STOP, RETURN, REVERT, INVALID).
-  - The program counter advances past the end of the bytecode (implicit STOP).
-  - Gas runs out before the opcode can execute.
-
-  INVALID (0xFE) is special-cased: its "base" gas cost is set to the entire
-  remaining gas, draining it completely before the opcode runs.
-
-  ## Elixir Learning Notes
-
-  - `run_loop/1` is tail-recursive — Elixir optimizes tail calls, so the loop
-    runs in constant stack space even for long-running contracts.
-  - The three `run_loop/1` clauses use pattern matching on `status` to cleanly
-    separate running, halted, and out-of-gas states without any conditionals.
-  - `execute_opcode/2` is a private dispatch table. Specific opcodes come first,
-    then ranges. Elixir matches clauses top-to-bottom, so narrower patterns
-    must precede broader ones.
-  - Separation of concerns: the executor only orchestrates; opcode modules own
-    their semantics.
+  Execution halts on STOP / RETURN / REVERT / INVALID, when `pc` walks off the
+  end of the code (implicit STOP), or when gas is exhausted. INVALID (0xFE)
+  consumes all remaining gas before halting.
   """
 
   alias EEVM.{HardforkConfig, Tracer}
@@ -90,19 +66,11 @@ defmodule EEVM.Interpreter do
   end
 
   @doc """
-  The main execution loop. Runs until execution terminates.
+  Drives the fetch/decode/execute loop until the machine halts or unwinds.
 
-  Three clauses handle the three possible states:
-
-  1. `status: :running` — fetch the current opcode, deduct static gas, delegate
-     to `execute_opcode/2`, and recurse.
-  2. Any non-running status (`:stopped`, `:returned`, `:reverted`, `:invalid`,
-     `{:error, reason}`) — the machine has halted; return as-is.
-  3. Out-of-gas during static cost deduction — the halted state is returned
-     directly from `MachineState.consume_gas/2`.
-
-  This function is public because it is called recursively by itself. It is
-  the internal execution engine and not part of the public API — use `run/2`.
+  Public so the recursive call from inside the module type-checks against an
+  exported function — it is not part of the stable API. Callers should use
+  `run/2`.
   """
 
   @spec run_loop(MachineState.t()) :: MachineState.t()
@@ -194,13 +162,9 @@ defmodule EEVM.Interpreter do
 
   defp cleanup_touched_empty_accounts(state), do: state
 
-  # Dispatch table for execute_opcode/2.
-  #
-  # Routes opcode bytes to the module that implements them. Specific opcodes
-  # are listed first; ranges follow. This ordering matters — Elixir matches
-  # clauses top-to-bottom, so e.g. 0x50 must appear before the 0x51..0x55
-  # range to ensure it is caught by its dedicated StackMemoryStorage clause.
-  # The fallback clause treats unknown opcodes as INVALID (halt, no gas refund).
+  # Opcode dispatch. Order matters: specific bytes must precede ranges that
+  # would otherwise swallow them (e.g. 0x50 before 0x51..0x55, 0x47 before
+  # 0x40..0x4A). Unknown opcodes fall through to INVALID.
 
   defp execute_opcode(0x55, %{is_static: true} = state),
     do: {:ok, MachineState.halt(state, :reverted)}
@@ -260,9 +224,6 @@ defmodule EEVM.Interpreter do
     do: Termination.execute(op, state)
 
   defp execute_opcode(_op, state), do: {:ok, MachineState.halt(state, :invalid)}
-
-  # Trace bookkeeping is a no-op when no tracer is attached — one pattern match,
-  # one return. All helpers below keep this fast path.
 
   defp trace_opcode(%MachineState{tracer: nil} = state, _opcode, _static_cost), do: state
 

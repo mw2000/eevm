@@ -1,71 +1,30 @@
 defmodule EEVM.Precompiles.ModExp do
   @moduledoc """
-  Modular exponentiation precompile — address `0x05`.
+  ModExp precompile at `0x05` (EIP-198, repriced by EIP-2565).
 
-  ## EVM Concepts
+  Input layout:
 
-  ModExp computes `base^exp mod modulus` over arbitrarily large integers. It was
-  introduced by EIP-198 so contracts can perform heavy number-theoretic
-  operations without reimplementing bignum arithmetic in EVM bytecode.
+      base_length(32) || exp_length(32) || mod_length(32) || base || exp || mod
 
-  This precompile is a core primitive for:
+  shorter inputs are right-padded with zeros. Output is `base^exp mod modulus`
+  big-endian, left-padded to exactly `mod_length` bytes (all zeros when
+  `modulus == 0` or `mod_length == 0`).
 
-  - **RSA signature verification**, where exponentiation modulo a large integer
-    is the fundamental operation.
-  - **Zero-knowledge proofs**, whose verifier circuits frequently require
-    modular exponentiation over large fields.
+  Gas (EIP-2565):
 
-  ### Gas schedule (EIP-2565)
+      gas = max(200, floor(mult_complexity * iteration_count / 3))
+      mult_complexity = ((max(base_length, mod_length) + 7) div 8)^2
+      iteration_count = exp_length <= 32 → highest_set_bit(exp) or 0
+                      | exp_length  > 32 → 8 * (exp_length - 32) +
+                                           highest_set_bit(exp[0..31])
 
-  The gas charge uses the EIP-2565 repricing formula:
-
-  `gas = max(200, floor(multiplication_complexity * iteration_count / 3))`
-
-  where:
-
-  - `multiplication_complexity = ceil(max(base_length, mod_length) / 8)^2`
-    (equivalently `((max(base_length, mod_length) + 7) div 8)^2` in integer
-    arithmetic).
-  - `iteration_count` is derived from the exponent length and the top bits of
-    the exponent:
-    - if `exp_length <= 32`: `0` when exponent is zero, otherwise the
-      0-indexed highest set bit of the exponent.
-    - if `exp_length > 32`: `8 * (exp_length - 32) + highest_bit_index(exp[0..31])`
-      where the highest bit index of an all-zero 32-byte prefix is treated as 0.
-
-  ### Input format
-
-  Input is ABI-like (but not standard Solidity ABI):
-
-  - bytes `0..31`: `base_length` (big-endian uint256)
-  - bytes `32..63`: `exp_length` (big-endian uint256)
-  - bytes `64..95`: `mod_length` (big-endian uint256)
-  - bytes `96..`: concatenated `base || exponent || modulus`
-
-  If the input is shorter than required by those lengths, missing bytes are
-  treated as zero (right-padding behavior).
-
-  Output is the big-endian value of `base^exp mod modulus`, left-padded with
-  zeros to exactly `mod_length` bytes. If `modulus == 0` or `mod_length == 0`,
-  the precompile returns `mod_length` zero bytes.
-
-  ## Elixir Learning Notes
-
-  - `:crypto.mod_pow(base, exp, modulus)` delegates modular exponentiation to
-    Erlang/OTP's `:crypto` NIF, which uses optimized native big-integer code.
-  - `<<len::unsigned-size(256)>>` is binary pattern matching for parsing
-    big-endian uint256 fields directly from a binary.
-  - Elixir integers are arbitrary precision, so converting between bytes and
-    integers with `:binary.decode_unsigned/1` works for very large values.
+  Backed by `:crypto.mod_pow/3` for the bignum work.
   """
 
   @behaviour EEVM.Precompile
 
   @minimum_gas 200
 
-  @doc """
-  Executes the ModExp precompile.
-  """
   @spec execute(binary(), non_neg_integer()) ::
           {:ok, binary(), non_neg_integer()} | {:error, :out_of_gas}
   @impl true

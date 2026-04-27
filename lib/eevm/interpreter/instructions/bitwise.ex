@@ -1,32 +1,11 @@
 defmodule EEVM.Interpreter.Instructions.Bitwise do
   @moduledoc """
-  EVM bitwise opcodes: AND, OR, XOR, NOT, BYTE, SHL, SHR, SAR.
+  Bitwise opcodes: AND, OR, XOR, NOT, BYTE, SHL, SHR, SAR.
 
-  ## EVM Concepts
-
-  Bitwise opcodes operate on the full 256-bit integer values on the stack.
-  There are no partial-width operations; every operand is treated as a 256-bit
-  number.
-
-  Key behaviors:
-
-  1. **NOT is bitwise complement** — it flips all 256 bits. Equivalent to XOR
-     with `max_uint256` (all bits set).
-  2. **BYTE extracts a single byte** — byte index 0 is the most significant byte
-     (big-endian). If the index is >= 32, the result is 0.
-  3. **SHL and SHR are logical shifts** — zeros fill in from the empty side.
-     Added in Constantinople via EIP-145. Shifting by >= 256 always returns 0.
-  4. **SAR is arithmetic right shift** — it preserves the sign bit, filling the
-     top bits with 1s when shifting a negative value. Added in Constantinople.
-
-  ## Elixir Learning Notes
-
-  - `import Bitwise` brings in `band/2`, `bor/2`, `bxor/2`, `bnot/1`, `<<<`,
-    and `>>>` as local functions and operators.
-  - Elixir's integers are arbitrary-precision, so left shifts don't saturate.
-    We mask with `@max_uint256` after left shifts to stay within 256 bits.
-  - SAR converts to signed via `Helpers.to_signed/1`, shifts with `>>>` (which
-    fills with 1s for negative numbers in Elixir), then converts back to uint256.
+  All operate on full 256-bit values. NOT is the 256-bit complement. BYTE is
+  big-endian (index 0 = MSB; index ≥ 32 returns 0). SHL/SHR/SAR (Constantinople,
+  EIP-145) return 0 when `shift ≥ 256`; SAR returns -1 in that case if the
+  value is negative.
   """
   import Bitwise
 
@@ -36,20 +15,18 @@ defmodule EEVM.Interpreter.Instructions.Bitwise do
   @max_uint256 (1 <<< 256) - 1
 
   @doc """
-  Dispatches and executes a bitwise opcode.
+  Executes one bitwise opcode against `state` and advances `pc`.
 
-  | Byte | Mnemonic | Operation                                         |
-  |------|----------|---------------------------------------------------|
-  | 0x16 | AND      | bitwise AND of a and b                            |
-  | 0x17 | OR       | bitwise OR of a and b                             |
-  | 0x18 | XOR      | bitwise XOR of a and b                            |
-  | 0x19 | NOT      | bitwise complement (all 256 bits flipped)          |
-  | 0x1A | BYTE     | byte at index i of x (big-endian, 0 = MSB)        |
-  | 0x1B | SHL      | logical left shift: x << shift mod 2^256          |
-  | 0x1C | SHR      | logical right shift: x >> shift                   |
-  | 0x1D | SAR      | arithmetic right shift (sign-preserving)           |
-
-  Returns `{:ok, new_state}` on success, `{:error, reason, state}` on failure.
+  | Byte | Op   | Effect                                  |
+  |------|------|-----------------------------------------|
+  | 0x16 | AND  | `a & b`                                 |
+  | 0x17 | OR   | `a | b`                                 |
+  | 0x18 | XOR  | `a ^ b`                                 |
+  | 0x19 | NOT  | bitwise complement of `a`               |
+  | 0x1A | BYTE | byte `i` of `x` (big-endian, 0 = MSB)   |
+  | 0x1B | SHL  | logical left shift                      |
+  | 0x1C | SHR  | logical right shift                     |
+  | 0x1D | SAR  | arithmetic right shift (sign-preserving)|
   """
   @spec execute(non_neg_integer(), MachineState.t()) ::
           {:ok, MachineState.t()} | {:error, atom(), MachineState.t()}
@@ -67,9 +44,6 @@ defmodule EEVM.Interpreter.Instructions.Bitwise do
     end
   end
 
-  # BYTE: big-endian byte extraction. Byte 0 is the most significant byte.
-  # `(31 - i) * 8` computes the right-shift amount so the target byte lands in
-  # the lowest 8 bits, then we mask with 0xFF to isolate it.
   def execute(0x1A, state) do
     with {:ok, i, s1} <- Stack.pop(state.stack),
          {:ok, x, s2} <- Stack.pop(s1) do
@@ -88,8 +62,6 @@ defmodule EEVM.Interpreter.Instructions.Bitwise do
     end
   end
 
-  # SHL: logical left shift. Shifting by >= 256 must return 0 because no original
-  # bits remain. We mask with @max_uint256 after shifting to stay within 256 bits.
   def execute(0x1B, state) do
     with {:ok, shift, s1} <- Stack.pop(state.stack),
          {:ok, value, s2} <- Stack.pop(s1) do
@@ -101,8 +73,6 @@ defmodule EEVM.Interpreter.Instructions.Bitwise do
     end
   end
 
-  # SHR: logical right shift. Shifting by >= 256 returns 0.
-  # Elixir's `>>>` on a non-negative integer is a logical right shift.
   def execute(0x1C, state) do
     with {:ok, shift, s1} <- Stack.pop(state.stack),
          {:ok, value, s2} <- Stack.pop(s1) do
@@ -114,9 +84,8 @@ defmodule EEVM.Interpreter.Instructions.Bitwise do
     end
   end
 
-  # SAR: arithmetic right shift. We convert to signed first so Elixir's `>>>`
-  # fills vacated high bits with 1s for negative values. If shift >= 256 and
-  # the value is negative, the result is all 1s (@max_uint256, representing -1).
+  # SAR: convert to signed first so `>>>` fills vacated high bits with 1s for
+  # negative values; clamp to `-1` (all-ones uint256) when `shift >= 256`.
   def execute(0x1D, state) do
     with {:ok, shift, s1} <- Stack.pop(state.stack),
          {:ok, value, s2} <- Stack.pop(s1) do

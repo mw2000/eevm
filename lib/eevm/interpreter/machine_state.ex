@@ -1,28 +1,12 @@
 defmodule EEVM.Interpreter.MachineState do
   @moduledoc """
-  The EVM machine state — holds all mutable state during execution.
+  Mutable per-frame execution state for `EEVM.Interpreter`.
 
-  ## EVM Concepts
-
-  The machine state consists of:
-  - **pc** (program counter): points to the current instruction
-  - **stack**: the operand stack (max 1024 elements)
-  - **memory**: byte-addressable linear memory
-  - **db**: unified external state backend (accounts + contract storage)
-  - **call_stack**: suspended parent frames during nested execution
-  - **frame return metadata**: parent memory write-back offset and size
-  - **is_static/depth**: execution mode and current call depth
-  - **gas**: remaining gas for execution
-  - **status**: whether the machine is running, stopped, or reverted
-
-  ## Elixir Learning Notes
-
-  - Structs in Elixir are just maps with a `__struct__` key. They give you
-    compile-time guarantees about which fields exist.
-  - `@enforce_keys` makes certain fields required when creating a struct.
-  - We use atoms like `:running`, `:stopped`, `:reverted` for status —
-    atoms are constants whose name IS their value (like symbols in Ruby).
-  - The `alias` keyword lets us reference modules by their short name.
+  Bundles the program counter, stack, memory, gas counter, status, accessed
+  set (EIP-2929), refund counter, transient storage (EIP-1153), call stack,
+  and the surrounding `EEVM.Context.{Block, Transaction, Contract}` and
+  `EEVM.Database`. Pushing/popping a `CallFrame` swaps the active frame in
+  place and restores the parent's memory, code, and gas on return.
   """
 
   alias EEVM.Tracer
@@ -202,21 +186,17 @@ defmodule EEVM.Interpreter.MachineState do
   def current_opcode(_state), do: nil
 
   @doc """
-  Reads `n` bytes from the code starting at `offset`.
-
-  Used by PUSH instructions to read their immediate data.
+  Reads `n` bytes of code starting at `offset`, zero-padding past the end.
   """
   @spec read_code(t(), non_neg_integer(), non_neg_integer()) :: binary()
   def read_code(%__MODULE__{code: code}, offset, n) do
     code_size = byte_size(code)
 
     if offset >= code_size do
-      # Past end of code — return zeros (EVM spec: treat as 0x00)
       <<0::size(n * 8)>>
     else
       available = min(n, code_size - offset)
       chunk = binary_part(code, offset, available)
-      # Pad with zeros if we read past the end
       padding_size = (n - available) * 8
       <<chunk::binary, 0::size(padding_size)>>
     end
@@ -300,16 +280,7 @@ defmodule EEVM.Interpreter.MachineState do
   end
 
   @doc """
-  Deducts gas from the machine state.
-
-  Returns `{:ok, updated_state}` if sufficient gas remains, or
-  `{:error, :out_of_gas, state}` if the gas would go negative.
-
-  ## Elixir Learning Note
-
-  This uses a guard clause (`when cost <= gas`) to branch at the function
-  head level — no `if/else` needed. The first clause matches when we have
-  enough gas, the second is the fallback.
+  Deducts `cost` gas. Returns `{:error, :out_of_gas, halted_state}` on underflow.
   """
   @spec consume_gas(t(), non_neg_integer()) :: {:ok, t()} | {:error, :out_of_gas, t()}
   def consume_gas(%__MODULE__{gas: gas} = state, cost) when cost <= gas do

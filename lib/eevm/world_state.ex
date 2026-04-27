@@ -1,29 +1,12 @@
 defmodule EEVM.WorldState do
   @moduledoc """
-  Minimal world/account state used for external account lookups.
+  Account-keyed view of the world state used by external inspection opcodes
+  (EXTCODESIZE/COPY/HASH) and by transaction-level account mutations.
 
-  ## EVM Concepts
-
-  The EVM distinguishes between the current execution frame and global account state.
-  `EEVM.Interpreter.MachineState` stores frame-local execution data (pc, stack, memory), while
-  this module stores account-level data used by external inspection opcodes:
-
-  - `EXTCODESIZE` (0x3B)
-  - `EXTCODECOPY` (0x3C)
-  - `EXTCODEHASH` (0x3F)
-
-  The state is intentionally minimal for this learning implementation. Each account
-  can include `:balance`, `:nonce`, `:code`, and `:storage`. Missing accounts behave
-  like non-existent EVM accounts: no code and zero balance.
-
-  ## Elixir Learning Notes
-
-  - The world state is represented as a struct wrapping a map keyed by numeric
-    addresses.
-  - Optional map keys let account records stay lightweight while preserving a
-    clear shape via typespecs.
-  - `Map.get/3` gives spec-friendly defaults (`<<>>` for code, `0` for balance)
-    without introducing special sentinel values.
+  Wraps `%{address => %{balance, nonce, code, storage}}`. Missing accounts
+  read as zero balance / zero nonce / empty code, so callers don't need to
+  pre-create entries before reading. `delete_account/2` is used by
+  SELFDESTRUCT under EIP-6780 (same-tx create-then-destruct).
   """
 
   alias EEVM.Storage
@@ -82,13 +65,7 @@ defmodule EEVM.WorldState do
     %{world_state | accounts: Map.put(accounts, address, account)}
   end
 
-  @doc """
-  Removes an account entirely from the world state.
-
-  Used by SELFDESTRUCT under EIP-6780: when a contract is created and
-  self-destructed within the same transaction, the account is fully deleted
-  (balance, nonce, code, and storage are all removed).
-  """
+  @doc "Removes an account entirely (SELFDESTRUCT same-tx case under EIP-6780)."
   @spec delete_account(t(), non_neg_integer()) :: t()
   def delete_account(%__MODULE__{accounts: accounts} = world_state, address) do
     %{world_state | accounts: Map.delete(accounts, address)}
