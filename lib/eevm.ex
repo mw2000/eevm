@@ -1,37 +1,31 @@
 defmodule EEVM do
   @moduledoc """
-  EEVM — An Ethereum Virtual Machine implementation in Elixir.
+  EEVM — Ethereum Virtual Machine implementation in Elixir.
 
-  This is a learning project that implements the core EVM execution engine.
-  It supports basic arithmetic, stack manipulation, memory operations,
-  and control flow opcodes.
+  Hardfork-aware execution engine covering Frontier through Prague: full
+  opcode set, all precompiles (including BLS12-381 via NIF), transaction
+  validation and processing, MPT-backed state root, and a harness for the
+  official `ethereum/tests` `GeneralStateTests` suite.
 
   ## Quick Start
 
-      # Execute raw bytecode: PUSH1 2, PUSH1 3, ADD, STOP
       iex> result = EEVM.execute(<<0x60, 2, 0x60, 3, 0x01, 0x00>>)
       iex> result.status
       :stopped
       iex> EEVM.stack_values(result)
       [5]
 
-  ## Architecture
+  ## Module Map
 
-  - `EEVM.Interpreter.Stack` — LIFO stack (max 1024, uint256 values)
-  - `EEVM.Interpreter.Memory` — Byte-addressable linear memory
-  - `EEVM.Interpreter.MachineState` — Combined execution state
-  - `EEVM.Interpreter.Instructions.Registry` — Opcode definitions and metadata
-  - `EEVM.Interpreter` — The fetch-decode-execute loop
-
-  ## Elixir Concepts Demonstrated
-
-  - **Structs & Maps** — Data structures with compile-time field checks
-  - **Pattern Matching** — Multi-clause functions, destructuring
-  - **Tagged Tuples** — `{:ok, val}` / `{:error, reason}` error handling
-  - **Recursion** — Tail-recursive execution loop (no mutable state)
-  - **Bitwise Operations** — Working with 256-bit integers
-  - **Module Attributes** — Compile-time constants
-  - **Typespecs** — `@spec` annotations for documentation and Dialyzer
+  - `EEVM.Interpreter` — fetch-decode-execute loop and call frames
+  - `EEVM.Interpreter.MachineState` — frame-local state (pc, stack, memory, gas)
+  - `EEVM.Precompiles` — registered precompiles (`0x01`–`0x11`)
+  - `EEVM.Transaction` — envelope decoding, validation, signing, intrinsic gas
+  - `EEVM.Block.Processor` — end-to-end transaction-to-receipt pipeline
+  - `EEVM.Database`, `EEVM.WorldState`, `EEVM.Storage` — account and storage state
+  - `EEVM.MPT.Trie` + `EEVM.StateRoot` — Merkle-Patricia trie and state-root hash
+  - `EEVM.HardforkConfig` — per-hardfork EIP activation flags
+  - `EEVM.SystemContracts` — EIP-2935 (block hashes) and EIP-4788 (beacon roots)
   """
 
   alias EEVM.{Interpreter, Tracer}

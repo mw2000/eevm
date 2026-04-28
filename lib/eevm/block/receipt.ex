@@ -15,7 +15,7 @@ defmodule EEVM.Block.Receipt do
     this transaction. Per the Yellow Paper, receipts are ordered and the
     `cumulative_gas_used` of the last receipt equals the block's `gas_used`.
   - `logs` — every log entry emitted by this transaction, in emission order.
-    Each log is a map matching `EEVM.Block.Bloom.log_entry/0`.
+    Each log is a map matching `t:EEVM.Block.Bloom.log_entry/0`.
   - `logs_bloom` — the 2048-bit bloom filter over this receipt's logs, i.e.
     `EEVM.Block.Bloom.from_logs(logs)`. We store it pre-computed so block-level
     aggregation is a fast bytewise OR.
