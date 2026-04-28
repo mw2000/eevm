@@ -1,15 +1,38 @@
 defmodule EEVM.Interpreter.Instructions.Registry do
   @moduledoc """
-  Opcode metadata registry — maps opcode bytes to names and stack I/O signatures.
+  Opcode metadata registry — single source of truth for every opcode's name,
+  stack I/O signature, implementing module, and static-context flag.
 
-  This module is the single source of truth for opcode metadata. Given an opcode byte
-  (0x00–0xFF), it returns the human-readable name, the number of stack inputs consumed,
-  and the number of stack outputs produced. This information is used by the disassembler
-  and can be used to validate stack depth statically.
+  Given an opcode byte (0x00–0xFF) `info/1` returns:
+
+  - `:name` — the human-readable mnemonic (e.g. `"ADD"`)
+  - `:inputs` / `:outputs` — stack arity, used by the disassembler and stack-depth checks
+  - `:module` — the `EEVM.Interpreter.Instructions.*` module that implements
+    the opcode; `EEVM.Interpreter` dispatches on this field
+  - `:state_mutating` (when present) — opcode mutates persistent state and must
+    halt with `:reverted` if executed inside a STATICCALL frame
 
   PUSH1–PUSH32, DUP1–DUP16, and SWAP1–SWAP16 are generated dynamically from their
   opcode ranges rather than stored in the static map.
   """
+
+  alias EEVM.Interpreter.Instructions.{
+    Arithmetic,
+    Bitwise,
+    Comparison,
+    ControlFlow,
+    Crypto,
+    Environment.Data,
+    Environment.External,
+    Environment.Simple,
+    Logging,
+    StackMemoryStorage.MemoryOps,
+    StackMemoryStorage.StackOps,
+    StackMemoryStorage.StorageOps,
+    System.Calls,
+    System.Creation,
+    System.Termination
+  }
 
   @stop 0x00
   @add 0x01
@@ -111,107 +134,113 @@ defmodule EEVM.Interpreter.Instructions.Registry do
   @invalid 0xFE
 
   @opcodes %{
-    @stop => %{name: "STOP", inputs: 0, outputs: 0},
-    @add => %{name: "ADD", inputs: 2, outputs: 1},
-    @mul => %{name: "MUL", inputs: 2, outputs: 1},
-    @sub => %{name: "SUB", inputs: 2, outputs: 1},
-    @div_ => %{name: "DIV", inputs: 2, outputs: 1},
-    @sdiv => %{name: "SDIV", inputs: 2, outputs: 1},
-    @mod => %{name: "MOD", inputs: 2, outputs: 1},
-    @smod => %{name: "SMOD", inputs: 2, outputs: 1},
-    @addmod => %{name: "ADDMOD", inputs: 3, outputs: 1},
-    @mulmod => %{name: "MULMOD", inputs: 3, outputs: 1},
-    @exp => %{name: "EXP", inputs: 2, outputs: 1},
-    @signextend => %{name: "SIGNEXTEND", inputs: 2, outputs: 1},
-    @keccak256 => %{name: "KECCAK256", inputs: 2, outputs: 1},
-    @lt => %{name: "LT", inputs: 2, outputs: 1},
-    @gt => %{name: "GT", inputs: 2, outputs: 1},
-    @slt => %{name: "SLT", inputs: 2, outputs: 1},
-    @sgt => %{name: "SGT", inputs: 2, outputs: 1},
-    @eq => %{name: "EQ", inputs: 2, outputs: 1},
-    @iszero => %{name: "ISZERO", inputs: 1, outputs: 1},
-    @and_ => %{name: "AND", inputs: 2, outputs: 1},
-    @or_ => %{name: "OR", inputs: 2, outputs: 1},
-    @xor_ => %{name: "XOR", inputs: 2, outputs: 1},
-    @not_ => %{name: "NOT", inputs: 1, outputs: 1},
-    @byte_ => %{name: "BYTE", inputs: 2, outputs: 1},
-    @shl => %{name: "SHL", inputs: 2, outputs: 1},
-    @shr => %{name: "SHR", inputs: 2, outputs: 1},
-    @sar => %{name: "SAR", inputs: 2, outputs: 1},
-    @address => %{name: "ADDRESS", inputs: 0, outputs: 1},
-    @balance => %{name: "BALANCE", inputs: 1, outputs: 1},
-    @origin => %{name: "ORIGIN", inputs: 0, outputs: 1},
-    @caller => %{name: "CALLER", inputs: 0, outputs: 1},
-    @callvalue => %{name: "CALLVALUE", inputs: 0, outputs: 1},
-    @calldataload => %{name: "CALLDATALOAD", inputs: 1, outputs: 1},
-    @calldatasize => %{name: "CALLDATASIZE", inputs: 0, outputs: 1},
-    @calldatacopy => %{name: "CALLDATACOPY", inputs: 3, outputs: 0},
-    @codecopy => %{name: "CODECOPY", inputs: 3, outputs: 0},
-    @extcodecopy => %{name: "EXTCODECOPY", inputs: 4, outputs: 0},
-    @returndatacopy => %{name: "RETURNDATACOPY", inputs: 3, outputs: 0},
-    @codesize => %{name: "CODESIZE", inputs: 0, outputs: 1},
-    @extcodesize => %{name: "EXTCODESIZE", inputs: 1, outputs: 1},
-    @gasprice => %{name: "GASPRICE", inputs: 0, outputs: 1},
-    @returndatasize => %{name: "RETURNDATASIZE", inputs: 0, outputs: 1},
-    @extcodehash => %{name: "EXTCODEHASH", inputs: 1, outputs: 1},
-    @blockhash => %{name: "BLOCKHASH", inputs: 1, outputs: 1},
-    @coinbase => %{name: "COINBASE", inputs: 0, outputs: 1},
-    @timestamp => %{name: "TIMESTAMP", inputs: 0, outputs: 1},
-    @number => %{name: "NUMBER", inputs: 0, outputs: 1},
-    @prevrandao => %{name: "PREVRANDAO", inputs: 0, outputs: 1},
-    @gaslimit => %{name: "GASLIMIT", inputs: 0, outputs: 1},
-    @chainid => %{name: "CHAINID", inputs: 0, outputs: 1},
-    @selfbalance => %{name: "SELFBALANCE", inputs: 0, outputs: 1},
-    @basefee => %{name: "BASEFEE", inputs: 0, outputs: 1},
-    @blobhash => %{name: "BLOBHASH", inputs: 1, outputs: 1},
-    @blobbasefee => %{name: "BLOBBASEFEE", inputs: 0, outputs: 1},
-    @gas_ => %{name: "GAS", inputs: 0, outputs: 1},
-    @push0 => %{name: "PUSH0", inputs: 0, outputs: 1},
-    @pop => %{name: "POP", inputs: 1, outputs: 0},
-    @mload => %{name: "MLOAD", inputs: 1, outputs: 1},
-    @mstore => %{name: "MSTORE", inputs: 2, outputs: 0},
-    @mstore8 => %{name: "MSTORE8", inputs: 2, outputs: 0},
-    @sload => %{name: "SLOAD", inputs: 1, outputs: 1},
-    @sstore => %{name: "SSTORE", inputs: 2, outputs: 0},
-    @tload => %{name: "TLOAD", inputs: 1, outputs: 1},
-    @tstore => %{name: "TSTORE", inputs: 2, outputs: 0},
-    @msize => %{name: "MSIZE", inputs: 0, outputs: 1},
-    @mcopy => %{name: "MCOPY", inputs: 3, outputs: 0},
-    @jump => %{name: "JUMP", inputs: 1, outputs: 0},
-    @jumpi => %{name: "JUMPI", inputs: 2, outputs: 0},
-    @pc => %{name: "PC", inputs: 0, outputs: 1},
-    @jumpdest => %{name: "JUMPDEST", inputs: 0, outputs: 0},
-    @log0 => %{name: "LOG0", inputs: 2, outputs: 0},
-    @log1 => %{name: "LOG1", inputs: 3, outputs: 0},
-    @log2 => %{name: "LOG2", inputs: 4, outputs: 0},
-    @log3 => %{name: "LOG3", inputs: 5, outputs: 0},
-    @log4 => %{name: "LOG4", inputs: 6, outputs: 0},
-    @create => %{name: "CREATE", inputs: 3, outputs: 1},
-    @call => %{name: "CALL", inputs: 7, outputs: 1},
-    @callcode => %{name: "CALLCODE", inputs: 7, outputs: 1},
-    @delegatecall => %{name: "DELEGATECALL", inputs: 6, outputs: 1},
-    @create2 => %{name: "CREATE2", inputs: 4, outputs: 1},
-    @staticcall => %{name: "STATICCALL", inputs: 6, outputs: 1},
-    @return_ => %{name: "RETURN", inputs: 2, outputs: 0},
-    @revert => %{name: "REVERT", inputs: 2, outputs: 0},
-    @invalid => %{name: "INVALID", inputs: 0, outputs: 0},
-    @selfdestruct => %{name: "SELFDESTRUCT", inputs: 1, outputs: 0}
+    @stop => %{name: "STOP", inputs: 0, outputs: 0, module: Termination},
+    @add => %{name: "ADD", inputs: 2, outputs: 1, module: Arithmetic},
+    @mul => %{name: "MUL", inputs: 2, outputs: 1, module: Arithmetic},
+    @sub => %{name: "SUB", inputs: 2, outputs: 1, module: Arithmetic},
+    @div_ => %{name: "DIV", inputs: 2, outputs: 1, module: Arithmetic},
+    @sdiv => %{name: "SDIV", inputs: 2, outputs: 1, module: Arithmetic},
+    @mod => %{name: "MOD", inputs: 2, outputs: 1, module: Arithmetic},
+    @smod => %{name: "SMOD", inputs: 2, outputs: 1, module: Arithmetic},
+    @addmod => %{name: "ADDMOD", inputs: 3, outputs: 1, module: Arithmetic},
+    @mulmod => %{name: "MULMOD", inputs: 3, outputs: 1, module: Arithmetic},
+    @exp => %{name: "EXP", inputs: 2, outputs: 1, module: Arithmetic},
+    @signextend => %{name: "SIGNEXTEND", inputs: 2, outputs: 1, module: Arithmetic},
+    @keccak256 => %{name: "KECCAK256", inputs: 2, outputs: 1, module: Crypto},
+    @lt => %{name: "LT", inputs: 2, outputs: 1, module: Comparison},
+    @gt => %{name: "GT", inputs: 2, outputs: 1, module: Comparison},
+    @slt => %{name: "SLT", inputs: 2, outputs: 1, module: Comparison},
+    @sgt => %{name: "SGT", inputs: 2, outputs: 1, module: Comparison},
+    @eq => %{name: "EQ", inputs: 2, outputs: 1, module: Comparison},
+    @iszero => %{name: "ISZERO", inputs: 1, outputs: 1, module: Comparison},
+    @and_ => %{name: "AND", inputs: 2, outputs: 1, module: Bitwise},
+    @or_ => %{name: "OR", inputs: 2, outputs: 1, module: Bitwise},
+    @xor_ => %{name: "XOR", inputs: 2, outputs: 1, module: Bitwise},
+    @not_ => %{name: "NOT", inputs: 1, outputs: 1, module: Bitwise},
+    @byte_ => %{name: "BYTE", inputs: 2, outputs: 1, module: Bitwise},
+    @shl => %{name: "SHL", inputs: 2, outputs: 1, module: Bitwise},
+    @shr => %{name: "SHR", inputs: 2, outputs: 1, module: Bitwise},
+    @sar => %{name: "SAR", inputs: 2, outputs: 1, module: Bitwise},
+    @address => %{name: "ADDRESS", inputs: 0, outputs: 1, module: Simple},
+    @balance => %{name: "BALANCE", inputs: 1, outputs: 1, module: External},
+    @origin => %{name: "ORIGIN", inputs: 0, outputs: 1, module: Simple},
+    @caller => %{name: "CALLER", inputs: 0, outputs: 1, module: Simple},
+    @callvalue => %{name: "CALLVALUE", inputs: 0, outputs: 1, module: Simple},
+    @calldataload => %{name: "CALLDATALOAD", inputs: 1, outputs: 1, module: Data},
+    @calldatasize => %{name: "CALLDATASIZE", inputs: 0, outputs: 1, module: Simple},
+    @calldatacopy => %{name: "CALLDATACOPY", inputs: 3, outputs: 0, module: Data},
+    @codecopy => %{name: "CODECOPY", inputs: 3, outputs: 0, module: Data},
+    @extcodecopy => %{name: "EXTCODECOPY", inputs: 4, outputs: 0, module: External},
+    @returndatacopy => %{name: "RETURNDATACOPY", inputs: 3, outputs: 0, module: Data},
+    @codesize => %{name: "CODESIZE", inputs: 0, outputs: 1, module: Simple},
+    @extcodesize => %{name: "EXTCODESIZE", inputs: 1, outputs: 1, module: External},
+    @gasprice => %{name: "GASPRICE", inputs: 0, outputs: 1, module: Simple},
+    @returndatasize => %{name: "RETURNDATASIZE", inputs: 0, outputs: 1, module: Simple},
+    @extcodehash => %{name: "EXTCODEHASH", inputs: 1, outputs: 1, module: External},
+    @blockhash => %{name: "BLOCKHASH", inputs: 1, outputs: 1, module: Simple},
+    @coinbase => %{name: "COINBASE", inputs: 0, outputs: 1, module: Simple},
+    @timestamp => %{name: "TIMESTAMP", inputs: 0, outputs: 1, module: Simple},
+    @number => %{name: "NUMBER", inputs: 0, outputs: 1, module: Simple},
+    @prevrandao => %{name: "PREVRANDAO", inputs: 0, outputs: 1, module: Simple},
+    @gaslimit => %{name: "GASLIMIT", inputs: 0, outputs: 1, module: Simple},
+    @chainid => %{name: "CHAINID", inputs: 0, outputs: 1, module: Simple},
+    @selfbalance => %{name: "SELFBALANCE", inputs: 0, outputs: 1, module: External},
+    @basefee => %{name: "BASEFEE", inputs: 0, outputs: 1, module: Simple},
+    @blobhash => %{name: "BLOBHASH", inputs: 1, outputs: 1, module: Simple},
+    @blobbasefee => %{name: "BLOBBASEFEE", inputs: 0, outputs: 1, module: Simple},
+    @gas_ => %{name: "GAS", inputs: 0, outputs: 1, module: Simple},
+    @push0 => %{name: "PUSH0", inputs: 0, outputs: 1, module: ControlFlow},
+    @pop => %{name: "POP", inputs: 1, outputs: 0, module: StackOps},
+    @mload => %{name: "MLOAD", inputs: 1, outputs: 1, module: MemoryOps},
+    @mstore => %{name: "MSTORE", inputs: 2, outputs: 0, module: MemoryOps},
+    @mstore8 => %{name: "MSTORE8", inputs: 2, outputs: 0, module: MemoryOps},
+    @sload => %{name: "SLOAD", inputs: 1, outputs: 1, module: StorageOps},
+    @sstore => %{name: "SSTORE", inputs: 2, outputs: 0, module: StorageOps, state_mutating: true},
+    @tload => %{name: "TLOAD", inputs: 1, outputs: 1, module: StorageOps},
+    @tstore => %{name: "TSTORE", inputs: 2, outputs: 0, module: StorageOps, state_mutating: true},
+    @msize => %{name: "MSIZE", inputs: 0, outputs: 1, module: MemoryOps},
+    @mcopy => %{name: "MCOPY", inputs: 3, outputs: 0, module: MemoryOps},
+    @jump => %{name: "JUMP", inputs: 1, outputs: 0, module: ControlFlow},
+    @jumpi => %{name: "JUMPI", inputs: 2, outputs: 0, module: ControlFlow},
+    @pc => %{name: "PC", inputs: 0, outputs: 1, module: ControlFlow},
+    @jumpdest => %{name: "JUMPDEST", inputs: 0, outputs: 0, module: ControlFlow},
+    @log0 => %{name: "LOG0", inputs: 2, outputs: 0, module: Logging, state_mutating: true},
+    @log1 => %{name: "LOG1", inputs: 3, outputs: 0, module: Logging, state_mutating: true},
+    @log2 => %{name: "LOG2", inputs: 4, outputs: 0, module: Logging, state_mutating: true},
+    @log3 => %{name: "LOG3", inputs: 5, outputs: 0, module: Logging, state_mutating: true},
+    @log4 => %{name: "LOG4", inputs: 6, outputs: 0, module: Logging, state_mutating: true},
+    @create => %{name: "CREATE", inputs: 3, outputs: 1, module: Creation, state_mutating: true},
+    @call => %{name: "CALL", inputs: 7, outputs: 1, module: Calls},
+    @callcode => %{name: "CALLCODE", inputs: 7, outputs: 1, module: Calls},
+    @delegatecall => %{name: "DELEGATECALL", inputs: 6, outputs: 1, module: Calls},
+    @create2 => %{name: "CREATE2", inputs: 4, outputs: 1, module: Creation, state_mutating: true},
+    @staticcall => %{name: "STATICCALL", inputs: 6, outputs: 1, module: Calls},
+    @return_ => %{name: "RETURN", inputs: 2, outputs: 0, module: Termination},
+    @revert => %{name: "REVERT", inputs: 2, outputs: 0, module: Termination},
+    @invalid => %{name: "INVALID", inputs: 0, outputs: 0, module: Termination},
+    @selfdestruct => %{
+      name: "SELFDESTRUCT",
+      inputs: 1,
+      outputs: 0,
+      module: Termination,
+      state_mutating: true
+    }
   }
 
   @spec info(non_neg_integer()) :: {:ok, map()} | {:error, :unknown_opcode}
   def info(op) when op >= @push1 and op <= @push32 do
     n = op - @push1 + 1
-    {:ok, %{name: "PUSH#{n}", inputs: 0, outputs: 1, push_bytes: n}}
+    {:ok, %{name: "PUSH#{n}", inputs: 0, outputs: 1, push_bytes: n, module: ControlFlow}}
   end
 
   def info(op) when op >= @dup1 and op <= @dup16 do
     n = op - @dup1 + 1
-    {:ok, %{name: "DUP#{n}", inputs: n, outputs: n + 1, dup_depth: n - 1}}
+    {:ok, %{name: "DUP#{n}", inputs: n, outputs: n + 1, dup_depth: n - 1, module: ControlFlow}}
   end
 
   def info(op) when op >= @swap1 and op <= @swap16 do
     n = op - @swap1 + 1
-    {:ok, %{name: "SWAP#{n}", inputs: n + 1, outputs: n + 1, swap_depth: n}}
+    {:ok, %{name: "SWAP#{n}", inputs: n + 1, outputs: n + 1, swap_depth: n, module: ControlFlow}}
   end
 
   def info(op) do
