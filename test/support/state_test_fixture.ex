@@ -6,6 +6,8 @@ defmodule EEVM.TestSupport.StateTestFixture do
   @empty_logs_hash "0x1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347"
 
   defmodule Case do
+    @moduledoc false
+
     @type t :: %__MODULE__{
             name: String.t(),
             env: EEVM.TestSupport.StateTestFixture.Env.t(),
@@ -23,6 +25,8 @@ defmodule EEVM.TestSupport.StateTestFixture do
   end
 
   defmodule Env do
+    @moduledoc false
+
     @type t :: %__MODULE__{
             coinbase: non_neg_integer(),
             number: non_neg_integer(),
@@ -49,6 +53,8 @@ defmodule EEVM.TestSupport.StateTestFixture do
   end
 
   defmodule TransactionTemplate do
+    @moduledoc false
+
     @type t :: %__MODULE__{
             nonce: non_neg_integer(),
             secret_key: binary(),
@@ -83,6 +89,8 @@ defmodule EEVM.TestSupport.StateTestFixture do
   end
 
   defmodule PostExpectation do
+    @moduledoc false
+
     @type t :: %__MODULE__{
             hardfork: EEVM.HardforkConfig.spec_id(),
             hash: binary(),

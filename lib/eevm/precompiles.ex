@@ -32,17 +32,17 @@ defmodule EEVM.Precompiles do
 
   alias EEVM.Config
   alias EEVM.HardforkConfig
-  alias EEVM.Precompiles.BN256Add
-  alias EEVM.Precompiles.BN256Mul
-  alias EEVM.Precompiles.BN256Pairing
-  alias EEVM.Precompiles.BLS12MapFp2ToG2
-  alias EEVM.Precompiles.BLS12MapFpToG1
-  alias EEVM.Precompiles.BLS12Pairing
+  alias EEVM.Precompiles.Blake2F
   alias EEVM.Precompiles.BLS12G1Add
   alias EEVM.Precompiles.BLS12G1MSM
   alias EEVM.Precompiles.BLS12G2Add
   alias EEVM.Precompiles.BLS12G2MSM
-  alias EEVM.Precompiles.Blake2F
+  alias EEVM.Precompiles.BLS12MapFp2ToG2
+  alias EEVM.Precompiles.BLS12MapFpToG1
+  alias EEVM.Precompiles.BLS12Pairing
+  alias EEVM.Precompiles.BN256Add
+  alias EEVM.Precompiles.BN256Mul
+  alias EEVM.Precompiles.BN256Pairing
   alias EEVM.Precompiles.ECRecover
   alias EEVM.Precompiles.Identity
   alias EEVM.Precompiles.KZGPointEval

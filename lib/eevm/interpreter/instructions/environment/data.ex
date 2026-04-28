@@ -9,10 +9,10 @@ defmodule EEVM.Interpreter.Instructions.Environment.Data do
   and RETURNDATACOPY (0x3E).
   """
 
-  alias EEVM.Interpreter.{MachineState, Memory, Stack}
+  alias EEVM.Context.Contract
   alias EEVM.Gas.Dynamic
   alias EEVM.Gas.Memory, as: GasMemory
-  alias EEVM.Context.Contract
+  alias EEVM.Interpreter.{MachineState, Memory, Stack}
 
   @spec execute(non_neg_integer(), MachineState.t()) ::
           {:ok, MachineState.t()} | {:error, atom(), MachineState.t()}

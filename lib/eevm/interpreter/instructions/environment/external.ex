@@ -10,13 +10,13 @@ defmodule EEVM.Interpreter.Instructions.Environment.External do
   EXTCODEHASH (0x3F), and SELFBALANCE (0x47).
   """
 
+  alias EEVM.Context.Contract
   alias EEVM.Database
-  alias EEVM.Interpreter.{MachineState, Memory, Stack}
   alias EEVM.Gas.Access
   alias EEVM.Gas.Dynamic
   alias EEVM.Gas.Memory, as: GasMemory
-  alias EEVM.Context.Contract
   alias EEVM.Interpreter.Instructions.Helpers
+  alias EEVM.Interpreter.{MachineState, Memory, Stack}
 
   @spec execute(non_neg_integer(), MachineState.t()) ::
           {:ok, MachineState.t()} | {:error, atom(), MachineState.t()}

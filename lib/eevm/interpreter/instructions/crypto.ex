@@ -26,9 +26,9 @@ defmodule EEVM.Interpreter.Instructions.Crypto do
   - The binary pattern `<<hash_int::unsigned-big-256>>` decodes the raw 32-byte
     hash binary into a single 256-bit unsigned integer in one step.
   """
-  alias EEVM.Interpreter.{MachineState, Memory, Stack}
   alias EEVM.Gas.Dynamic
   alias EEVM.Gas.Memory, as: GasMemory
+  alias EEVM.Interpreter.{MachineState, Memory, Stack}
 
   @doc """
   Hashes a region of memory with Keccak-256 and pushes the result.

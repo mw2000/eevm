@@ -25,8 +25,8 @@ defmodule EEVM.Interpreter.CallFrame do
     needed to suspend and restore execution.
   """
 
-  alias EEVM.Interpreter.{Memory, Stack}
   alias EEVM.Context.Contract
+  alias EEVM.Interpreter.{Memory, Stack}
 
   @type t :: %__MODULE__{
           code: binary(),

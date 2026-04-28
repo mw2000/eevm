@@ -17,9 +17,9 @@ defmodule EEVM.Interpreter.Instructions.Logging do
   - `binary_part/3` extracts a slice from a binary — used to read log data from memory bytes.
   """
 
-  alias EEVM.Interpreter.{MachineState, Memory, Stack}
   alias EEVM.Gas.Dynamic
   alias EEVM.Gas.Memory, as: GasMemory
+  alias EEVM.Interpreter.{MachineState, Memory, Stack}
 
   @doc """
   Dispatches a LOG opcode (LOG0–LOG4) to the matching topic-count handler.

@@ -17,11 +17,12 @@ defmodule EEVM.Interpreter.Instructions.System.Calls do
   All call opcodes use EIP-150 gas forwarding: `min(requested, available - available/64)`.
   """
 
-  alias EEVM.{Database, Interpreter}
-  alias EEVM.Interpreter.{Journal, MachineState, Memory, Stack}
+  alias EEVM.Context.Contract
+  alias EEVM.Database
   alias EEVM.Gas.Dynamic
   alias EEVM.Gas.Memory, as: GasMemory
-  alias EEVM.Context.Contract
+  alias EEVM.Interpreter
+  alias EEVM.Interpreter.{Journal, MachineState, Memory, Stack}
   alias EEVM.Precompiles
 
   @spec execute(non_neg_integer(), MachineState.t()) ::

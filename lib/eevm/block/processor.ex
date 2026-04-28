@@ -62,9 +62,10 @@ defmodule EEVM.Block.Processor do
   """
 
   alias EEVM.Block.{Bloom, Header, Receipt, Result}
-  alias EEVM.{Database, StateRoot}
   alias EEVM.Context.Block, as: BlockCtx
+  alias EEVM.Database
   alias EEVM.MPT.Trie
+  alias EEVM.StateRoot
   alias EEVM.Transaction.Envelope
 
   @type tx_result :: %{

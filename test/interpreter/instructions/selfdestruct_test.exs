@@ -1,9 +1,10 @@
 defmodule EEVM.Interpreter.Instructions.SelfdestructTest do
   use ExUnit.Case, async: true
 
-  alias EEVM.{Database, WorldState}
   alias EEVM.Context.Contract
+  alias EEVM.Database
   alias EEVM.Gas.Static
+  alias EEVM.WorldState
 
   describe "SELFDESTRUCT (0xFF) - EIP-6780 post-Cancun" do
     test "transfers balance to beneficiary" do

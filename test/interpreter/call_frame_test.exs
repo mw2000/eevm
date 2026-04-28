@@ -1,9 +1,9 @@
 defmodule EEVM.CallFrameTest do
   use ExUnit.Case, async: true
 
+  alias EEVM.Context.Contract
   alias EEVM.Interpreter
   alias EEVM.Interpreter.{CallFrame, MachineState, Memory, Stack}
-  alias EEVM.Context.Contract
 
   test "push_frame stores parent frame and switches execution context" do
     parent_state = MachineState.new(<<0x00>>, contract: Contract.new(address: 1), gas: 1000)

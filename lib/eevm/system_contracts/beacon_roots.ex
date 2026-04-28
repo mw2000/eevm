@@ -50,9 +50,11 @@ defmodule EEVM.SystemContracts.BeaconRoots do
     small for higher layers that aren't yet aware of full EVM state.
   """
 
-  alias EEVM.{Database, HardforkConfig, Interpreter}
-  alias EEVM.Interpreter.MachineState
   alias EEVM.Context.{Block, Contract, Transaction}
+  alias EEVM.Database
+  alias EEVM.HardforkConfig
+  alias EEVM.Interpreter
+  alias EEVM.Interpreter.MachineState
 
   @address 0x000F3DF6D732807EF1319FB7B8BB8522D0BEAC02
   @system_address 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFE

@@ -49,7 +49,7 @@ defmodule EEVM.Precompiles.BN256 do
     arbitrary-precision integers for coordinate parsing.
   """
 
-  alias BN.{FQ, FQ2, BN128Arithmetic, Pairing}
+  alias BN.{BN128Arithmetic, FQ, FQ2, Pairing}
 
   @field_modulus 21_888_242_871_839_275_222_246_405_745_257_275_088_696_311_157_297_823_662_689_037_894_645_226_208_583
 

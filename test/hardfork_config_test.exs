@@ -1,9 +1,10 @@
 defmodule EEVM.HardforkConfigTest do
   use ExUnit.Case, async: true
 
-  alias EEVM.HardforkConfig
   alias EEVM.Context.Contract
-  alias EEVM.{Database, WorldState}
+  alias EEVM.Database
+  alias EEVM.HardforkConfig
+  alias EEVM.WorldState
 
   # ---------------------------------------------------------------------------
   # HardforkConfig.enabled?/2 unit tests

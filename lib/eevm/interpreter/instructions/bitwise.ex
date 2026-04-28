@@ -30,8 +30,8 @@ defmodule EEVM.Interpreter.Instructions.Bitwise do
   """
   import Bitwise
 
-  alias EEVM.Interpreter.{MachineState, Stack}
   alias EEVM.Interpreter.Instructions.Helpers
+  alias EEVM.Interpreter.{MachineState, Stack}
 
   @max_uint256 (1 <<< 256) - 1
 

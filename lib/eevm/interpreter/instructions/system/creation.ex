@@ -20,11 +20,13 @@ defmodule EEVM.Interpreter.Instructions.System.Creation do
   @max_initcode_size 49_152
   @initcode_word_cost 2
 
-  alias EEVM.{Database, HardforkConfig, Interpreter}
-  alias EEVM.Interpreter.{Journal, MachineState, Memory, Stack}
+  alias EEVM.Context.Contract
+  alias EEVM.Database
   alias EEVM.Gas.Dynamic
   alias EEVM.Gas.Memory, as: GasMemory
-  alias EEVM.Context.Contract
+  alias EEVM.HardforkConfig
+  alias EEVM.Interpreter
+  alias EEVM.Interpreter.{Journal, MachineState, Memory, Stack}
 
   @spec execute(non_neg_integer(), MachineState.t()) ::
           {:ok, MachineState.t()} | {:error, atom(), MachineState.t()}

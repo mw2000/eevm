@@ -16,11 +16,12 @@ defmodule EEVM.Handler.PostExecution do
     struct that callers consume.
   """
 
-  alias EEVM.{Database, TransactionResult}
   alias EEVM.Block.Bloom
   alias EEVM.Context.{Block, Transaction}
+  alias EEVM.Database
   alias EEVM.Handler.{PreExecution, Validation}
   alias EEVM.Interpreter.MachineState
+  alias EEVM.TransactionResult
 
   @spec finalize(
           MachineState.t(),

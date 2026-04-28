@@ -13,8 +13,7 @@ defmodule EEVM.Config do
           precompiles: %{optional(non_neg_integer()) => module()}
         }
 
-  defstruct hardfork: nil,
-            precompiles: %{}
+  defstruct [:hardfork, precompiles: %{}]
 
   @doc """
   Creates a new config with the given hardfork (default: `:cancun`).

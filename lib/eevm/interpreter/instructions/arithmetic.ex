@@ -32,9 +32,9 @@ defmodule EEVM.Interpreter.Instructions.Arithmetic do
   """
   import Bitwise
 
-  alias EEVM.Interpreter.{MachineState, Stack}
   alias EEVM.Gas.Dynamic
   alias EEVM.Interpreter.Instructions.Helpers
+  alias EEVM.Interpreter.{MachineState, Stack}
 
   @max_uint256 (1 <<< 256) - 1
 
