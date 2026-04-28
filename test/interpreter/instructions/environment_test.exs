@@ -1,9 +1,9 @@
 defmodule EEVM.Interpreter.Instructions.EnvironmentTest do
   use ExUnit.Case, async: true
 
-  alias EEVM.Context.{Transaction, Block, Contract}
-  alias EEVM.WorldState
+  alias EEVM.Context.{Block, Contract, Transaction}
   alias EEVM.Gas.{Dynamic, Memory, Static}
+  alias EEVM.WorldState
 
   describe "Environment Opcodes" do
     test "ADDRESS pushes current contract address" do

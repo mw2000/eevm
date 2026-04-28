@@ -12,11 +12,11 @@ defmodule EEVM.Interpreter.Instructions.StackMemoryStorage.MemoryOps do
   - **MCOPY** (0x5E) — copies a region of memory to another location (EIP-5656).
   """
 
-  alias EEVM.Interpreter.{MachineState, Memory, Stack}
   alias EEVM.Gas.Dynamic
   alias EEVM.Gas.Memory, as: GasMemory
   alias EEVM.HardforkConfig
   alias EEVM.Interpreter.Instructions.Helpers
+  alias EEVM.Interpreter.{MachineState, Memory, Stack}
 
   @spec execute(non_neg_integer(), MachineState.t()) ::
           {:ok, MachineState.t()} | {:error, atom(), MachineState.t()}

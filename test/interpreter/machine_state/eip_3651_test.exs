@@ -1,10 +1,10 @@
 defmodule EEVM.Interpreter.MachineState.EIP3651Test do
   use ExUnit.Case, async: true
 
-  alias EEVM.Interpreter.MachineState
   alias EEVM.Config
-  alias EEVM.WorldState
   alias EEVM.Context.{Block, Contract, Transaction}
+  alias EEVM.Interpreter.MachineState
+  alias EEVM.WorldState
 
   describe "EIP-3651 coinbase pre-warming" do
     test "new machine state pre-warms non-zero coinbase" do

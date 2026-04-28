@@ -24,8 +24,8 @@ defmodule EEVM.Interpreter.Instructions.Comparison do
   - `&Kernel.</2` captures the less-than operator as an anonymous function.
     The `/2` means it takes two arguments.
   """
-  alias EEVM.Interpreter.{MachineState, Stack}
   alias EEVM.Interpreter.Instructions.Helpers
+  alias EEVM.Interpreter.{MachineState, Stack}
 
   @doc """
   Dispatches and executes a comparison opcode.

@@ -36,12 +36,9 @@ defmodule EEVM.Interpreter do
     their semantics.
   """
 
-  alias EEVM.{HardforkConfig, Tracer}
-  alias EEVM.Interpreter.{MachineState, Memory, Stack}
   alias EEVM.Database
   alias EEVM.Gas.Static
-  alias EEVM.Transaction.IntrinsicGas
-  alias EEVM.Tracer.TraceStep
+  alias EEVM.HardforkConfig
 
   alias EEVM.Interpreter.Instructions.{
     Arithmetic,
@@ -60,6 +57,11 @@ defmodule EEVM.Interpreter do
     System.Creation,
     System.Termination
   }
+
+  alias EEVM.Interpreter.{MachineState, Memory, Stack}
+  alias EEVM.Tracer
+  alias EEVM.Tracer.TraceStep
+  alias EEVM.Transaction.IntrinsicGas
 
   @doc """
   Creates a `MachineState` from bytecode and options, then runs the execution loop.

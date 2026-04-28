@@ -3,9 +3,10 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
 
   import EEVM.TestSupport.BytecodeHelpers
 
-  alias EEVM.{Database, WorldState}
-  alias EEVM.Interpreter.Memory
   alias EEVM.Context.Contract
+  alias EEVM.Database
+  alias EEVM.Interpreter.Memory
+  alias EEVM.WorldState
 
   describe "Executor - Return & Halt" do
     test "RETURN returns data from memory" do

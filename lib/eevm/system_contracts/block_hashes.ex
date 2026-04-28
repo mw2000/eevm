@@ -68,9 +68,11 @@ defmodule EEVM.SystemContracts.BlockHashes do
     if the caller knows the slot was written.
   """
 
-  alias EEVM.{Database, HardforkConfig, Interpreter}
-  alias EEVM.Interpreter.MachineState
   alias EEVM.Context.{Block, Contract, Transaction}
+  alias EEVM.Database
+  alias EEVM.HardforkConfig
+  alias EEVM.Interpreter
+  alias EEVM.Interpreter.MachineState
 
   @address 0x0000F90827F1C53A10CB7A02335B175320002935
   @system_address 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFE

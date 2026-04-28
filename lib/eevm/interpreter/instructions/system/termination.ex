@@ -12,9 +12,10 @@ defmodule EEVM.Interpreter.Instructions.System.Termination do
   created the contract.
   """
 
-  alias EEVM.{Database, HardforkConfig}
-  alias EEVM.Interpreter.{MachineState, Memory, Stack}
+  alias EEVM.Database
   alias EEVM.Gas.Memory, as: GasMemory
+  alias EEVM.HardforkConfig
+  alias EEVM.Interpreter.{MachineState, Memory, Stack}
 
   @spec execute(non_neg_integer(), MachineState.t()) ::
           {:ok, MachineState.t()} | {:error, atom(), MachineState.t()}

@@ -22,9 +22,9 @@ defmodule EEVM.Interpreter.Instructions.StackMemoryStorage.StorageOps do
   """
 
   alias EEVM.Database
-  alias EEVM.Interpreter.{MachineState, Stack}
   alias EEVM.Gas.{Access, Dynamic}
   alias EEVM.HardforkConfig
+  alias EEVM.Interpreter.{MachineState, Stack}
 
   @cold_sload_cost 2100
 

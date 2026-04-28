@@ -1,7 +1,7 @@
 defmodule EEVM.Interpreter.Instructions.BlobTest do
   use ExUnit.Case, async: true
 
-  alias EEVM.Context.{Transaction, Block}
+  alias EEVM.Context.{Block, Transaction}
   alias EEVM.Gas.Static
 
   describe "BLOBHASH (0x49) - EIP-4844" do

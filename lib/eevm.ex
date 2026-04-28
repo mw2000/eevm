@@ -28,9 +28,10 @@ defmodule EEVM do
   - `EEVM.SystemContracts` — EIP-2935 (block hashes) and EIP-4788 (beacon roots)
   """
 
-  alias EEVM.{Interpreter, Tracer}
   alias EEVM.Block.Bloom
+  alias EEVM.Interpreter
   alias EEVM.Interpreter.{MachineState, Stack}
+  alias EEVM.Tracer
 
   @doc """
   Executes EVM bytecode and returns the final machine state.

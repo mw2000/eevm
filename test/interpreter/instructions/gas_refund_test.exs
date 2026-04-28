@@ -1,11 +1,11 @@
 defmodule EEVM.Interpreter.Instructions.GasRefundTest do
   use ExUnit.Case, async: true
 
+  alias EEVM.Context.Contract
+  alias EEVM.Context.Transaction
+  alias EEVM.Gas.Static
   alias EEVM.Interpreter
   alias EEVM.Interpreter.{CallFrame, MachineState, Memory, Stack}
-  alias EEVM.Context.Contract
-  alias EEVM.Gas.Static
-  alias EEVM.Context.Transaction
   alias EEVM.Transaction.IntrinsicGas
 
   test "refund counter defaults to 0" do

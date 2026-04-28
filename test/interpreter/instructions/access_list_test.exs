@@ -1,8 +1,8 @@
 defmodule EEVM.Interpreter.Instructions.AccessListTest do
   use ExUnit.Case, async: true
 
-  alias EEVM.WorldState
   alias EEVM.Context.Contract
+  alias EEVM.WorldState
 
   describe "EIP-2929 Access List Tracking" do
     test "first SLOAD is cold (2100 gas)" do

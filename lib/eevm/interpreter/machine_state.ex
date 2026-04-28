@@ -25,13 +25,13 @@ defmodule EEVM.Interpreter.MachineState do
   - The `alias` keyword lets us reference modules by their short name.
   """
 
-  alias EEVM.Tracer
-  alias EEVM.Interpreter.{CallFrame, Memory, Stack}
   alias EEVM.Config
+  alias EEVM.Context.{Block, Contract, Transaction}
   alias EEVM.Database
   alias EEVM.Database.InMemory, as: InMemoryDB
-  alias EEVM.Context.{Block, Contract, Transaction}
+  alias EEVM.Interpreter.{CallFrame, Memory, Stack}
   alias EEVM.Precompiles
+  alias EEVM.Tracer
 
   @type status :: :running | :stopped | :reverted | :invalid | :out_of_gas | {:error, atom()}
 

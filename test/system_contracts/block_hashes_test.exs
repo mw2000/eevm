@@ -1,10 +1,11 @@
 defmodule EEVM.SystemContracts.BlockHashesTest do
   use ExUnit.Case, async: true
 
-  alias EEVM.Database.InMemory
-  alias EEVM.{Database, HardforkConfig}
-  alias EEVM.Interpreter.MachineState
   alias EEVM.Context.{Block, Contract, Transaction}
+  alias EEVM.Database
+  alias EEVM.Database.InMemory
+  alias EEVM.HardforkConfig
+  alias EEVM.Interpreter.MachineState
   alias EEVM.SystemContracts.BlockHashes
 
   @window 8191

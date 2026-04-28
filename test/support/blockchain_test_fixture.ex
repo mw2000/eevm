@@ -17,6 +17,8 @@ defmodule EEVM.TestSupport.BlockchainTestFixture do
   """
 
   defmodule Account do
+    @moduledoc false
+
     @type t :: %__MODULE__{
             balance: non_neg_integer(),
             nonce: non_neg_integer(),
@@ -28,6 +30,8 @@ defmodule EEVM.TestSupport.BlockchainTestFixture do
   end
 
   defmodule TransactionFields do
+    @moduledoc false
+
     @type t :: %__MODULE__{
             sender: non_neg_integer(),
             nonce: non_neg_integer(),
@@ -62,6 +66,8 @@ defmodule EEVM.TestSupport.BlockchainTestFixture do
   end
 
   defmodule BlockHeader do
+    @moduledoc false
+
     @type t :: %__MODULE__{
             parent_hash: binary(),
             coinbase: non_neg_integer(),
@@ -112,6 +118,8 @@ defmodule EEVM.TestSupport.BlockchainTestFixture do
   end
 
   defmodule Withdrawal do
+    @moduledoc false
+
     @type t :: %__MODULE__{
             index: non_neg_integer(),
             validator_index: non_neg_integer(),
@@ -123,6 +131,8 @@ defmodule EEVM.TestSupport.BlockchainTestFixture do
   end
 
   defmodule Block do
+    @moduledoc false
+
     @type t :: %__MODULE__{
             block_number: non_neg_integer(),
             header: BlockHeader.t() | nil,
@@ -143,6 +153,8 @@ defmodule EEVM.TestSupport.BlockchainTestFixture do
   end
 
   defmodule Case do
+    @moduledoc false
+
     @type t :: %__MODULE__{
             name: String.t(),
             network: EEVM.HardforkConfig.spec_id(),

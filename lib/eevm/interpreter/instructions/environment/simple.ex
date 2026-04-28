@@ -10,9 +10,9 @@ defmodule EEVM.Interpreter.Instructions.Environment.Simple do
   GASLIMIT, CHAINID, BASEFEE, BLOBBASEFEE, GAS, BLOCKHASH, and BLOBHASH.
   """
 
-  alias EEVM.Interpreter.{MachineState, Stack}
   alias EEVM.Context.Block
   alias EEVM.Interpreter.Instructions.Helpers
+  alias EEVM.Interpreter.{MachineState, Stack}
 
   @spec execute(non_neg_integer(), MachineState.t()) ::
           {:ok, MachineState.t()} | {:error, atom(), MachineState.t()}

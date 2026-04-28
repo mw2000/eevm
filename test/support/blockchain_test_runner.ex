@@ -22,15 +22,18 @@ defmodule EEVM.TestSupport.BlockchainTestRunner do
   """
 
   alias EEVM.Block.{Header, Processor}
+  alias EEVM.Config
   alias EEVM.Context.{Block, Transaction}
+  alias EEVM.Database
   alias EEVM.Database.InMemory
   alias EEVM.Handler.Execution
+  alias EEVM.HardforkConfig
+  alias EEVM.StateRoot
   alias EEVM.SystemContracts.{BeaconRoots, BlockHashes}
   alias EEVM.TestSupport.BlockchainHeaderValidator, as: HeaderValidator
   alias EEVM.TestSupport.BlockchainTestFixture.{Account, Case, TransactionFields, Withdrawal}
   alias EEVM.TestSupport.BlockchainTestFixture.Block, as: FixtureBlock
   alias EEVM.Transaction.{IntrinsicGas, Validator}
-  alias EEVM.{Config, Database, HardforkConfig, StateRoot}
 
   @min_blob_base_fee 1
 

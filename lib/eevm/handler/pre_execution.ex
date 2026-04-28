@@ -17,8 +17,9 @@ defmodule EEVM.Handler.PreExecution do
   fee-market formula.
   """
 
-  alias EEVM.{Database, Precompiles}
   alias EEVM.Context.{Block, Contract, Transaction}
+  alias EEVM.Database
+  alias EEVM.Precompiles
   alias EEVM.Transaction.IntrinsicGas
 
   @spec charge_upfront(Database.t(), Transaction.t(), Block.t()) ::

@@ -38,12 +38,10 @@ defmodule EEVM.Interpreter.Instructions.ControlFlow do
     SWAP depth adds 1 (`op - 0x90 + 1`) to include the top-of-stack position.
   """
 
-  alias EEVM.Interpreter.{MachineState, Stack}
   alias EEVM.HardforkConfig
-  alias EEVM.Interpreter.Instructions.Registry
   alias EEVM.Interpreter.Instructions.Helpers
   alias EEVM.Interpreter.Instructions.Registry
-  alias EEVM.Interpreter.Instructions.Helpers
+  alias EEVM.Interpreter.{MachineState, Stack}
 
   @doc """
   Dispatches a control flow opcode to its implementation.
