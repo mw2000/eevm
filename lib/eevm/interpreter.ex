@@ -29,9 +29,9 @@ defmodule EEVM.Interpreter do
     runs in constant stack space even for long-running contracts.
   - The three `run_loop/1` clauses use pattern matching on `status` to cleanly
     separate running, halted, and out-of-gas states without any conditionals.
-  - `execute_opcode/2` is a private dispatch table. Specific opcodes come first,
-    then ranges. Elixir matches clauses top-to-bottom, so narrower patterns
-    must precede broader ones.
+  - Opcode dispatch is data-driven: `EEVM.Interpreter.Instructions.Registry`
+    maps each opcode to its implementing module, and `execute_opcode/2` is a
+    single registry lookup rather than a hand-maintained case table.
   - Separation of concerns: the executor only orchestrates; opcode modules own
     their semantics.
   """
@@ -39,25 +39,7 @@ defmodule EEVM.Interpreter do
   alias EEVM.Database
   alias EEVM.Gas.Static
   alias EEVM.HardforkConfig
-
-  alias EEVM.Interpreter.Instructions.{
-    Arithmetic,
-    Bitwise,
-    Comparison,
-    ControlFlow,
-    Crypto,
-    Environment.Data,
-    Environment.External,
-    Environment.Simple,
-    Logging,
-    StackMemoryStorage.MemoryOps,
-    StackMemoryStorage.StackOps,
-    StackMemoryStorage.StorageOps,
-    System.Calls,
-    System.Creation,
-    System.Termination
-  }
-
+  alias EEVM.Interpreter.Instructions.Registry
   alias EEVM.Interpreter.{MachineState, Memory, Stack}
   alias EEVM.Tracer
   alias EEVM.Tracer.TraceStep
@@ -196,72 +178,26 @@ defmodule EEVM.Interpreter do
 
   defp cleanup_touched_empty_accounts(state), do: state
 
-  # Dispatch table for execute_opcode/2.
+  # Dispatch an opcode byte to its implementing module via the Registry.
   #
-  # Routes opcode bytes to the module that implements them. Specific opcodes
-  # are listed first; ranges follow. This ordering matters — Elixir matches
-  # clauses top-to-bottom, so e.g. 0x50 must appear before the 0x51..0x55
-  # range to ensure it is caught by its dedicated StackMemoryStorage clause.
-  # The fallback clause treats unknown opcodes as INVALID (halt, no gas refund).
+  # The Registry maps each opcode to a `:module` (the `Instructions.*` module
+  # whose `execute/2` handles it) and a `:state_mutating` flag. Inside a
+  # STATICCALL frame (`state.is_static`), state-mutating opcodes (SSTORE,
+  # TSTORE, LOG0..4, CREATE, CREATE2, SELFDESTRUCT) halt with `:reverted`
+  # before reaching the module. Unknown opcodes halt as `:invalid`.
 
-  defp execute_opcode(0x55, %{is_static: true} = state),
-    do: {:ok, MachineState.halt(state, :reverted)}
+  defp execute_opcode(opcode, state) do
+    case Registry.info(opcode) do
+      {:ok, %{state_mutating: true}} when state.is_static ->
+        {:ok, MachineState.halt(state, :reverted)}
 
-  defp execute_opcode(0x5D, %{is_static: true} = state),
-    do: {:ok, MachineState.halt(state, :reverted)}
+      {:ok, %{module: module}} ->
+        module.execute(opcode, state)
 
-  defp execute_opcode(op, %{is_static: true} = state) when op in 0xA0..0xA4,
-    do: {:ok, MachineState.halt(state, :reverted)}
-
-  defp execute_opcode(op, %{is_static: true} = state) when op in [0xF0, 0xF5],
-    do: {:ok, MachineState.halt(state, :reverted)}
-
-  defp execute_opcode(0xFF, %{is_static: true} = state),
-    do: {:ok, MachineState.halt(state, :reverted)}
-
-  defp execute_opcode(0x00, state), do: Termination.execute(0x00, state)
-  defp execute_opcode(op, state) when op in 0x01..0x0B, do: Arithmetic.execute(op, state)
-  defp execute_opcode(op, state) when op in 0x10..0x15, do: Comparison.execute(op, state)
-  defp execute_opcode(op, state) when op in 0x16..0x1D, do: Bitwise.execute(op, state)
-  defp execute_opcode(0x20, state), do: Crypto.execute(0x20, state)
-
-  defp execute_opcode(op, state) when op in [0x30, 0x32, 0x33, 0x34, 0x36, 0x38, 0x3A, 0x3D],
-    do: Simple.execute(op, state)
-
-  defp execute_opcode(op, state) when op in [0x35, 0x37, 0x39, 0x3E], do: Data.execute(op, state)
-
-  defp execute_opcode(op, state) when op in [0x31, 0x3B, 0x3C, 0x3F],
-    do: External.execute(op, state)
-
-  defp execute_opcode(op, state)
-       when op in [0x40, 0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x48, 0x49, 0x4A],
-       do: Simple.execute(op, state)
-
-  defp execute_opcode(0x47, state), do: External.execute(0x47, state)
-  defp execute_opcode(0x50, state), do: StackOps.execute(0x50, state)
-
-  defp execute_opcode(op, state) when op in [0x51, 0x52, 0x53, 0x59, 0x5E],
-    do: MemoryOps.execute(op, state)
-
-  defp execute_opcode(op, state) when op in [0x54, 0x55, 0x5C, 0x5D],
-    do: StorageOps.execute(op, state)
-
-  defp execute_opcode(0x5A, state), do: Simple.execute(0x5A, state)
-  defp execute_opcode(op, state) when op in 0x56..0x5B, do: ControlFlow.execute(op, state)
-  defp execute_opcode(0x5F, state), do: ControlFlow.execute(0x5F, state)
-  defp execute_opcode(op, state) when op in 0x60..0x9F, do: ControlFlow.execute(op, state)
-  defp execute_opcode(op, state) when op in 0xA0..0xA4, do: Logging.execute(op, state)
-
-  defp execute_opcode(op, state) when op in [0xF0, 0xF5],
-    do: Creation.execute(op, state)
-
-  defp execute_opcode(op, state) when op in [0xF1, 0xF2, 0xF4, 0xFA],
-    do: Calls.execute(op, state)
-
-  defp execute_opcode(op, state) when op in [0xF3, 0xFD, 0xFE, 0xFF],
-    do: Termination.execute(op, state)
-
-  defp execute_opcode(_op, state), do: {:ok, MachineState.halt(state, :invalid)}
+      {:error, :unknown_opcode} ->
+        {:ok, MachineState.halt(state, :invalid)}
+    end
+  end
 
   # Trace bookkeeping is a no-op when no tracer is attached — one pattern match,
   # one return. All helpers below keep this fast path.
