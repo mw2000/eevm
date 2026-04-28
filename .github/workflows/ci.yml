@@ -111,10 +111,15 @@ jobs:
         restore-keys: ${{ runner.os }}-build-
     - name: Install dependencies
       run: mix deps.get
-    - name: Generate docs (fail on warnings)
+    - name: Compile project
+      run: mix compile
+    - name: Generate docs (fail on ExDoc warnings)
       run: |
         mix docs 2>&1 | tee docs.log
-        if grep -E "^[[:space:]]+warning:" docs.log; then
+        # Only fail on warnings emitted by ExDoc itself (after "Generating docs..."),
+        # not on compile warnings from deps that may surface during a fresh build.
+        if awk '/Generating docs\.\.\./{flag=1; next} flag' docs.log \
+             | grep -E "^[[:space:]]+warning:"; then
           echo "::error::ExDoc emitted warnings — see log above"
           exit 1
         fi
