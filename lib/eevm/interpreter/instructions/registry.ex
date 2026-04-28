@@ -7,8 +7,8 @@ defmodule EEVM.Interpreter.Instructions.Registry do
 
   - `:name` — the human-readable mnemonic (e.g. `"ADD"`)
   - `:inputs` / `:outputs` — stack arity, used by the disassembler and stack-depth checks
-  - `:module` — the `EEVM.Interpreter.Instructions.*` module that implements the opcode;
-    `EEVM.Interpreter.execute_opcode/2` dispatches on this field
+  - `:module` — the `EEVM.Interpreter.Instructions.*` module that implements
+    the opcode; `EEVM.Interpreter` dispatches on this field
   - `:state_mutating` (when present) — opcode mutates persistent state and must
     halt with `:reverted` if executed inside a STATICCALL frame
 
