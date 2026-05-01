@@ -202,18 +202,12 @@ defmodule EEVM.TestSupport.BlockchainTestRunner do
       unwrap_system_call(BeaconRoots.commit(db, block_ctx, header.parent_beacon_block_root || 0))
     end)
     |> maybe_append(enabled_2935?, fn db, block_ctx ->
-      unwrap_system_call(
-        BlockHashes.commit(db, block_ctx, parent_hash_to_int(header.parent_hash))
-      )
+      unwrap_system_call(BlockHashes.commit(db, block_ctx, header.parent_hash))
     end)
   end
 
   defp unwrap_system_call({:ok, %Database{} = db}), do: db
   defp unwrap_system_call({:error, _reason, %Database{} = db}), do: db
-
-  defp parent_hash_to_int(nil), do: 0
-  defp parent_hash_to_int(<<value::unsigned-big-256>>), do: value
-  defp parent_hash_to_int(value) when is_integer(value), do: value
 
   defp maybe_append(list, false, _fun), do: list
   defp maybe_append(list, true, fun), do: list ++ [fun]
