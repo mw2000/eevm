@@ -1,80 +1,55 @@
 defmodule EEVM.Interpreter.MachineState do
   @moduledoc """
-  The EVM machine state — holds all mutable state during execution.
+  The EVM machine state — the envelope that holds everything that survives
+  a single opcode step.
 
-  ## EVM Concepts
+  ## Anatomy
 
-  The machine state consists of:
-  - **pc** (program counter): points to the current instruction
-  - **stack**: the operand stack (max 1024 elements)
-  - **memory**: byte-addressable linear memory
-  - **db**: unified external state backend (accounts + contract storage)
-  - **call_stack**: suspended parent frames during nested execution
-  - **frame return metadata**: parent memory write-back offset and size
-  - **is_static/depth**: execution mode and current call depth
-  - **gas**: remaining gas for execution
-  - **status**: whether the machine is running, stopped, or reverted
+  - **frame** (`Frame.t()`) — the active per-call execution context: pc,
+    stack, memory, gas, refund, code, return_data, contract, depth,
+    is_static, parent return write-back location.
+  - **env** (`Env.t()`) — read-only execution environment for this call:
+    tx, block, hardfork config.
+  - **substate** (`Substate.t()`) — transaction-scoped accumulators:
+    touched / accessed / created / original / transient / logs.
+  - **db** — unified world-state backend (accounts + storage).
+  - **call_stack** — `[Frame.t()]` of suspended parent frames.
+  - **status** — `:running | :stopped | :reverted | :invalid | :out_of_gas`
+    or `{:error, atom()}`.
+  - **tracer** — optional opcode-level trace recorder.
 
-  ## Elixir Learning Notes
-
-  - Structs in Elixir are just maps with a `__struct__` key. They give you
-    compile-time guarantees about which fields exist.
-  - `@enforce_keys` makes certain fields required when creating a struct.
-  - We use atoms like `:running`, `:stopped`, `:reverted` for status —
-    atoms are constants whose name IS their value (like symbols in Ruby).
-  - The `alias` keyword lets us reference modules by their short name.
+  Frame, env, and substate isolate the three lifecycles cleanly: frame is
+  per-call mutable, env is per-call immutable, substate is transaction-scoped.
   """
 
   alias EEVM.Config
   alias EEVM.Context.{Block, Contract, Transaction}
   alias EEVM.Database
   alias EEVM.Database.InMemory, as: InMemoryDB
-  alias EEVM.Interpreter.{CallFrame, Memory, Stack}
-  alias EEVM.Interpreter.MachineState.{Env, Substate}
+  alias EEVM.Interpreter.MachineState.{Env, Frame, Substate}
+  alias EEVM.Interpreter.{Memory, Stack}
   alias EEVM.Precompiles
   alias EEVM.Tracer
 
   @type status :: :running | :stopped | :reverted | :invalid | :out_of_gas | {:error, atom()}
 
   @type t :: %__MODULE__{
-          pc: non_neg_integer(),
-          stack: Stack.t(),
-          memory: Memory.t(),
-          db: Database.t(),
+          frame: Frame.t(),
           env: Env.t(),
           substate: Substate.t(),
-          contract: Contract.t(),
-          call_stack: [CallFrame.t()],
-          frame_return_offset: non_neg_integer(),
-          frame_return_size: non_neg_integer(),
-          is_static: boolean(),
-          depth: non_neg_integer(),
-          gas: non_neg_integer(),
-          refund: non_neg_integer(),
+          db: Database.t(),
+          call_stack: [Frame.t()],
           status: status(),
-          return_data: binary(),
-          code: binary(),
           tracer: Tracer.t() | nil
         }
 
-  @enforce_keys [:code]
-  defstruct pc: 0,
-            stack: nil,
-            memory: nil,
-            db: nil,
+  @enforce_keys [:frame]
+  defstruct frame: nil,
             env: nil,
             substate: nil,
-            contract: nil,
+            db: nil,
             call_stack: [],
-            frame_return_offset: 0,
-            frame_return_size: 0,
-            is_static: false,
-            depth: 0,
-            gas: 1_000_000,
-            refund: 0,
             status: :running,
-            return_data: <<>>,
-            code: <<>>,
             tracer: nil
 
   @doc """
@@ -104,7 +79,7 @@ defmodule EEVM.Interpreter.MachineState do
   ## Example
 
       iex> state = EEVM.Interpreter.MachineState.new(<<0x60, 0x01, 0x60, 0x02, 0x01>>)
-      iex> state.pc
+      iex> state.frame.pc
       0
   """
   @spec new(binary(), keyword()) :: t()
@@ -126,22 +101,26 @@ defmodule EEVM.Interpreter.MachineState do
         logs: Keyword.get(opts, :logs, [])
       )
 
-    %__MODULE__{
+    frame = %Frame{
       code: code,
       stack: Stack.new(),
       memory: Memory.new(),
-      db: init_db(opts, contract),
-      env: Env.new(tx: tx, block: block, config: config),
-      substate: substate,
       contract: contract,
-      call_stack: Keyword.get(opts, :call_stack, []),
-      frame_return_offset: Keyword.get(opts, :frame_return_offset, 0),
-      frame_return_size: Keyword.get(opts, :frame_return_size, 0),
+      return_offset: Keyword.get(opts, :frame_return_offset, 0),
+      return_size: Keyword.get(opts, :frame_return_size, 0),
       is_static: Keyword.get(opts, :is_static, false),
       depth: Keyword.get(opts, :depth, 0),
       return_data: Keyword.get(opts, :return_data, <<>>),
       gas: Keyword.get(opts, :gas, 1_000_000),
-      refund: Keyword.get(opts, :refund, 0),
+      refund: Keyword.get(opts, :refund, 0)
+    }
+
+    %__MODULE__{
+      frame: frame,
+      env: Env.new(tx: tx, block: block, config: config),
+      substate: substate,
+      db: init_db(opts, contract),
+      call_stack: Keyword.get(opts, :call_stack, []),
       tracer: Keyword.get(opts, :tracer)
     }
   end
@@ -184,7 +163,7 @@ defmodule EEVM.Interpreter.MachineState do
 
   @doc "Returns the opcode byte at the current program counter, or nil if past end."
   @spec current_opcode(t()) :: non_neg_integer() | nil
-  def current_opcode(%__MODULE__{pc: pc, code: code}) when pc < byte_size(code) do
+  def current_opcode(%__MODULE__{frame: %Frame{pc: pc, code: code}}) when pc < byte_size(code) do
     :binary.at(code, pc)
   end
 
@@ -196,7 +175,7 @@ defmodule EEVM.Interpreter.MachineState do
   Used by PUSH instructions to read their immediate data.
   """
   @spec read_code(t(), non_neg_integer(), non_neg_integer()) :: binary()
-  def read_code(%__MODULE__{code: code}, offset, n) do
+  def read_code(%__MODULE__{frame: %Frame{code: code}}, offset, n) do
     code_size = byte_size(code)
 
     if offset >= code_size do
@@ -214,95 +193,62 @@ defmodule EEVM.Interpreter.MachineState do
   @doc "Advances the program counter by `n` positions."
   @spec advance_pc(t(), non_neg_integer()) :: t()
   def advance_pc(state, n \\ 1) do
-    %{state | pc: state.pc + n}
+    update_frame(state, &%{&1 | pc: &1.pc + n})
   end
 
   @spec current_depth(t()) :: non_neg_integer()
-  def current_depth(%__MODULE__{depth: depth}), do: depth
+  def current_depth(%__MODULE__{frame: %Frame{depth: depth}}), do: depth
 
-  @spec push_frame(t(), CallFrame.t()) :: {:ok, t()} | {:error, :max_call_depth, t()}
-  def push_frame(%__MODULE__{depth: depth} = state, _new_frame) when depth >= 1024 do
+  @doc """
+  Replaces the active frame using the given function.
+
+  Convenience for callers that want to update one or more per-frame fields
+  without re-spelling the nested struct update.
+  """
+  @spec update_frame(t(), (Frame.t() -> Frame.t())) :: t()
+  def update_frame(%__MODULE__{frame: frame} = state, fun) do
+    %{state | frame: fun.(frame)}
+  end
+
+  @spec push_frame(t(), Frame.t()) :: {:ok, t()} | {:error, :max_call_depth, t()}
+  def push_frame(%__MODULE__{frame: %Frame{depth: depth}} = state, _new_frame)
+      when depth >= 1024 do
     {:error, :max_call_depth, state}
   end
 
-  def push_frame(%__MODULE__{} = state, %CallFrame{} = new_frame) do
-    parent_frame =
-      CallFrame.from_state(state,
-        return_offset: state.frame_return_offset,
-        return_size: state.frame_return_size,
-        is_static: state.is_static,
-        depth: state.depth
-      )
-
-    {:ok,
-     %{
-       state
-       | call_stack: [parent_frame | state.call_stack],
-         code: new_frame.code,
-         pc: new_frame.pc,
-         stack: new_frame.stack,
-         memory: new_frame.memory,
-         gas: new_frame.gas,
-         contract: new_frame.contract,
-         frame_return_offset: new_frame.return_offset,
-         frame_return_size: new_frame.return_size,
-         is_static: new_frame.is_static,
-         depth: new_frame.depth,
-         status: :running,
-         return_data: <<>>
-     }}
+  def push_frame(%__MODULE__{frame: parent} = state, %Frame{} = new_frame) do
+    {:ok, %{state | call_stack: [parent | state.call_stack], frame: new_frame, status: :running}}
   end
 
   @spec pop_frame(t()) :: {:ok, t()} | {:error, :empty_call_stack, t()}
   def pop_frame(%__MODULE__{call_stack: []} = state), do: {:error, :empty_call_stack, state}
 
-  def pop_frame(%__MODULE__{call_stack: [parent | rest]} = state) do
-    child_return_data = state.return_data
+  def pop_frame(%__MODULE__{call_stack: [parent | rest], frame: child} = state) do
+    child_return_data = child.return_data
 
     {parent_memory, _} =
-      write_return_data(
-        parent.memory,
-        state.frame_return_offset,
-        state.frame_return_size,
-        child_return_data
-      )
+      write_return_data(parent.memory, child.return_offset, child.return_size, child_return_data)
 
-    restored_state =
-      %{
-        state
-        | call_stack: rest,
-          code: parent.code,
-          pc: parent.pc,
-          stack: parent.stack,
-          memory: parent_memory,
-          gas: parent.gas + state.gas,
-          contract: parent.contract,
-          frame_return_offset: parent.return_offset,
-          frame_return_size: parent.return_size,
-          is_static: parent.is_static,
-          depth: parent.depth,
-          status: :running,
-          return_data: child_return_data
-      }
+    restored_frame = %{
+      parent
+      | memory: parent_memory,
+        gas: parent.gas + child.gas,
+        refund: child.refund,
+        return_data: child_return_data
+    }
 
-    {:ok, restored_state}
+    {:ok, %{state | call_stack: rest, frame: restored_frame, status: :running}}
   end
 
   @doc """
-  Deducts gas from the machine state.
+  Deducts gas from the active frame.
 
   Returns `{:ok, updated_state}` if sufficient gas remains, or
   `{:error, :out_of_gas, state}` if the gas would go negative.
-
-  ## Elixir Learning Note
-
-  This uses a guard clause (`when cost <= gas`) to branch at the function
-  head level — no `if/else` needed. The first clause matches when we have
-  enough gas, the second is the fallback.
   """
   @spec consume_gas(t(), non_neg_integer()) :: {:ok, t()} | {:error, :out_of_gas, t()}
-  def consume_gas(%__MODULE__{gas: gas} = state, cost) when cost <= gas do
-    {:ok, %{state | gas: gas - cost}}
+  def consume_gas(%__MODULE__{frame: %Frame{gas: gas}} = state, cost) when cost <= gas do
+    {:ok, update_frame(state, &%{&1 | gas: &1.gas - cost})}
   end
 
   def consume_gas(state, _cost) do
@@ -311,15 +257,16 @@ defmodule EEVM.Interpreter.MachineState do
 
   @doc "Returns the gas remaining."
   @spec gas_remaining(t()) :: non_neg_integer()
-  def gas_remaining(%__MODULE__{gas: gas}), do: gas
+  def gas_remaining(%__MODULE__{frame: %Frame{gas: gas}}), do: gas
 
   @doc "Adds `amount` to the accumulated gas refund."
   @spec add_refund(t(), non_neg_integer()) :: t()
-  def add_refund(state, amount), do: %{state | refund: state.refund + amount}
+  def add_refund(state, amount), do: update_frame(state, &%{&1 | refund: &1.refund + amount})
 
   @doc "Subtracts `amount` from refund, flooring at 0."
   @spec sub_refund(t(), non_neg_integer()) :: t()
-  def sub_refund(state, amount), do: %{state | refund: max(state.refund - amount, 0)}
+  def sub_refund(state, amount),
+    do: update_frame(state, &%{&1 | refund: max(&1.refund - amount, 0)})
 
   @doc "Halts execution with the given status."
   @spec halt(t(), status()) :: t()

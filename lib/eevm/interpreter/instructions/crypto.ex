@@ -42,7 +42,7 @@ defmodule EEVM.Interpreter.Instructions.Crypto do
   @spec execute(non_neg_integer(), MachineState.t()) ::
           {:ok, MachineState.t()} | {:error, atom(), MachineState.t()}
   def execute(0x20, state) do
-    with {:ok, offset, s1} <- Stack.pop(state.stack),
+    with {:ok, offset, s1} <- Stack.pop(state.frame.stack),
          {:ok, length, s2} <- Stack.pop(s1) do
       dynamic_cost = Dynamic.keccak256_dynamic_cost(length)
 
@@ -51,7 +51,7 @@ defmodule EEVM.Interpreter.Instructions.Crypto do
       # no memory and therefore never triggers expansion.
       mem_cost =
         if length > 0 do
-          GasMemory.memory_expansion_cost(Memory.size(state.memory), offset, length)
+          GasMemory.memory_expansion_cost(Memory.size(state.frame.memory), offset, length)
         else
           0
         end
@@ -62,9 +62,9 @@ defmodule EEVM.Interpreter.Instructions.Crypto do
           # For length == 0 we hash an empty binary without touching memory.
           {data, updated_memory} =
             if length > 0 do
-              Memory.read_bytes(state_after_gas.memory, offset, length)
+              Memory.read_bytes(state_after_gas.frame.memory, offset, length)
             else
-              {<<>>, state_after_gas.memory}
+              {<<>>, state_after_gas.frame.memory}
             end
 
           # ExKeccak.hash_256 returns a raw 32-byte binary. The pattern
@@ -74,7 +74,8 @@ defmodule EEVM.Interpreter.Instructions.Crypto do
           {:ok, new_stack} = Stack.push(s2, hash_int)
 
           {:ok,
-           %{state_after_gas | stack: new_stack, memory: updated_memory}
+           state_after_gas
+           |> MachineState.update_frame(&%{&1 | stack: new_stack, memory: updated_memory})
            |> MachineState.advance_pc()}
 
         {:error, :out_of_gas, halted} ->

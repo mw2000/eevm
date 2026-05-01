@@ -129,7 +129,7 @@ defmodule EEVM.Interpreter.Instructions.LoggingTest do
       code = <<0x60, 0x40, 0x60, 0x00, 0xA0, 0x00>>
       result = EEVM.execute(code)
 
-      assert result.memory.size == 64
+      assert result.frame.memory.size == 64
       assert [%{data: data}] = EEVM.logs(result)
       assert byte_size(data) == 64
     end

@@ -105,16 +105,21 @@ defmodule EEVM.Interpreter.JournalTest do
   describe "merge_child_result/2 — non-revertible fields" do
     test "parent's stack, memory, pc, gas, refund, contract are not touched on success" do
       parent = parent_state()
-      child = %{parent | status: :stopped, pc: 999, gas: 999_999, refund: 555}
+
+      child = %{
+        parent
+        | status: :stopped,
+          frame: %{parent.frame | pc: 999, gas: 999_999, refund: 555}
+      }
 
       merged = Journal.merge_child_result(parent, child)
 
-      assert merged.pc == parent.pc
-      assert merged.gas == parent.gas
-      assert merged.refund == parent.refund
-      assert merged.stack == parent.stack
-      assert merged.memory == parent.memory
-      assert merged.contract == parent.contract
+      assert merged.frame.pc == parent.frame.pc
+      assert merged.frame.gas == parent.frame.gas
+      assert merged.frame.refund == parent.frame.refund
+      assert merged.frame.stack == parent.frame.stack
+      assert merged.frame.memory == parent.frame.memory
+      assert merged.frame.contract == parent.frame.contract
     end
   end
 

@@ -22,16 +22,22 @@ defmodule EEVM.Interpreter.Instructions.System.Termination do
   def execute(0x00, state), do: {:ok, MachineState.halt(state, :stopped)}
 
   def execute(0xF3, state) do
-    with {:ok, offset, s1} <- Stack.pop(state.stack),
+    with {:ok, offset, s1} <- Stack.pop(state.frame.stack),
          {:ok, length, s2} <- Stack.pop(s1),
          expansion_cost =
-           GasMemory.memory_expansion_cost(Memory.size(state.memory), offset, length),
+           GasMemory.memory_expansion_cost(Memory.size(state.frame.memory), offset, length),
          {:ok, state_after_gas} <-
-           MachineState.consume_gas(%{state | stack: s2}, expansion_cost) do
-      {return_data, new_memory} = Memory.read_bytes(state_after_gas.memory, offset, length)
+           MachineState.consume_gas(
+             MachineState.update_frame(state, &%{&1 | stack: s2}),
+             expansion_cost
+           ) do
+      {return_data, new_memory} = Memory.read_bytes(state_after_gas.frame.memory, offset, length)
 
       {:ok,
-       %{state_after_gas | stack: s2, memory: new_memory, return_data: return_data}
+       state_after_gas
+       |> MachineState.update_frame(
+         &%{&1 | stack: s2, memory: new_memory, return_data: return_data}
+       )
        |> MachineState.halt(:stopped)}
     else
       {:error, reason} -> {:error, reason, state}
@@ -40,16 +46,22 @@ defmodule EEVM.Interpreter.Instructions.System.Termination do
   end
 
   def execute(0xFD, state) do
-    with {:ok, offset, s1} <- Stack.pop(state.stack),
+    with {:ok, offset, s1} <- Stack.pop(state.frame.stack),
          {:ok, length, s2} <- Stack.pop(s1),
          expansion_cost =
-           GasMemory.memory_expansion_cost(Memory.size(state.memory), offset, length),
+           GasMemory.memory_expansion_cost(Memory.size(state.frame.memory), offset, length),
          {:ok, state_after_gas} <-
-           MachineState.consume_gas(%{state | stack: s2}, expansion_cost) do
-      {return_data, new_memory} = Memory.read_bytes(state_after_gas.memory, offset, length)
+           MachineState.consume_gas(
+             MachineState.update_frame(state, &%{&1 | stack: s2}),
+             expansion_cost
+           ) do
+      {return_data, new_memory} = Memory.read_bytes(state_after_gas.frame.memory, offset, length)
 
       {:ok,
-       %{state_after_gas | stack: s2, memory: new_memory, return_data: return_data}
+       state_after_gas
+       |> MachineState.update_frame(
+         &%{&1 | stack: s2, memory: new_memory, return_data: return_data}
+       )
        |> MachineState.halt(:reverted)}
     else
       {:error, reason} -> {:error, reason, state}
@@ -58,14 +70,17 @@ defmodule EEVM.Interpreter.Instructions.System.Termination do
   end
 
   def execute(0xFF, state) do
-    with {:ok, beneficiary, s1} <- Stack.pop(state.stack) do
-      contract_address = state.contract.address
+    with {:ok, beneficiary, s1} <- Stack.pop(state.frame.stack) do
+      contract_address = state.frame.contract.address
       balance = Database.get_balance(state.db, contract_address)
 
       beneficiary_exists = Database.account_exists?(state.db, beneficiary)
       dynamic_cost = if not beneficiary_exists and balance > 0, do: 25_000, else: 0
 
-      case MachineState.consume_gas(%{state | stack: s1}, dynamic_cost) do
+      case MachineState.consume_gas(
+             MachineState.update_frame(state, &%{&1 | stack: s1}),
+             dynamic_cost
+           ) do
         {:ok, state_after_gas} ->
           state_after_touch = MachineState.touch_address(state_after_gas, beneficiary)
 

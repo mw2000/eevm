@@ -79,7 +79,7 @@ defmodule EEVM do
   """
   @spec stack_values(EEVM.Interpreter.MachineState.t()) :: [non_neg_integer()]
   def stack_values(state) do
-    Stack.to_list(state.stack)
+    Stack.to_list(state.frame.stack)
   end
 
   @doc "Returns the list of logs emitted during execution."

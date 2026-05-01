@@ -43,8 +43,8 @@ defmodule EEVM.Interpreter.MachineState.EIP3651Test do
 
       result = EEVM.execute(code, gas: initial_gas, block: block, world_state: world_state)
 
-      assert result.gas == initial_gas - 2 - 100
-      refute result.gas == initial_gas - 2 - 2600
+      assert result.frame.gas == initial_gas - 2 - 100
+      refute result.frame.gas == initial_gas - 2 - 2600
     end
 
     test "custom precompile addresses are pre-warmed" do

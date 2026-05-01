@@ -21,16 +21,23 @@ defmodule EEVM.Interpreter.Instructions.Environment.External do
   @spec execute(non_neg_integer(), MachineState.t()) ::
           {:ok, MachineState.t()} | {:error, atom(), MachineState.t()}
   def execute(0x31, state) do
-    with {:ok, addr, s1} <- Stack.pop(state.stack) do
-      {access_cost, state_after_access} = Access.address_access_cost(%{state | stack: s1}, addr)
+    with {:ok, addr, s1} <- Stack.pop(state.frame.stack) do
+      {access_cost, state_after_access} =
+        Access.address_access_cost(MachineState.update_frame(state, &%{&1 | stack: s1}), addr)
 
       case MachineState.consume_gas(state_after_access, access_cost) do
         {:ok, state_after_gas} ->
           balance = lookup_balance(state_after_gas, addr)
 
-          case Stack.push(state_after_gas.stack, balance) do
-            {:ok, s2} -> {:ok, %{state_after_gas | stack: s2} |> MachineState.advance_pc()}
-            {:error, reason} -> {:error, reason, state_after_gas}
+          case Stack.push(state_after_gas.frame.stack, balance) do
+            {:ok, s2} ->
+              {:ok,
+               state_after_gas
+               |> MachineState.update_frame(&%{&1 | stack: s2})
+               |> MachineState.advance_pc()}
+
+            {:error, reason} ->
+              {:error, reason, state_after_gas}
           end
 
         {:error, :out_of_gas, halted_state} ->
@@ -42,16 +49,23 @@ defmodule EEVM.Interpreter.Instructions.Environment.External do
   end
 
   def execute(0x3B, state) do
-    with {:ok, addr, s1} <- Stack.pop(state.stack) do
-      {access_cost, state_after_access} = Access.address_access_cost(%{state | stack: s1}, addr)
+    with {:ok, addr, s1} <- Stack.pop(state.frame.stack) do
+      {access_cost, state_after_access} =
+        Access.address_access_cost(MachineState.update_frame(state, &%{&1 | stack: s1}), addr)
 
       case MachineState.consume_gas(state_after_access, access_cost) do
         {:ok, state_after_gas} ->
           size = byte_size(Database.get_code(state_after_gas.db, addr))
 
-          case Stack.push(state_after_gas.stack, size) do
-            {:ok, s2} -> {:ok, %{state_after_gas | stack: s2} |> MachineState.advance_pc()}
-            {:error, reason} -> {:error, reason, state_after_gas}
+          case Stack.push(state_after_gas.frame.stack, size) do
+            {:ok, s2} ->
+              {:ok,
+               state_after_gas
+               |> MachineState.update_frame(&%{&1 | stack: s2})
+               |> MachineState.advance_pc()}
+
+            {:error, reason} ->
+              {:error, reason, state_after_gas}
           end
 
         {:error, :out_of_gas, halted_state} ->
@@ -63,11 +77,12 @@ defmodule EEVM.Interpreter.Instructions.Environment.External do
   end
 
   def execute(0x3C, state) do
-    with {:ok, addr, s1} <- Stack.pop(state.stack),
+    with {:ok, addr, s1} <- Stack.pop(state.frame.stack),
          {:ok, dest_offset, s2} <- Stack.pop(s1),
          {:ok, code_offset, s3} <- Stack.pop(s2),
          {:ok, length, s4} <- Stack.pop(s3) do
-      {access_cost, state_after_access} = Access.address_access_cost(%{state | stack: s4}, addr)
+      {access_cost, state_after_access} =
+        Access.address_access_cost(MachineState.update_frame(state, &%{&1 | stack: s4}), addr)
 
       case MachineState.consume_gas(state_after_access, access_cost) do
         {:ok, state_after_access_gas} ->
@@ -77,7 +92,7 @@ defmodule EEVM.Interpreter.Instructions.Environment.External do
             dynamic_cost =
               Dynamic.copy_cost(length) +
                 GasMemory.memory_expansion_cost(
-                  Memory.size(state_after_access_gas.memory),
+                  Memory.size(state_after_access_gas.frame.memory),
                   dest_offset,
                   length
                 )
@@ -90,11 +105,14 @@ defmodule EEVM.Interpreter.Instructions.Environment.External do
                   bytes
                   |> :binary.bin_to_list()
                   |> Enum.with_index()
-                  |> Enum.reduce(state_after_gas.memory, fn {byte, i}, mem ->
+                  |> Enum.reduce(state_after_gas.frame.memory, fn {byte, i}, mem ->
                     Memory.store_byte(mem, dest_offset + i, byte)
                   end)
 
-                {:ok, %{state_after_gas | memory: new_memory} |> MachineState.advance_pc()}
+                {:ok,
+                 state_after_gas
+                 |> MachineState.update_frame(&%{&1 | memory: new_memory})
+                 |> MachineState.advance_pc()}
 
               {:error, :out_of_gas, halted_state} ->
                 {:error, :out_of_gas, halted_state}
@@ -110,8 +128,9 @@ defmodule EEVM.Interpreter.Instructions.Environment.External do
   end
 
   def execute(0x3F, state) do
-    with {:ok, addr, s1} <- Stack.pop(state.stack) do
-      {access_cost, state_after_access} = Access.address_access_cost(%{state | stack: s1}, addr)
+    with {:ok, addr, s1} <- Stack.pop(state.frame.stack) do
+      {access_cost, state_after_access} =
+        Access.address_access_cost(MachineState.update_frame(state, &%{&1 | stack: s1}), addr)
 
       case MachineState.consume_gas(state_after_access, access_cost) do
         {:ok, state_after_gas} ->
@@ -125,9 +144,15 @@ defmodule EEVM.Interpreter.Instructions.Environment.External do
               0
             end
 
-          case Stack.push(state_after_gas.stack, hash_value) do
-            {:ok, s2} -> {:ok, %{state_after_gas | stack: s2} |> MachineState.advance_pc()}
-            {:error, reason} -> {:error, reason, state_after_gas}
+          case Stack.push(state_after_gas.frame.stack, hash_value) do
+            {:ok, s2} ->
+              {:ok,
+               state_after_gas
+               |> MachineState.update_frame(&%{&1 | stack: s2})
+               |> MachineState.advance_pc()}
+
+            {:error, reason} ->
+              {:error, reason, state_after_gas}
           end
 
         {:error, :out_of_gas, halted_state} ->
@@ -139,7 +164,7 @@ defmodule EEVM.Interpreter.Instructions.Environment.External do
   end
 
   def execute(0x47, state) do
-    balance = lookup_balance(state, state.contract.address)
+    balance = lookup_balance(state, state.frame.contract.address)
     Helpers.push_value(state, balance)
   end
 
@@ -149,7 +174,7 @@ defmodule EEVM.Interpreter.Instructions.Environment.External do
     if Database.account_exists?(state.db, address) do
       Database.get_balance(state.db, address)
     else
-      Contract.balance(state.contract, address)
+      Contract.balance(state.frame.contract, address)
     end
   end
 

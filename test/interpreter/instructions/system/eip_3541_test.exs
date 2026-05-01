@@ -53,7 +53,7 @@ defmodule EEVM.Interpreter.Instructions.System.EIP3541Test do
       assert EEVM.stack_values(result) == [0]
 
       # Gas was consumed by init code execution (rejection does not refund it)
-      assert result.gas < initial_gas
+      assert result.frame.gas < initial_gas
 
       # Nonce was incremented (sender nonce advances before deployment attempt)
       assert Database.get_nonce(result.db, 0) == 1

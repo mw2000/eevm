@@ -46,11 +46,11 @@ defmodule EEVM.Interpreter.Instructions.Helpers do
   @spec comparison_op(MachineState.t(), (non_neg_integer(), non_neg_integer() -> boolean())) ::
           {:ok, MachineState.t()} | {:error, atom(), MachineState.t()}
   def comparison_op(state, fun) do
-    with {:ok, a, s1} <- Stack.pop(state.stack),
+    with {:ok, a, s1} <- Stack.pop(state.frame.stack),
          {:ok, b, s2} <- Stack.pop(s1) do
       result = if fun.(a, b), do: 1, else: 0
       {:ok, s3} = Stack.push(s2, result)
-      {:ok, %{state | stack: s3} |> MachineState.advance_pc()}
+      {:ok, state |> MachineState.update_frame(&%{&1 | stack: s3}) |> MachineState.advance_pc()}
     else
       {:error, reason} -> {:error, reason, state}
     end
@@ -67,11 +67,11 @@ defmodule EEVM.Interpreter.Instructions.Helpers do
           (integer(), integer() -> boolean())
         ) :: {:ok, MachineState.t()} | {:error, atom(), MachineState.t()}
   def signed_comparison_op(state, fun) do
-    with {:ok, a, s1} <- Stack.pop(state.stack),
+    with {:ok, a, s1} <- Stack.pop(state.frame.stack),
          {:ok, b, s2} <- Stack.pop(s1) do
       result = if fun.(to_signed(a), to_signed(b)), do: 1, else: 0
       {:ok, s3} = Stack.push(s2, result)
-      {:ok, %{state | stack: s3} |> MachineState.advance_pc()}
+      {:ok, state |> MachineState.update_frame(&%{&1 | stack: s3}) |> MachineState.advance_pc()}
     else
       {:error, reason} -> {:error, reason, state}
     end
@@ -86,11 +86,11 @@ defmodule EEVM.Interpreter.Instructions.Helpers do
   @spec bitwise_op(MachineState.t(), (non_neg_integer(), non_neg_integer() -> non_neg_integer())) ::
           {:ok, MachineState.t()} | {:error, atom(), MachineState.t()}
   def bitwise_op(state, fun) do
-    with {:ok, a, s1} <- Stack.pop(state.stack),
+    with {:ok, a, s1} <- Stack.pop(state.frame.stack),
          {:ok, b, s2} <- Stack.pop(s1) do
       result = fun.(a, b)
       {:ok, s3} = Stack.push(s2, result)
-      {:ok, %{state | stack: s3} |> MachineState.advance_pc()}
+      {:ok, state |> MachineState.update_frame(&%{&1 | stack: s3}) |> MachineState.advance_pc()}
     else
       {:error, reason} -> {:error, reason, state}
     end
@@ -149,8 +149,10 @@ defmodule EEVM.Interpreter.Instructions.Helpers do
   @spec push_value(MachineState.t(), non_neg_integer()) ::
           {:ok, MachineState.t()}
   def push_value(state, value) do
-    {:ok, new_stack} = Stack.push(state.stack, value)
-    {:ok, %{state | stack: new_stack} |> MachineState.advance_pc()}
+    {:ok, new_stack} = Stack.push(state.frame.stack, value)
+
+    {:ok,
+     state |> MachineState.update_frame(&%{&1 | stack: new_stack}) |> MachineState.advance_pc()}
   end
 
   @doc """

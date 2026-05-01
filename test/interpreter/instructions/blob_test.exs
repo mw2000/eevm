@@ -36,7 +36,7 @@ defmodule EEVM.Interpreter.Instructions.BlobTest do
       code = <<0x60, 0x00, 0x49, 0x00>>
       result = EEVM.execute(code, gas: 10_000)
       expected_cost = Static.static_cost(0x60) + Static.static_cost(0x49)
-      assert result.gas == 10_000 - expected_cost
+      assert result.frame.gas == 10_000 - expected_cost
     end
   end
 
@@ -58,7 +58,7 @@ defmodule EEVM.Interpreter.Instructions.BlobTest do
       code = <<0x4A, 0x00>>
       result = EEVM.execute(code, gas: 10_000)
       expected_cost = Static.static_cost(0x4A)
-      assert result.gas == 10_000 - expected_cost
+      assert result.frame.gas == 10_000 - expected_cost
     end
   end
 end

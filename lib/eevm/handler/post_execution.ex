@@ -39,7 +39,7 @@ defmodule EEVM.Handler.PostExecution do
         %Database{} = db_nonce_bumped,
         %Block{} = block
       ) do
-    gas_used = tx.gas_limit - final_state.gas
+    gas_used = tx.gas_limit - final_state.frame.gas
     effective_price = PreExecution.effective_gas_price(tx, block)
 
     settled_db = settle_state(final_state, db_nonce_bumped, tx, gas_used, effective_price)
@@ -62,13 +62,13 @@ defmodule EEVM.Handler.PostExecution do
      %TransactionResult{
        status: status,
        gas_used: gas_used,
-       gas_refunded: max(final_state.gas, 0),
+       gas_refunded: max(final_state.frame.gas, 0),
        sender: Validation.decode_address(sender_bytes),
        logs: logs,
        logs_bloom: logs_bloom,
        receipt: receipt,
        post_state_db: coinbase_credited_db,
-       return_data: if(status == :success, do: final_state.return_data, else: <<>>),
+       return_data: if(status == :success, do: final_state.frame.return_data, else: <<>>),
        contract_address: if(status == :success, do: contract_address, else: nil)
      }}
   end

@@ -31,19 +31,29 @@ defmodule EEVM.Interpreter.Instructions.StackMemoryStorage.StorageOps do
   @spec execute(non_neg_integer(), MachineState.t()) ::
           {:ok, MachineState.t()} | {:error, atom(), MachineState.t()}
   def execute(0x54, state) do
-    with {:ok, key, s1} <- Stack.pop(state.stack) do
-      contract_address = state.contract.address
+    with {:ok, key, s1} <- Stack.pop(state.frame.stack) do
+      contract_address = state.frame.contract.address
 
       {access_cost, state_after_access} =
-        Access.storage_access_cost(%{state | stack: s1}, contract_address, key)
+        Access.storage_access_cost(
+          MachineState.update_frame(state, &%{&1 | stack: s1}),
+          contract_address,
+          key
+        )
 
       case MachineState.consume_gas(state_after_access, access_cost) do
         {:ok, state_after_gas} ->
           value = Database.storage_load(state_after_gas.db, contract_address, key)
 
-          case Stack.push(state_after_gas.stack, value) do
-            {:ok, s2} -> {:ok, %{state_after_gas | stack: s2} |> MachineState.advance_pc()}
-            {:error, reason} -> {:error, reason, state_after_gas}
+          case Stack.push(state_after_gas.frame.stack, value) do
+            {:ok, s2} ->
+              {:ok,
+               state_after_gas
+               |> MachineState.update_frame(&%{&1 | stack: s2})
+               |> MachineState.advance_pc()}
+
+            {:error, reason} ->
+              {:error, reason, state_after_gas}
           end
 
         {:error, :out_of_gas, halted} ->
@@ -55,10 +65,10 @@ defmodule EEVM.Interpreter.Instructions.StackMemoryStorage.StorageOps do
   end
 
   def execute(0x55, state) do
-    with {:ok, key, s1} <- Stack.pop(state.stack),
+    with {:ok, key, s1} <- Stack.pop(state.frame.stack),
          {:ok, value, s2} <- Stack.pop(s1) do
-      state_after_stack = %{state | stack: s2}
-      contract_address = state_after_stack.contract.address
+      state_after_stack = MachineState.update_frame(state, &%{&1 | stack: s2})
+      contract_address = state_after_stack.frame.contract.address
       access_key = {contract_address, key}
       is_warm = MapSet.member?(state_after_stack.substate.accessed_storage_keys, access_key)
 
@@ -101,10 +111,10 @@ defmodule EEVM.Interpreter.Instructions.StackMemoryStorage.StorageOps do
   # cleared at the end of each transaction. Pre-Cancun, 0x5C is undefined → :invalid.
   def execute(0x5C, %{env: %{config: %{hardfork: hardfork}}} = state) do
     if HardforkConfig.enabled?(hardfork, :eip_1153) do
-      with {:ok, key, s1} <- Stack.pop(state.stack),
+      with {:ok, key, s1} <- Stack.pop(state.frame.stack),
            value = Map.get(state.substate.transient_storage, key, 0),
            {:ok, s2} <- Stack.push(s1, value) do
-        {:ok, %{state | stack: s2} |> MachineState.advance_pc()}
+        {:ok, state |> MachineState.update_frame(&%{&1 | stack: s2}) |> MachineState.advance_pc()}
       else
         {:error, reason} -> {:error, reason, state}
       end
@@ -118,11 +128,17 @@ defmodule EEVM.Interpreter.Instructions.StackMemoryStorage.StorageOps do
   # Pre-Cancun, 0x5D is undefined → :invalid.
   def execute(0x5D, %{env: %{config: %{hardfork: hardfork}}} = state) do
     if HardforkConfig.enabled?(hardfork, :eip_1153) do
-      with {:ok, key, s1} <- Stack.pop(state.stack),
+      with {:ok, key, s1} <- Stack.pop(state.frame.stack),
            {:ok, value, s2} <- Stack.pop(s1) do
         sub = state.substate
         new_sub = %{sub | transient_storage: Map.put(sub.transient_storage, key, value)}
-        {:ok, %{state | stack: s2, substate: new_sub} |> MachineState.advance_pc()}
+
+        state_after =
+          state
+          |> MachineState.update_frame(&%{&1 | stack: s2})
+          |> Map.put(:substate, new_sub)
+
+        {:ok, MachineState.advance_pc(state_after)}
       else
         {:error, reason} -> {:error, reason, state}
       end
@@ -139,7 +155,7 @@ defmodule EEVM.Interpreter.Instructions.StackMemoryStorage.StorageOps do
         {value, state}
 
       :error ->
-        value = Database.storage_load(state.db, state.contract.address, key)
+        value = Database.storage_load(state.db, state.frame.contract.address, key)
         sub = state.substate
         new_sub = %{sub | original_storage: Map.put(sub.original_storage, key, value)}
         {value, %{state | substate: new_sub}}

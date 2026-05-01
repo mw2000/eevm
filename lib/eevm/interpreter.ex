@@ -96,7 +96,7 @@ defmodule EEVM.Interpreter do
         MachineState.halt(state, :stopped)
 
       opcode ->
-        static_cost = if opcode == 0xFE, do: state.gas, else: Static.static_cost(opcode)
+        static_cost = if opcode == 0xFE, do: state.frame.gas, else: Static.static_cost(opcode)
         traced_state = trace_opcode(state, opcode, static_cost)
 
         case MachineState.consume_gas(traced_state, static_cost) do
@@ -121,7 +121,9 @@ defmodule EEVM.Interpreter do
   end
 
   def run_loop(%MachineState{status: :reverted, call_stack: [parent | _]} = state) do
-    state_with_restored_refund = %{state | refund: parent.refund}
+    state_with_restored_refund =
+      MachineState.update_frame(state, &%{&1 | refund: parent.refund})
+
     {:ok, resumed_state} = MachineState.pop_frame(state_with_restored_refund)
     run_loop(resumed_state)
   end
@@ -136,19 +138,19 @@ defmodule EEVM.Interpreter do
 
   defp apply_refund(%MachineState{status: status} = state, _initial_gas)
        when status in [:reverted, :out_of_gas, :invalid] do
-    %{state | refund: 0}
+    MachineState.update_frame(state, &%{&1 | refund: 0})
   end
 
   defp apply_refund(%MachineState{} = state, initial_gas) do
-    gas_used = initial_gas - state.gas
+    gas_used = initial_gas - state.frame.gas
     # EIP-3529 (London+): cap refunds at 1/5 of gas used.
     # Pre-London: cap was 1/2 of gas used.
     refund_cap_divisor =
       if HardforkConfig.enabled?(state.env.config.hardfork, :eip_3529), do: 5, else: 2
 
-    effective_refund = min(state.refund, div(gas_used, refund_cap_divisor))
+    effective_refund = min(state.frame.refund, div(gas_used, refund_cap_divisor))
 
-    refunded_gas = state.gas + effective_refund
+    refunded_gas = state.frame.gas + effective_refund
 
     calldata_floor_gas =
       IntrinsicGas.calldata_floor_gas_cost(state.env.tx, state.env.config.hardfork)
@@ -160,7 +162,7 @@ defmodule EEVM.Interpreter do
         refunded_gas
       end
 
-    %{state | gas: gas_after_floor, refund: 0}
+    MachineState.update_frame(state, &%{&1 | gas: gas_after_floor, refund: 0})
   end
 
   defp cleanup_touched_empty_accounts(%MachineState{status: :stopped} = state) do
@@ -188,7 +190,7 @@ defmodule EEVM.Interpreter do
 
   defp execute_opcode(opcode, state) do
     case Registry.info(opcode) do
-      {:ok, %{state_mutating: true}} when state.is_static ->
+      {:ok, %{state_mutating: true}} when state.frame.is_static ->
         {:ok, MachineState.halt(state, :reverted)}
 
       {:ok, %{module: module}} ->
@@ -204,18 +206,18 @@ defmodule EEVM.Interpreter do
 
   defp trace_opcode(%MachineState{tracer: nil} = state, _opcode, _static_cost), do: state
 
-  defp trace_opcode(%MachineState{tracer: tracer} = state, opcode, static_cost) do
+  defp trace_opcode(%MachineState{tracer: tracer, frame: frame} = state, opcode, static_cost) do
     step = %TraceStep{
-      pc: state.pc,
+      pc: frame.pc,
       op: Tracer.op_name(opcode),
       op_byte: opcode,
-      gas_remaining: state.gas,
+      gas_remaining: frame.gas,
       gas_cost: static_cost,
-      stack: Stack.to_list(state.stack),
-      memory_size: Memory.size(state.memory),
-      depth: state.depth,
-      refund: state.refund,
-      return_data: state.return_data,
+      stack: Stack.to_list(frame.stack),
+      memory_size: Memory.size(frame.memory),
+      depth: frame.depth,
+      refund: frame.refund,
+      return_data: frame.return_data,
       error: nil
     }
 

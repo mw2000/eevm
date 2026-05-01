@@ -72,14 +72,14 @@ defmodule EEVM.Interpreter.Instructions.TransientStorageTest do
       code = <<0x60, 0x00, 0x5C, 0x00>>
       result = EEVM.execute(code, gas: 10_000)
       expected_cost = Static.static_cost(0x60) + Static.static_cost(0x5C)
-      assert result.gas == 10_000 - expected_cost
+      assert result.frame.gas == 10_000 - expected_cost
     end
 
     test "TSTORE costs 100 gas (warm access)" do
       code = <<0x60, 0xFF, 0x60, 0x01, 0x5D, 0x00>>
       result = EEVM.execute(code, gas: 10_000)
       expected_cost = Static.static_cost(0x60) * 2 + Static.static_cost(0x5D)
-      assert result.gas == 10_000 - expected_cost
+      assert result.frame.gas == 10_000 - expected_cost
     end
 
     test "transient storage does not affect persistent storage" do

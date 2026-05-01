@@ -31,7 +31,7 @@ defmodule EEVM.Interpreter.Instructions.System.Creation do
   @spec execute(non_neg_integer(), MachineState.t()) ::
           {:ok, MachineState.t()} | {:error, atom(), MachineState.t()}
   def execute(0xF0, state) do
-    with {:ok, value, s1} <- Stack.pop(state.stack),
+    with {:ok, value, s1} <- Stack.pop(state.frame.stack),
          {:ok, offset, s2} <- Stack.pop(s1),
          {:ok, size, s3} <- Stack.pop(s2) do
       execute_create(state, s3, value, offset, size, nil)
@@ -41,7 +41,7 @@ defmodule EEVM.Interpreter.Instructions.System.Creation do
   end
 
   def execute(0xF5, state) do
-    with {:ok, value, s1} <- Stack.pop(state.stack),
+    with {:ok, value, s1} <- Stack.pop(state.frame.stack),
          {:ok, offset, s2} <- Stack.pop(s1),
          {:ok, size, s3} <- Stack.pop(s2),
          {:ok, salt, s4} <- Stack.pop(s3) do
@@ -55,10 +55,10 @@ defmodule EEVM.Interpreter.Instructions.System.Creation do
 
   defp execute_create(state, stack, value, offset, size, salt) do
     cond do
-      state.depth >= 1024 ->
+      state.frame.depth >= 1024 ->
         create_failed(state, stack)
 
-      state.is_static ->
+      state.frame.is_static ->
         create_failed(state, stack)
 
       true ->
@@ -68,12 +68,15 @@ defmodule EEVM.Interpreter.Instructions.System.Creation do
 
   defp execute_create_inner(state, stack, value, offset, size, salt) do
     extra_cost =
-      GasMemory.memory_expansion_cost(Memory.size(state.memory), offset, size) +
+      GasMemory.memory_expansion_cost(Memory.size(state.frame.memory), offset, size) +
         if(salt == nil, do: 0, else: Dynamic.create2_hash_cost(size))
 
-    case MachineState.consume_gas(%{state | stack: stack}, extra_cost) do
+    case MachineState.consume_gas(
+           MachineState.update_frame(state, &%{&1 | stack: stack}),
+           extra_cost
+         ) do
       {:ok, state_after_cost} ->
-        creator = state_after_cost.contract.address
+        creator = state_after_cost.frame.contract.address
         nonce = Database.get_nonce(state_after_cost.db, creator)
 
         db_after_nonce =
@@ -91,7 +94,7 @@ defmodule EEVM.Interpreter.Instructions.System.Creation do
           case MachineState.consume_gas(state_after_cost, initcode_cost) do
             {:ok, state_after_initcode_cost} ->
               {init_code, memory_after_read} =
-                Memory.read_bytes(state_after_initcode_cost.memory, offset, size)
+                Memory.read_bytes(state_after_initcode_cost.frame.memory, offset, size)
 
               new_address =
                 if salt == nil,
@@ -112,12 +115,12 @@ defmodule EEVM.Interpreter.Instructions.System.Creation do
                         caller: creator,
                         callvalue: value,
                         calldata: <<>>,
-                        balances: state_after_initcode_cost.contract.balances
+                        balances: state_after_initcode_cost.frame.contract.balances
                       )
 
                     child_state =
                       MachineState.new(init_code,
-                        gas: state_after_initcode_cost.gas,
+                        gas: state_after_initcode_cost.frame.gas,
                         db: db_after_transfer,
                         tx: state_after_touch.env.tx,
                         block: state_after_touch.env.block,
@@ -127,8 +130,8 @@ defmodule EEVM.Interpreter.Instructions.System.Creation do
                         accessed_addresses: state_after_touch.substate.accessed_addresses,
                         accessed_storage_keys: state_after_touch.substate.accessed_storage_keys,
                         created_addresses: state_after_touch.substate.created_addresses,
-                        is_static: state_after_touch.is_static,
-                        depth: state_after_touch.depth + 1,
+                        is_static: state_after_touch.frame.is_static,
+                        depth: state_after_touch.frame.depth + 1,
                         tracer: state_after_touch.tracer
                       )
 
@@ -142,7 +145,7 @@ defmodule EEVM.Interpreter.Instructions.System.Creation do
                     }
 
                     if deployment_success do
-                      runtime_code = child_result.return_data
+                      runtime_code = child_result.frame.return_data
 
                       if HardforkConfig.enabled?(child_result.env.config.hardfork, :eip_170) and
                            byte_size(runtime_code) > @max_code_size do
@@ -159,7 +162,7 @@ defmodule EEVM.Interpreter.Instructions.System.Creation do
                         else
                           deposit_cost = Dynamic.code_deposit_cost(byte_size(runtime_code))
 
-                          if child_result.gas >= deposit_cost do
+                          if child_result.frame.gas >= deposit_cost do
                             db_after_deploy =
                               child_result.db
                               |> Database.put_code(new_address, runtime_code)
@@ -178,12 +181,17 @@ defmodule EEVM.Interpreter.Instructions.System.Creation do
 
                             {:ok,
                              merged
-                             |> Map.put(:stack, stack_after_create)
-                             |> Map.put(:memory, memory_after_read)
+                             |> MachineState.update_frame(
+                               &%{
+                                 &1
+                                 | stack: stack_after_create,
+                                   memory: memory_after_read,
+                                   gas: child_result.frame.gas - deposit_cost,
+                                   return_data: child_result.frame.return_data
+                               }
+                             )
                              |> Map.put(:db, db_after_deploy)
                              |> Map.put(:substate, merged_substate)
-                             |> Map.put(:gas, child_result.gas - deposit_cost)
-                             |> Map.put(:return_data, child_result.return_data)
                              |> MachineState.advance_pc()}
                           else
                             create_failed(post_child_fail_state, stack)
@@ -295,6 +303,10 @@ defmodule EEVM.Interpreter.Instructions.System.Creation do
 
   defp create_failed(state, stack) do
     {:ok, stack_after_create} = Stack.push(stack, 0)
-    {:ok, %{state | stack: stack_after_create} |> MachineState.advance_pc()}
+
+    {:ok,
+     state
+     |> MachineState.update_frame(&%{&1 | stack: stack_after_create})
+     |> MachineState.advance_pc()}
   end
 end

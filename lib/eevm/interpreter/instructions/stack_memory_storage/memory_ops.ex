@@ -21,13 +21,21 @@ defmodule EEVM.Interpreter.Instructions.StackMemoryStorage.MemoryOps do
   @spec execute(non_neg_integer(), MachineState.t()) ::
           {:ok, MachineState.t()} | {:error, atom(), MachineState.t()}
   def execute(0x51, state) do
-    with {:ok, offset, s1} <- Stack.pop(state.stack),
-         expansion_cost = GasMemory.memory_expansion_cost_word(Memory.size(state.memory), offset),
+    with {:ok, offset, s1} <- Stack.pop(state.frame.stack),
+         expansion_cost =
+           GasMemory.memory_expansion_cost_word(Memory.size(state.frame.memory), offset),
          {:ok, state_after_gas} <-
-           MachineState.consume_gas(%{state | stack: s1}, expansion_cost) do
-      {value, new_memory} = Memory.load(state_after_gas.memory, offset)
-      {:ok, s2} = Stack.push(state_after_gas.stack, value)
-      {:ok, %{state_after_gas | stack: s2, memory: new_memory} |> MachineState.advance_pc()}
+           MachineState.consume_gas(
+             MachineState.update_frame(state, &%{&1 | stack: s1}),
+             expansion_cost
+           ) do
+      {value, new_memory} = Memory.load(state_after_gas.frame.memory, offset)
+      {:ok, s2} = Stack.push(state_after_gas.frame.stack, value)
+
+      {:ok,
+       state_after_gas
+       |> MachineState.update_frame(&%{&1 | stack: s2, memory: new_memory})
+       |> MachineState.advance_pc()}
     else
       {:error, reason} -> {:error, reason, state}
       {:error, :out_of_gas, halted_state} -> {:error, :out_of_gas, halted_state}
@@ -35,13 +43,21 @@ defmodule EEVM.Interpreter.Instructions.StackMemoryStorage.MemoryOps do
   end
 
   def execute(0x52, state) do
-    with {:ok, offset, s1} <- Stack.pop(state.stack),
+    with {:ok, offset, s1} <- Stack.pop(state.frame.stack),
          {:ok, value, s2} <- Stack.pop(s1),
-         expansion_cost = GasMemory.memory_expansion_cost_word(Memory.size(state.memory), offset),
+         expansion_cost =
+           GasMemory.memory_expansion_cost_word(Memory.size(state.frame.memory), offset),
          {:ok, state_after_gas} <-
-           MachineState.consume_gas(%{state | stack: s2}, expansion_cost) do
-      new_memory = Memory.store(state_after_gas.memory, offset, value)
-      {:ok, %{state_after_gas | stack: s2, memory: new_memory} |> MachineState.advance_pc()}
+           MachineState.consume_gas(
+             MachineState.update_frame(state, &%{&1 | stack: s2}),
+             expansion_cost
+           ) do
+      new_memory = Memory.store(state_after_gas.frame.memory, offset, value)
+
+      {:ok,
+       state_after_gas
+       |> MachineState.update_frame(&%{&1 | stack: s2, memory: new_memory})
+       |> MachineState.advance_pc()}
     else
       {:error, reason} -> {:error, reason, state}
       {:error, :out_of_gas, halted_state} -> {:error, :out_of_gas, halted_state}
@@ -49,13 +65,21 @@ defmodule EEVM.Interpreter.Instructions.StackMemoryStorage.MemoryOps do
   end
 
   def execute(0x53, state) do
-    with {:ok, offset, s1} <- Stack.pop(state.stack),
+    with {:ok, offset, s1} <- Stack.pop(state.frame.stack),
          {:ok, value, s2} <- Stack.pop(s1),
-         expansion_cost = GasMemory.memory_expansion_cost_byte(Memory.size(state.memory), offset),
+         expansion_cost =
+           GasMemory.memory_expansion_cost_byte(Memory.size(state.frame.memory), offset),
          {:ok, state_after_gas} <-
-           MachineState.consume_gas(%{state | stack: s2}, expansion_cost) do
-      new_memory = Memory.store_byte(state_after_gas.memory, offset, value)
-      {:ok, %{state_after_gas | stack: s2, memory: new_memory} |> MachineState.advance_pc()}
+           MachineState.consume_gas(
+             MachineState.update_frame(state, &%{&1 | stack: s2}),
+             expansion_cost
+           ) do
+      new_memory = Memory.store_byte(state_after_gas.frame.memory, offset, value)
+
+      {:ok,
+       state_after_gas
+       |> MachineState.update_frame(&%{&1 | stack: s2, memory: new_memory})
+       |> MachineState.advance_pc()}
     else
       {:error, reason} -> {:error, reason, state}
       {:error, :out_of_gas, halted_state} -> {:error, :out_of_gas, halted_state}
@@ -63,7 +87,7 @@ defmodule EEVM.Interpreter.Instructions.StackMemoryStorage.MemoryOps do
   end
 
   def execute(0x59, state) do
-    size = Memory.size(state.memory)
+    size = Memory.size(state.frame.memory)
     Helpers.push_value(state, size)
   end
 
@@ -71,23 +95,33 @@ defmodule EEVM.Interpreter.Instructions.StackMemoryStorage.MemoryOps do
   # Pre-Cancun, 0x5E is undefined → :invalid.
   def execute(0x5E, %{env: %{config: %{hardfork: hardfork}}} = state) do
     if HardforkConfig.enabled?(hardfork, :eip_5656) do
-      with {:ok, dst, s1} <- Stack.pop(state.stack),
+      with {:ok, dst, s1} <- Stack.pop(state.frame.stack),
            {:ok, src, s2} <- Stack.pop(s1),
            {:ok, length, s3} <- Stack.pop(s2) do
         if length == 0 do
-          {:ok, MachineState.advance_pc(%{state | stack: s3})}
+          {:ok,
+           state
+           |> MachineState.update_frame(&%{&1 | stack: s3})
+           |> MachineState.advance_pc()}
         else
           max_offset = max(src + length, dst + length)
 
           expansion_cost =
-            GasMemory.memory_expansion_cost(Memory.size(state.memory), 0, max_offset)
+            GasMemory.memory_expansion_cost(Memory.size(state.frame.memory), 0, max_offset)
 
           dynamic_cost = Dynamic.copy_cost(length) + expansion_cost
 
-          case MachineState.consume_gas(%{state | stack: s3}, dynamic_cost) do
+          case MachineState.consume_gas(
+                 MachineState.update_frame(state, &%{&1 | stack: s3}),
+                 dynamic_cost
+               ) do
             {:ok, s4} ->
-              new_memory = Memory.copy(s4.memory, dst, src, length)
-              {:ok, MachineState.advance_pc(%{s4 | memory: new_memory})}
+              new_memory = Memory.copy(s4.frame.memory, dst, src, length)
+
+              {:ok,
+               s4
+               |> MachineState.update_frame(&%{&1 | memory: new_memory})
+               |> MachineState.advance_pc()}
 
             {:error, :out_of_gas, halted_state} ->
               {:error, :out_of_gas, halted_state}

@@ -97,7 +97,7 @@ defmodule EEVM.Interpreter.Instructions.StackMemoryTest do
           Memory.memory_expansion_cost(0, 0, 97)
 
       assert result.status == :stopped
-      assert result.gas == 100_000 - expected
+      assert result.frame.gas == 100_000 - expected
     end
 
     test "memory expansion covers both src and dst ranges" do

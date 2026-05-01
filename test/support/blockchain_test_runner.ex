@@ -242,7 +242,7 @@ defmodule EEVM.TestSupport.BlockchainTestRunner do
         with {:ok, machine} <- run_interpreter(tx, db_after_nonce, block_ctx, config),
              {:ok, finalized_db} <- finalize_fees(db_after_nonce, machine, tx, block_ctx) do
           failed = failed_status?(machine.status)
-          gas_used = tx.gas_limit - machine.gas
+          gas_used = tx.gas_limit - machine.frame.gas
 
           {:ok,
            %{
@@ -268,7 +268,7 @@ defmodule EEVM.TestSupport.BlockchainTestRunner do
   defp finalize_fees(db_after_nonce, machine, tx, %Block{} = block_ctx) do
     failed = failed_status?(machine.status)
     settled = if failed, do: db_after_nonce, else: machine.db
-    gas_used = tx.gas_limit - machine.gas
+    gas_used = tx.gas_limit - machine.frame.gas
     apply_fees(settled, tx, block_ctx, gas_used)
   end
 

@@ -213,27 +213,27 @@ defmodule EEVM.Interpreter.Instructions.EnvironmentTest do
       result = EEVM.execute(code, gas: 1000)
       # GAS pushes remaining gas (1000-2=998), then STOP costs 0
       assert EEVM.stack_values(result) == [998]
-      assert result.gas == 998
+      assert result.frame.gas == 998
     end
 
     test "env opcodes have correct gas costs" do
       # ADDRESS costs 2 (base)
       code = <<0x30, 0x00>>
       result = EEVM.execute(code, gas: 1000)
-      assert result.gas == 1000 - 2
+      assert result.frame.gas == 1000 - 2
     end
 
     test "BALANCE costs 2600 gas" do
       code = <<0x60, 0x0B, 0x31, 0x00>>
       result = EEVM.execute(code, gas: 10_000)
       # PUSH1=3 + BALANCE=2600 + STOP=0 = 2603
-      assert result.gas == 10_000 - 2603
+      assert result.frame.gas == 10_000 - 2603
     end
 
     test "SELFBALANCE costs 5 gas" do
       code = <<0x47, 0x00>>
       result = EEVM.execute(code, gas: 1000)
-      assert result.gas == 1000 - 5
+      assert result.frame.gas == 1000 - 5
     end
   end
 
@@ -278,7 +278,7 @@ defmodule EEVM.Interpreter.Instructions.EnvironmentTest do
           Memory.memory_expansion_cost(0, 0, 4) +
           Static.static_cost(0x51)
 
-      assert result.gas == initial_gas - expected_spent
+      assert result.frame.gas == initial_gas - expected_spent
     end
   end
 
@@ -336,7 +336,7 @@ defmodule EEVM.Interpreter.Instructions.EnvironmentTest do
           Memory.memory_expansion_cost(0, 0, 4) +
           Static.static_cost(0x51)
 
-      assert result.gas == initial_gas - expected_spent
+      assert result.frame.gas == initial_gas - expected_spent
     end
 
     test "partial copy with destination offset" do
@@ -402,7 +402,7 @@ defmodule EEVM.Interpreter.Instructions.EnvironmentTest do
           Memory.memory_expansion_cost(0, 0, 4) +
           Static.static_cost(0x51)
 
-      assert result.gas == initial_gas - expected_spent
+      assert result.frame.gas == initial_gas - expected_spent
     end
 
     test "EXTCODEHASH returns 0 for non-existent account" do

@@ -38,9 +38,9 @@ defmodule EEVM.TestSupport.StateTestRunner do
            %{
              state_root: StateRoot.compute_state_root(finalized_db),
              logs_hash: logs_hash(if(failed, do: [], else: machine.substate.logs)),
-             output: if(failed, do: <<>>, else: machine.return_data),
+             output: if(failed, do: <<>>, else: machine.frame.return_data),
              status: machine.status,
-             gas_used: tx.gas_limit - machine.gas,
+             gas_used: tx.gas_limit - machine.frame.gas,
              db: finalized_db
            }}
         end
@@ -83,7 +83,7 @@ defmodule EEVM.TestSupport.StateTestRunner do
   defp finalize_fees(db_after_nonce, machine, tx, block) do
     failed = failed_status?(machine.status)
     settled_db = settle_state(db_after_nonce, machine, failed)
-    gas_used = tx.gas_limit - machine.gas
+    gas_used = tx.gas_limit - machine.frame.gas
     apply_fees(settled_db, tx, block, gas_used)
   end
 

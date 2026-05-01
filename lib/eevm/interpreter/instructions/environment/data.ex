@@ -17,28 +17,31 @@ defmodule EEVM.Interpreter.Instructions.Environment.Data do
   @spec execute(non_neg_integer(), MachineState.t()) ::
           {:ok, MachineState.t()} | {:error, atom(), MachineState.t()}
   def execute(0x35, state) do
-    with {:ok, offset, s1} <- Stack.pop(state.stack),
-         value = Contract.calldata_load(state.contract, offset),
+    with {:ok, offset, s1} <- Stack.pop(state.frame.stack),
+         value = Contract.calldata_load(state.frame.contract, offset),
          {:ok, s2} <- Stack.push(s1, value) do
-      {:ok, %{state | stack: s2} |> MachineState.advance_pc()}
+      {:ok, state |> MachineState.update_frame(&%{&1 | stack: s2}) |> MachineState.advance_pc()}
     else
       {:error, reason} -> {:error, reason, state}
     end
   end
 
   def execute(0x37, state) do
-    with {:ok, dest_offset, s1} <- Stack.pop(state.stack),
+    with {:ok, dest_offset, s1} <- Stack.pop(state.frame.stack),
          {:ok, data_offset, s2} <- Stack.pop(s1),
          {:ok, length, s3} <- Stack.pop(s2) do
       if length == 0 do
-        {:ok, %{state | stack: s3} |> MachineState.advance_pc()}
+        {:ok, state |> MachineState.update_frame(&%{&1 | stack: s3}) |> MachineState.advance_pc()}
       else
         expansion_cost =
-          GasMemory.memory_expansion_cost(Memory.size(state.memory), dest_offset, length)
+          GasMemory.memory_expansion_cost(Memory.size(state.frame.memory), dest_offset, length)
 
-        case MachineState.consume_gas(%{state | stack: s3}, expansion_cost) do
+        case MachineState.consume_gas(
+               MachineState.update_frame(state, &%{&1 | stack: s3}),
+               expansion_cost
+             ) do
           {:ok, state_after_gas} ->
-            calldata = state_after_gas.contract.calldata
+            calldata = state_after_gas.frame.contract.calldata
             cd_size = byte_size(calldata)
 
             bytes =
@@ -54,11 +57,14 @@ defmodule EEVM.Interpreter.Instructions.Environment.Data do
               bytes
               |> :binary.bin_to_list()
               |> Enum.with_index()
-              |> Enum.reduce(state_after_gas.memory, fn {byte, i}, mem ->
+              |> Enum.reduce(state_after_gas.frame.memory, fn {byte, i}, mem ->
                 Memory.store_byte(mem, dest_offset + i, byte)
               end)
 
-            {:ok, %{state_after_gas | memory: new_memory} |> MachineState.advance_pc()}
+            {:ok,
+             state_after_gas
+             |> MachineState.update_frame(&%{&1 | memory: new_memory})
+             |> MachineState.advance_pc()}
 
           {:error, :out_of_gas, halted_state} ->
             {:error, :out_of_gas, halted_state}
@@ -70,17 +76,20 @@ defmodule EEVM.Interpreter.Instructions.Environment.Data do
   end
 
   def execute(0x39, state) do
-    with {:ok, dest_offset, s1} <- Stack.pop(state.stack),
+    with {:ok, dest_offset, s1} <- Stack.pop(state.frame.stack),
          {:ok, code_offset, s2} <- Stack.pop(s1),
          {:ok, length, s3} <- Stack.pop(s2) do
       if length == 0 do
-        {:ok, %{state | stack: s3} |> MachineState.advance_pc()}
+        {:ok, state |> MachineState.update_frame(&%{&1 | stack: s3}) |> MachineState.advance_pc()}
       else
         dynamic_cost =
           Dynamic.copy_cost(length) +
-            GasMemory.memory_expansion_cost(Memory.size(state.memory), dest_offset, length)
+            GasMemory.memory_expansion_cost(Memory.size(state.frame.memory), dest_offset, length)
 
-        case MachineState.consume_gas(%{state | stack: s3}, dynamic_cost) do
+        case MachineState.consume_gas(
+               MachineState.update_frame(state, &%{&1 | stack: s3}),
+               dynamic_cost
+             ) do
           {:ok, state_after_gas} ->
             bytes = MachineState.read_code(state_after_gas, code_offset, length)
 
@@ -88,11 +97,14 @@ defmodule EEVM.Interpreter.Instructions.Environment.Data do
               bytes
               |> :binary.bin_to_list()
               |> Enum.with_index()
-              |> Enum.reduce(state_after_gas.memory, fn {byte, i}, mem ->
+              |> Enum.reduce(state_after_gas.frame.memory, fn {byte, i}, mem ->
                 Memory.store_byte(mem, dest_offset + i, byte)
               end)
 
-            {:ok, %{state_after_gas | memory: new_memory} |> MachineState.advance_pc()}
+            {:ok,
+             state_after_gas
+             |> MachineState.update_frame(&%{&1 | memory: new_memory})
+             |> MachineState.advance_pc()}
 
           {:error, :out_of_gas, halted_state} ->
             {:error, :out_of_gas, halted_state}
@@ -104,34 +116,48 @@ defmodule EEVM.Interpreter.Instructions.Environment.Data do
   end
 
   def execute(0x3E, state) do
-    with {:ok, dest_offset, s1} <- Stack.pop(state.stack),
+    with {:ok, dest_offset, s1} <- Stack.pop(state.frame.stack),
          {:ok, data_offset, s2} <- Stack.pop(s1),
          {:ok, length, s3} <- Stack.pop(s2) do
       cond do
         length == 0 ->
-          {:ok, MachineState.advance_pc(%{state | stack: s3})}
+          {:ok,
+           state |> MachineState.update_frame(&%{&1 | stack: s3}) |> MachineState.advance_pc()}
 
-        data_offset + length > byte_size(state.return_data) ->
-          {:ok, MachineState.halt(%{state | stack: s3}, :reverted)}
+        data_offset + length > byte_size(state.frame.return_data) ->
+          {:ok,
+           state
+           |> MachineState.update_frame(&%{&1 | stack: s3})
+           |> MachineState.halt(:reverted)}
 
         true ->
           dynamic_cost =
             Dynamic.copy_cost(length) +
-              GasMemory.memory_expansion_cost(Memory.size(state.memory), dest_offset, length)
+              GasMemory.memory_expansion_cost(
+                Memory.size(state.frame.memory),
+                dest_offset,
+                length
+              )
 
-          case MachineState.consume_gas(%{state | stack: s3}, dynamic_cost) do
+          case MachineState.consume_gas(
+                 MachineState.update_frame(state, &%{&1 | stack: s3}),
+                 dynamic_cost
+               ) do
             {:ok, s4} ->
-              bytes = binary_part(s4.return_data, data_offset, length)
+              bytes = binary_part(s4.frame.return_data, data_offset, length)
 
               new_memory =
                 bytes
                 |> :binary.bin_to_list()
                 |> Enum.with_index()
-                |> Enum.reduce(s4.memory, fn {byte, i}, mem ->
+                |> Enum.reduce(s4.frame.memory, fn {byte, i}, mem ->
                   Memory.store_byte(mem, dest_offset + i, byte)
                 end)
 
-              {:ok, MachineState.advance_pc(%{s4 | memory: new_memory})}
+              {:ok,
+               s4
+               |> MachineState.update_frame(&%{&1 | memory: new_memory})
+               |> MachineState.advance_pc()}
 
             {:error, :out_of_gas, halted_state} ->
               {:error, :out_of_gas, halted_state}

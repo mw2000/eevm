@@ -33,7 +33,7 @@ defmodule EEVM.Interpreter.Instructions.CryptoTest do
       code = <<0x60, 32, 0x60, 0, 0x20, 0x00>>
       result = EEVM.execute(code, gas: 10_000)
       # Total: 3 + 3 + 30 + 6 + 3 + 0 = 45
-      assert result.gas == 10_000 - 45
+      assert result.frame.gas == 10_000 - 45
     end
 
     test "dynamic gas scales with data size" do
@@ -44,7 +44,7 @@ defmodule EEVM.Interpreter.Instructions.CryptoTest do
       r1 = EEVM.execute(code1, gas: 100_000)
       r2 = EEVM.execute(code2, gas: 100_000)
       # r2 should use 6 more gas (1 extra word) + some memory expansion
-      assert r1.gas > r2.gas
+      assert r1.frame.gas > r2.frame.gas
     end
 
     test "out of gas on large hash" do

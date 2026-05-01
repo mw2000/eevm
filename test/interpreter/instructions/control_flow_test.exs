@@ -75,7 +75,7 @@ defmodule EEVM.Interpreter.Instructions.ControlFlowTest do
     test "PUSH0 costs 2 gas (base)" do
       code = <<0x5F, 0x00>>
       result = EEVM.execute(code, gas: 1000)
-      assert result.gas == 1000 - 2
+      assert result.frame.gas == 1000 - 2
     end
 
     test "PUSH0 + PUSH0 + ADD = 0" do
@@ -91,7 +91,7 @@ defmodule EEVM.Interpreter.Instructions.ControlFlowTest do
       push1_code = <<0x60, 0, 0x00>>
       r0 = EEVM.execute(push0_code, gas: 1000)
       r1 = EEVM.execute(push1_code, gas: 1000)
-      assert r0.gas > r1.gas
+      assert r0.frame.gas > r1.frame.gas
     end
 
     test "disassembles as PUSH0" do
