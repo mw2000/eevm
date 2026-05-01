@@ -79,17 +79,17 @@ defmodule EEVM do
   """
   @spec stack_values(EEVM.Interpreter.MachineState.t()) :: [non_neg_integer()]
   def stack_values(state) do
-    Stack.to_list(state.stack)
+    Stack.to_list(state.frame.stack)
   end
 
   @doc "Returns the list of logs emitted during execution."
   @spec logs(MachineState.t()) :: [map()]
-  def logs(%MachineState{} = state), do: state.logs
+  def logs(%MachineState{} = state), do: state.substate.logs
 
   @doc "Computes the 256-byte logs bloom filter for the executed transaction."
   @spec logs_bloom(MachineState.t()) :: Bloom.t()
   def logs_bloom(%MachineState{} = state) do
-    Bloom.from_logs(state.logs)
+    Bloom.from_logs(state.substate.logs)
   end
 
   @doc """

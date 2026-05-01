@@ -36,12 +36,14 @@ defmodule EEVM.Gas.Access do
   @spec address_access_cost(MachineState.t(), non_neg_integer()) ::
           {non_neg_integer(), MachineState.t()}
   def address_access_cost(state, address) do
-    if HardforkConfig.enabled?(state.config.hardfork, :eip_2929) do
-      if MapSet.member?(state.accessed_addresses, address) do
+    if HardforkConfig.enabled?(state.env.config.hardfork, :eip_2929) do
+      sub = state.substate
+
+      if MapSet.member?(sub.accessed_addresses, address) do
         {@warm_storage_read_cost, state}
       else
-        new_state = %{state | accessed_addresses: MapSet.put(state.accessed_addresses, address)}
-        {@cold_account_access_cost, new_state}
+        new_sub = %{sub | accessed_addresses: MapSet.put(sub.accessed_addresses, address)}
+        {@cold_account_access_cost, %{state | substate: new_sub}}
       end
     else
       # Pre-EIP-2929 (pre-Berlin): flat warm cost — the static cost table already
@@ -53,14 +55,15 @@ defmodule EEVM.Gas.Access do
   @spec storage_access_cost(MachineState.t(), non_neg_integer(), non_neg_integer()) ::
           {non_neg_integer(), MachineState.t()}
   def storage_access_cost(state, address, slot) do
-    if HardforkConfig.enabled?(state.config.hardfork, :eip_2929) do
+    if HardforkConfig.enabled?(state.env.config.hardfork, :eip_2929) do
       key = {address, slot}
+      sub = state.substate
 
-      if MapSet.member?(state.accessed_storage_keys, key) do
+      if MapSet.member?(sub.accessed_storage_keys, key) do
         {@warm_storage_read_cost, state}
       else
-        new_state = %{state | accessed_storage_keys: MapSet.put(state.accessed_storage_keys, key)}
-        {@cold_sload_cost, new_state}
+        new_sub = %{sub | accessed_storage_keys: MapSet.put(sub.accessed_storage_keys, key)}
+        {@cold_sload_cost, %{state | substate: new_sub}}
       end
     else
       # Pre-EIP-2929: flat warm cost (pre-Berlin SLOAD was 800, but our static costs
@@ -70,10 +73,12 @@ defmodule EEVM.Gas.Access do
   end
 
   @spec warm_address?(MachineState.t(), non_neg_integer()) :: boolean()
-  def warm_address?(state, address), do: MapSet.member?(state.accessed_addresses, address)
+  def warm_address?(state, address),
+    do: MapSet.member?(state.substate.accessed_addresses, address)
 
   @spec mark_address_warm(MachineState.t(), non_neg_integer()) :: MachineState.t()
   def mark_address_warm(state, address) do
-    %{state | accessed_addresses: MapSet.put(state.accessed_addresses, address)}
+    sub = state.substate
+    %{state | substate: %{sub | accessed_addresses: MapSet.put(sub.accessed_addresses, address)}}
   end
 end

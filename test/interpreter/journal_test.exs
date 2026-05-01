@@ -11,24 +11,24 @@ defmodule EEVM.Interpreter.JournalTest do
 
       child_db = InMemory.new() |> seed_account(0xCAFE, 100)
 
-      child = %{
-        parent
-        | status: :stopped,
-          db: child_db,
-          accessed_addresses: MapSet.new([0xAA]),
+      child_substate = %{
+        parent.substate
+        | accessed_addresses: MapSet.new([0xAA]),
           accessed_storage_keys: MapSet.new([{0xAA, 0x01}]),
           created_addresses: MapSet.new([0xCAFE]),
           touched_addresses: MapSet.new([0xCAFE])
       }
 
+      child = %{parent | status: :stopped, db: child_db, substate: child_substate}
+
       merged = Journal.merge_child_result(parent, child)
 
       assert merged.db == child_db
       assert merged.db != parent_db
-      assert merged.accessed_addresses == MapSet.new([0xAA])
-      assert merged.accessed_storage_keys == MapSet.new([{0xAA, 0x01}])
-      assert merged.created_addresses == MapSet.new([0xCAFE])
-      assert merged.touched_addresses == MapSet.new([0xCAFE])
+      assert merged.substate.accessed_addresses == MapSet.new([0xAA])
+      assert merged.substate.accessed_storage_keys == MapSet.new([{0xAA, 0x01}])
+      assert merged.substate.created_addresses == MapSet.new([0xCAFE])
+      assert merged.substate.touched_addresses == MapSet.new([0xCAFE])
     end
 
     test "appends child's logs after parent's, preserving emission order" do
@@ -36,12 +36,18 @@ defmodule EEVM.Interpreter.JournalTest do
       child_log_1 = %{address: 0xBB, topics: [2], data: <<>>}
       child_log_2 = %{address: 0xCC, topics: [3], data: <<>>}
 
-      parent = %{parent_state() | logs: [parent_log]}
-      child = %{parent | status: :stopped, logs: [child_log_1, child_log_2]}
+      base = parent_state()
+      parent = %{base | substate: %{base.substate | logs: [parent_log]}}
+
+      child = %{
+        parent
+        | status: :stopped,
+          substate: %{parent.substate | logs: [child_log_1, child_log_2]}
+      }
 
       merged = Journal.merge_child_result(parent, child)
 
-      assert merged.logs == [parent_log, child_log_1, child_log_2]
+      assert merged.substate.logs == [parent_log, child_log_1, child_log_2]
     end
   end
 
@@ -52,25 +58,30 @@ defmodule EEVM.Interpreter.JournalTest do
 
         child_db = InMemory.new() |> seed_account(0xCAFE, 100)
 
-        child = %{
-          parent
-          | status: unquote(Macro.escape(status)),
-            db: child_db,
-            logs: [%{address: 0xBB, topics: [], data: <<>>}],
+        child_substate = %{
+          parent.substate
+          | logs: [%{address: 0xBB, topics: [], data: <<>>}],
             accessed_addresses: MapSet.new([0xAA]),
             accessed_storage_keys: MapSet.new([{0xAA, 0x01}]),
             created_addresses: MapSet.new([0xCAFE]),
             touched_addresses: MapSet.new([0xCAFE])
         }
 
+        child = %{
+          parent
+          | status: unquote(Macro.escape(status)),
+            db: child_db,
+            substate: child_substate
+        }
+
         merged = Journal.merge_child_result(parent, child)
 
         assert merged.db == parent.db
-        assert merged.logs == parent.logs
-        assert merged.accessed_addresses == parent.accessed_addresses
-        assert merged.accessed_storage_keys == parent.accessed_storage_keys
-        assert merged.created_addresses == parent.created_addresses
-        assert merged.touched_addresses == parent.touched_addresses
+        assert merged.substate.logs == parent.substate.logs
+        assert merged.substate.accessed_addresses == parent.substate.accessed_addresses
+        assert merged.substate.accessed_storage_keys == parent.substate.accessed_storage_keys
+        assert merged.substate.created_addresses == parent.substate.created_addresses
+        assert merged.substate.touched_addresses == parent.substate.touched_addresses
       end
     end
   end
@@ -94,16 +105,21 @@ defmodule EEVM.Interpreter.JournalTest do
   describe "merge_child_result/2 — non-revertible fields" do
     test "parent's stack, memory, pc, gas, refund, contract are not touched on success" do
       parent = parent_state()
-      child = %{parent | status: :stopped, pc: 999, gas: 999_999, refund: 555}
+
+      child = %{
+        parent
+        | status: :stopped,
+          frame: %{parent.frame | pc: 999, gas: 999_999, refund: 555}
+      }
 
       merged = Journal.merge_child_result(parent, child)
 
-      assert merged.pc == parent.pc
-      assert merged.gas == parent.gas
-      assert merged.refund == parent.refund
-      assert merged.stack == parent.stack
-      assert merged.memory == parent.memory
-      assert merged.contract == parent.contract
+      assert merged.frame.pc == parent.frame.pc
+      assert merged.frame.gas == parent.frame.gas
+      assert merged.frame.refund == parent.frame.refund
+      assert merged.frame.stack == parent.frame.stack
+      assert merged.frame.memory == parent.frame.memory
+      assert merged.frame.contract == parent.frame.contract
     end
   end
 

@@ -10,15 +10,15 @@ defmodule EEVM.Interpreter.Journal do
   halt, those mutations must be discarded — the parent must observe the world
   state it had before the child was spawned.
 
-  Concretely, six fields of `EEVM.Interpreter.MachineState` participate in
-  this revert behaviour:
+  Concretely, the `db` field and the entire `substate` struct on
+  `EEVM.Interpreter.MachineState` participate in this revert behaviour:
 
   - `db` — the unified world database (accounts + storage)
-  - `logs` — emitted log entries (parent's logs come first, then child's)
-  - `accessed_addresses` — EIP-2929 access list
-  - `accessed_storage_keys` — EIP-2929 access list
-  - `created_addresses` — EIP-6780 set of contracts created in this tx
-  - `touched_addresses` — EIP-161 cleanup set
+  - `substate.logs` — emitted log entries (parent's first, then child's)
+  - `substate.accessed_addresses` — EIP-2929 access list
+  - `substate.accessed_storage_keys` — EIP-2929 access list
+  - `substate.created_addresses` — EIP-6780 set of contracts created in this tx
+  - `substate.touched_addresses` — EIP-161 cleanup set
 
   The `tracer` field is *not* revertible — trace events accumulate
   monotonically and are always preserved across child boundaries regardless
@@ -60,16 +60,8 @@ defmodule EEVM.Interpreter.Journal do
   """
   @spec merge_child_result(MachineState.t(), MachineState.t()) :: MachineState.t()
   def merge_child_result(%MachineState{} = parent, %MachineState{status: :stopped} = child) do
-    %{
-      parent
-      | db: child.db,
-        logs: parent.logs ++ child.logs,
-        accessed_addresses: child.accessed_addresses,
-        accessed_storage_keys: child.accessed_storage_keys,
-        created_addresses: child.created_addresses,
-        touched_addresses: child.touched_addresses,
-        tracer: child.tracer
-    }
+    merged_substate = %{child.substate | logs: parent.substate.logs ++ child.substate.logs}
+    %{parent | db: child.db, substate: merged_substate, tracer: child.tracer}
   end
 
   def merge_child_result(%MachineState{} = parent, %MachineState{} = child) do

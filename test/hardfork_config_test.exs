@@ -331,12 +331,12 @@ defmodule EEVM.HardforkConfigTest do
       # On Berlin, first SLOAD hits cold access (2100 extra on top of static 0)
       berlin_result = EEVM.execute(code, hardfork: :berlin, gas: 100_000)
       # PUSH1 costs 3; static SLOAD is 0; cold access adds 2100
-      berlin_gas_used = 100_000 - berlin_result.gas
+      berlin_gas_used = 100_000 - berlin_result.frame.gas
       assert berlin_gas_used == 3 + 2100
 
       # Pre-Berlin: no cold/warm distinction — storage_access_cost returns {0, state}
       istanbul_result = EEVM.execute(code, hardfork: :istanbul, gas: 100_000)
-      istanbul_gas_used = 100_000 - istanbul_result.gas
+      istanbul_gas_used = 100_000 - istanbul_result.frame.gas
       # PUSH1(3) + SLOAD(0 extra, no cold/warm penalty) = 3
       assert istanbul_gas_used == 3
     end
@@ -360,7 +360,7 @@ defmodule EEVM.HardforkConfigTest do
 
       result = EEVM.execute(code, hardfork: :london, gas: 200_000)
       # Refund was accrued but then capped at 1/5 of gas used
-      assert result.refund == 0
+      assert result.frame.refund == 0
     end
 
     test "pre-London: refund capped at 1/2 of gas used" do
@@ -374,7 +374,7 @@ defmodule EEVM.HardforkConfigTest do
 
       result = EEVM.execute(code, hardfork: :berlin, gas: 200_000)
       # Refund was applied (1/2 cap) and then zeroed out
-      assert result.refund == 0
+      assert result.frame.refund == 0
     end
   end
 
@@ -392,7 +392,7 @@ defmodule EEVM.HardforkConfigTest do
 
     test "config.hardfork is set to Cancun by default" do
       result = EEVM.execute(<<0x00>>)
-      assert result.config.hardfork.spec_id == :cancun
+      assert result.env.config.hardfork.spec_id == :cancun
     end
   end
 end

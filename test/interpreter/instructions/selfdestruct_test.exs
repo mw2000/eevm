@@ -66,7 +66,7 @@ defmodule EEVM.Interpreter.Instructions.SelfdestructTest do
 
       assert result.status == :stopped
       expected_gas = 1_000_000 - Static.static_cost(0x60) - 5000
-      assert result.gas == expected_gas
+      assert result.frame.gas == expected_gas
     end
 
     test "charges extra 25000 gas for new beneficiary with value" do
@@ -78,7 +78,7 @@ defmodule EEVM.Interpreter.Instructions.SelfdestructTest do
 
       assert result.status == :stopped
       expected_gas = 1_000_000 - Static.static_cost(0x60) - 5000 - 25_000
-      assert result.gas == expected_gas
+      assert result.frame.gas == expected_gas
       assert Database.get_balance(result.db, 0xCC) == 100
     end
 
@@ -95,7 +95,7 @@ defmodule EEVM.Interpreter.Instructions.SelfdestructTest do
       result = EEVM.execute(code, world_state: world_state, contract: contract, gas: 1_000_000)
 
       expected_gas = 1_000_000 - Static.static_cost(0x60) - 5000
-      assert result.gas == expected_gas
+      assert result.frame.gas == expected_gas
     end
 
     test "no extra gas for new beneficiary with zero value" do
@@ -106,7 +106,7 @@ defmodule EEVM.Interpreter.Instructions.SelfdestructTest do
       result = EEVM.execute(code, world_state: world_state, contract: contract, gas: 1_000_000)
 
       expected_gas = 1_000_000 - Static.static_cost(0x60) - 5000
-      assert result.gas == expected_gas
+      assert result.frame.gas == expected_gas
     end
 
     test "contract code/nonce/storage preserved (post-Cancun, not created this tx)" do

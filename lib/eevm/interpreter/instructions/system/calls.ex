@@ -28,7 +28,7 @@ defmodule EEVM.Interpreter.Instructions.System.Calls do
   @spec execute(non_neg_integer(), MachineState.t()) ::
           {:ok, MachineState.t()} | {:error, atom(), MachineState.t()}
   def execute(0xF1, state) do
-    with {:ok, gas_requested, s1} <- Stack.pop(state.stack),
+    with {:ok, gas_requested, s1} <- Stack.pop(state.frame.stack),
          {:ok, address, s2} <- Stack.pop(s1),
          {:ok, value, s3} <- Stack.pop(s2),
          {:ok, args_offset, s4} <- Stack.pop(s3),
@@ -36,10 +36,10 @@ defmodule EEVM.Interpreter.Instructions.System.Calls do
          {:ok, ret_offset, s6} <- Stack.pop(s5),
          {:ok, ret_size, s7} <- Stack.pop(s6) do
       cond do
-        state.depth >= 1024 ->
+        state.frame.depth >= 1024 ->
           call_failed(state, s7)
 
-        state.is_static and value > 0 ->
+        state.frame.is_static and value > 0 ->
           call_failed(state, s7)
 
         true ->
@@ -61,7 +61,7 @@ defmodule EEVM.Interpreter.Instructions.System.Calls do
   end
 
   def execute(0xF2, state) do
-    with {:ok, gas_requested, s1} <- Stack.pop(state.stack),
+    with {:ok, gas_requested, s1} <- Stack.pop(state.frame.stack),
          {:ok, address, s2} <- Stack.pop(s1),
          {:ok, value, s3} <- Stack.pop(s2),
          {:ok, args_offset, s4} <- Stack.pop(s3),
@@ -69,10 +69,10 @@ defmodule EEVM.Interpreter.Instructions.System.Calls do
          {:ok, ret_offset, s6} <- Stack.pop(s5),
          {:ok, ret_size, s7} <- Stack.pop(s6) do
       cond do
-        state.depth >= 1024 ->
+        state.frame.depth >= 1024 ->
           call_failed(state, s7)
 
-        state.is_static and value > 0 ->
+        state.frame.is_static and value > 0 ->
           call_failed(state, s7)
 
         true ->
@@ -86,7 +86,7 @@ defmodule EEVM.Interpreter.Instructions.System.Calls do
             args_size,
             ret_offset,
             ret_size,
-            state.contract.address,
+            state.frame.contract.address,
             true,
             true
           )
@@ -97,13 +97,13 @@ defmodule EEVM.Interpreter.Instructions.System.Calls do
   end
 
   def execute(0xF4, state) do
-    with {:ok, gas_requested, s1} <- Stack.pop(state.stack),
+    with {:ok, gas_requested, s1} <- Stack.pop(state.frame.stack),
          {:ok, address, s2} <- Stack.pop(s1),
          {:ok, args_offset, s3} <- Stack.pop(s2),
          {:ok, args_size, s4} <- Stack.pop(s3),
          {:ok, ret_offset, s5} <- Stack.pop(s4),
          {:ok, ret_size, s6} <- Stack.pop(s5) do
-      if state.depth >= 1024 do
+      if state.frame.depth >= 1024 do
         call_failed(state, s6)
       else
         execute_delegatecall(
@@ -111,12 +111,12 @@ defmodule EEVM.Interpreter.Instructions.System.Calls do
           s6,
           gas_requested,
           address,
-          state.contract.callvalue,
+          state.frame.contract.callvalue,
           args_offset,
           args_size,
           ret_offset,
           ret_size,
-          state.contract.caller,
+          state.frame.contract.caller,
           false,
           false
         )
@@ -127,17 +127,17 @@ defmodule EEVM.Interpreter.Instructions.System.Calls do
   end
 
   def execute(0xFA, state) do
-    with {:ok, gas_requested, s1} <- Stack.pop(state.stack),
+    with {:ok, gas_requested, s1} <- Stack.pop(state.frame.stack),
          {:ok, address, s2} <- Stack.pop(s1),
          {:ok, args_offset, s3} <- Stack.pop(s2),
          {:ok, args_size, s4} <- Stack.pop(s3),
          {:ok, ret_offset, s5} <- Stack.pop(s4),
          {:ok, ret_size, s6} <- Stack.pop(s5) do
-      if state.depth >= 1024 do
+      if state.frame.depth >= 1024 do
         call_failed(state, s6)
       else
         execute_call(
-          %{state | is_static: true},
+          MachineState.update_frame(state, &%{&1 | is_static: true}),
           s6,
           gas_requested,
           address,
@@ -172,55 +172,76 @@ defmodule EEVM.Interpreter.Instructions.System.Calls do
     call_cost =
       Dynamic.call_value_cost(value) +
         Dynamic.call_new_account_cost(account_exists, value) +
-        call_memory_expansion_cost(state.memory, args_offset, args_size, ret_offset, ret_size)
+        call_memory_expansion_cost(
+          state.frame.memory,
+          args_offset,
+          args_size,
+          ret_offset,
+          ret_size
+        )
 
-    with {:ok, state_after_cost} <- MachineState.consume_gas(%{state | stack: stack}, call_cost),
+    with {:ok, state_after_cost} <-
+           MachineState.consume_gas(
+             MachineState.update_frame(state, &%{&1 | stack: stack}),
+             call_cost
+           ),
          {:ok, db_after_transfer} <-
            Database.transfer(
              state_after_cost.db,
-             state_after_cost.contract.address,
+             state_after_cost.frame.contract.address,
              address,
              value
            ) do
       {calldata, memory_after_read} =
-        Memory.read_bytes(state_after_cost.memory, args_offset, args_size)
+        Memory.read_bytes(state_after_cost.frame.memory, args_offset, args_size)
 
-      forwarded_gas = Dynamic.call_forwarded_gas(state_after_cost.gas, gas_requested)
+      forwarded_gas = Dynamic.call_forwarded_gas(state_after_cost.frame.gas, gas_requested)
 
       case MachineState.consume_gas(
-             %{state_after_cost | memory: memory_after_read},
+             MachineState.update_frame(state_after_cost, &%{&1 | memory: memory_after_read}),
              forwarded_gas
            ) do
         {:ok, state_after_forward} ->
           target_code = Database.get_code(db_after_transfer, address)
 
-          if Precompiles.precompile?(address, state_after_forward.config) and target_code == <<>> do
+          if Precompiles.precompile?(address, state_after_forward.env.config) and
+               target_code == <<>> do
             child_gas = forwarded_gas + Dynamic.call_stipend(value)
 
-            case Precompiles.execute(address, calldata, child_gas, state_after_forward.config) do
+            case Precompiles.execute(address, calldata, child_gas, state_after_forward.env.config) do
               {:ok, output, gas_used} ->
                 remaining_gas = child_gas - gas_used
                 memory_result = write_return_data(memory_after_read, ret_offset, ret_size, output)
-                {:ok, stack_after_call} = Stack.push(state_after_forward.stack, 1)
+                {:ok, stack_after_call} = Stack.push(state_after_forward.frame.stack, 1)
                 state_after_touch = MachineState.touch_address(state_after_forward, address)
 
                 {:ok,
                  state_after_touch
-                 |> Map.put(:stack, stack_after_call)
-                 |> Map.put(:memory, memory_result)
-                 |> Map.put(:return_data, output)
-                 |> Map.put(:gas, state_after_touch.gas + remaining_gas)
+                 |> MachineState.update_frame(
+                   &%{
+                     &1
+                     | stack: stack_after_call,
+                       memory: memory_result,
+                       return_data: output,
+                       gas: &1.gas + remaining_gas
+                   }
+                 )
                  |> MachineState.advance_pc()}
 
               {:error, _reason} ->
                 memory_result = write_return_data(memory_after_read, ret_offset, ret_size, <<>>)
-                {:ok, stack_after_call} = Stack.push(state_after_forward.stack, 0)
+                {:ok, stack_after_call} = Stack.push(state_after_forward.frame.stack, 0)
 
                 {:ok,
                  state_after_forward
-                 |> Map.put(:stack, stack_after_call)
-                 |> Map.put(:memory, memory_result)
-                 |> Map.put(:return_data, <<>>)
+                 |> MachineState.update_frame(
+                   &%{
+                     &1
+                     | stack: stack_after_call,
+                       memory: memory_result,
+                       return_data: <<>>
+                   }
+                 )
                  |> MachineState.advance_pc()}
             end
           else
@@ -229,10 +250,10 @@ defmodule EEVM.Interpreter.Instructions.System.Calls do
             child_contract =
               Contract.new(
                 address: address,
-                caller: state_after_forward.contract.address,
+                caller: state_after_forward.frame.contract.address,
                 callvalue: value,
                 calldata: calldata,
-                balances: state_after_forward.contract.balances
+                balances: state_after_forward.frame.contract.balances
               )
 
             child_gas = forwarded_gas + Dynamic.call_stipend(value)
@@ -241,16 +262,16 @@ defmodule EEVM.Interpreter.Instructions.System.Calls do
               MachineState.new(target_code,
                 gas: child_gas,
                 db: db_after_transfer,
-                tx: state_after_touch.tx,
-                block: state_after_touch.block,
+                tx: state_after_touch.env.tx,
+                block: state_after_touch.env.block,
                 contract: child_contract,
-                config: state_after_touch.config,
-                touched_addresses: state_after_touch.touched_addresses,
-                accessed_addresses: state_after_touch.accessed_addresses,
-                accessed_storage_keys: state_after_touch.accessed_storage_keys,
-                created_addresses: state_after_touch.created_addresses,
-                is_static: state_after_touch.is_static,
-                depth: state_after_touch.depth + 1,
+                config: state_after_touch.env.config,
+                touched_addresses: state_after_touch.substate.touched_addresses,
+                accessed_addresses: state_after_touch.substate.accessed_addresses,
+                accessed_storage_keys: state_after_touch.substate.accessed_storage_keys,
+                created_addresses: state_after_touch.substate.created_addresses,
+                is_static: state_after_touch.frame.is_static,
+                depth: state_after_touch.frame.depth + 1,
                 tracer: state_after_touch.tracer
               )
 
@@ -258,17 +279,27 @@ defmodule EEVM.Interpreter.Instructions.System.Calls do
             merged = Journal.merge_child_result(state_after_forward, child_result)
 
             memory_result =
-              write_return_data(memory_after_read, ret_offset, ret_size, child_result.return_data)
+              write_return_data(
+                memory_after_read,
+                ret_offset,
+                ret_size,
+                child_result.frame.return_data
+              )
 
             result_flag = if child_result.status == :stopped, do: 1, else: 0
-            {:ok, stack_after_call} = Stack.push(state_after_forward.stack, result_flag)
+            {:ok, stack_after_call} = Stack.push(state_after_forward.frame.stack, result_flag)
 
             {:ok,
              merged
-             |> Map.put(:stack, stack_after_call)
-             |> Map.put(:memory, memory_result)
-             |> Map.put(:return_data, child_result.return_data)
-             |> Map.put(:gas, state_after_forward.gas + child_result.gas)
+             |> MachineState.update_frame(
+               &%{
+                 &1
+                 | stack: stack_after_call,
+                   memory: memory_result,
+                   return_data: child_result.frame.return_data,
+                   gas: state_after_forward.frame.gas + child_result.frame.gas
+               }
+             )
              |> MachineState.advance_pc()}
           end
 
@@ -277,7 +308,10 @@ defmodule EEVM.Interpreter.Instructions.System.Calls do
       end
     else
       {:error, :insufficient_balance} ->
-        call_failed(%{state | stack: stack, gas: state.gas - call_cost}, stack)
+        call_failed(
+          MachineState.update_frame(state, &%{&1 | stack: stack, gas: &1.gas - call_cost}),
+          stack
+        )
 
       {:error, :out_of_gas, halted_state} ->
         {:error, :out_of_gas, halted_state}
@@ -300,16 +334,26 @@ defmodule EEVM.Interpreter.Instructions.System.Calls do
        ) do
     call_cost =
       if(charge_value_cost?, do: Dynamic.call_value_cost(callvalue), else: 0) +
-        call_memory_expansion_cost(state.memory, args_offset, args_size, ret_offset, ret_size)
+        call_memory_expansion_cost(
+          state.frame.memory,
+          args_offset,
+          args_size,
+          ret_offset,
+          ret_size
+        )
 
-    with {:ok, state_after_cost} <- MachineState.consume_gas(%{state | stack: stack}, call_cost) do
+    with {:ok, state_after_cost} <-
+           MachineState.consume_gas(
+             MachineState.update_frame(state, &%{&1 | stack: stack}),
+             call_cost
+           ) do
       {calldata, memory_after_read} =
-        Memory.read_bytes(state_after_cost.memory, args_offset, args_size)
+        Memory.read_bytes(state_after_cost.frame.memory, args_offset, args_size)
 
-      forwarded_gas = Dynamic.call_forwarded_gas(state_after_cost.gas, gas_requested)
+      forwarded_gas = Dynamic.call_forwarded_gas(state_after_cost.frame.gas, gas_requested)
 
       case MachineState.consume_gas(
-             %{state_after_cost | memory: memory_after_read},
+             MachineState.update_frame(state_after_cost, &%{&1 | memory: memory_after_read}),
              forwarded_gas
            ) do
         {:ok, state_after_forward} ->
@@ -318,31 +362,42 @@ defmodule EEVM.Interpreter.Instructions.System.Calls do
 
           target_code = Database.get_code(state_after_forward.db, address)
 
-          if Precompiles.precompile?(address, state_after_forward.config) and target_code == <<>> do
-            case Precompiles.execute(address, calldata, child_gas, state_after_forward.config) do
+          if Precompiles.precompile?(address, state_after_forward.env.config) and
+               target_code == <<>> do
+            case Precompiles.execute(address, calldata, child_gas, state_after_forward.env.config) do
               {:ok, output, gas_used} ->
                 remaining_gas = child_gas - gas_used
                 memory_result = write_return_data(memory_after_read, ret_offset, ret_size, output)
-                {:ok, stack_after_call} = Stack.push(state_after_forward.stack, 1)
+                {:ok, stack_after_call} = Stack.push(state_after_forward.frame.stack, 1)
                 state_after_touch = MachineState.touch_address(state_after_forward, address)
 
                 {:ok,
                  state_after_touch
-                 |> Map.put(:stack, stack_after_call)
-                 |> Map.put(:memory, memory_result)
-                 |> Map.put(:return_data, output)
-                 |> Map.put(:gas, state_after_touch.gas + remaining_gas)
+                 |> MachineState.update_frame(
+                   &%{
+                     &1
+                     | stack: stack_after_call,
+                       memory: memory_result,
+                       return_data: output,
+                       gas: &1.gas + remaining_gas
+                   }
+                 )
                  |> MachineState.advance_pc()}
 
               {:error, _reason} ->
                 memory_result = write_return_data(memory_after_read, ret_offset, ret_size, <<>>)
-                {:ok, stack_after_call} = Stack.push(state_after_forward.stack, 0)
+                {:ok, stack_after_call} = Stack.push(state_after_forward.frame.stack, 0)
 
                 {:ok,
                  state_after_forward
-                 |> Map.put(:stack, stack_after_call)
-                 |> Map.put(:memory, memory_result)
-                 |> Map.put(:return_data, <<>>)
+                 |> MachineState.update_frame(
+                   &%{
+                     &1
+                     | stack: stack_after_call,
+                       memory: memory_result,
+                       return_data: <<>>
+                   }
+                 )
                  |> MachineState.advance_pc()}
             end
           else
@@ -350,27 +405,27 @@ defmodule EEVM.Interpreter.Instructions.System.Calls do
 
             child_contract =
               Contract.new(
-                address: state_after_forward.contract.address,
+                address: state_after_forward.frame.contract.address,
                 caller: caller,
                 callvalue: callvalue,
                 calldata: calldata,
-                balances: state_after_forward.contract.balances
+                balances: state_after_forward.frame.contract.balances
               )
 
             child_state =
               MachineState.new(target_code,
                 gas: child_gas,
                 db: state_after_touch.db,
-                tx: state_after_touch.tx,
-                block: state_after_touch.block,
+                tx: state_after_touch.env.tx,
+                block: state_after_touch.env.block,
                 contract: child_contract,
-                config: state_after_touch.config,
-                touched_addresses: state_after_touch.touched_addresses,
-                accessed_addresses: state_after_touch.accessed_addresses,
-                accessed_storage_keys: state_after_touch.accessed_storage_keys,
-                created_addresses: state_after_touch.created_addresses,
-                is_static: state_after_touch.is_static,
-                depth: state_after_touch.depth + 1,
+                config: state_after_touch.env.config,
+                touched_addresses: state_after_touch.substate.touched_addresses,
+                accessed_addresses: state_after_touch.substate.accessed_addresses,
+                accessed_storage_keys: state_after_touch.substate.accessed_storage_keys,
+                created_addresses: state_after_touch.substate.created_addresses,
+                is_static: state_after_touch.frame.is_static,
+                depth: state_after_touch.frame.depth + 1,
                 tracer: state_after_touch.tracer
               )
 
@@ -378,17 +433,27 @@ defmodule EEVM.Interpreter.Instructions.System.Calls do
             merged = Journal.merge_child_result(state_after_forward, child_result)
 
             memory_result =
-              write_return_data(memory_after_read, ret_offset, ret_size, child_result.return_data)
+              write_return_data(
+                memory_after_read,
+                ret_offset,
+                ret_size,
+                child_result.frame.return_data
+              )
 
             result_flag = if child_result.status == :stopped, do: 1, else: 0
-            {:ok, stack_after_call} = Stack.push(state_after_forward.stack, result_flag)
+            {:ok, stack_after_call} = Stack.push(state_after_forward.frame.stack, result_flag)
 
             {:ok,
              merged
-             |> Map.put(:stack, stack_after_call)
-             |> Map.put(:memory, memory_result)
-             |> Map.put(:return_data, child_result.return_data)
-             |> Map.put(:gas, state_after_forward.gas + child_result.gas)
+             |> MachineState.update_frame(
+               &%{
+                 &1
+                 | stack: stack_after_call,
+                   memory: memory_result,
+                   return_data: child_result.frame.return_data,
+                   gas: state_after_forward.frame.gas + child_result.frame.gas
+               }
+             )
              |> MachineState.advance_pc()}
           end
 
@@ -433,6 +498,10 @@ defmodule EEVM.Interpreter.Instructions.System.Calls do
 
   defp call_failed(state, stack) do
     {:ok, stack_after_call} = Stack.push(stack, 0)
-    {:ok, %{state | stack: stack_after_call} |> MachineState.advance_pc()}
+
+    {:ok,
+     state
+     |> MachineState.update_frame(&%{&1 | stack: stack_after_call})
+     |> MachineState.advance_pc()}
   end
 end

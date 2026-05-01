@@ -90,8 +90,8 @@ defmodule EEVM.SystemContracts.BlockHashesTest do
       final_state = call_contract(db, block_number, target_block)
 
       assert final_state.status == :stopped
-      assert byte_size(final_state.return_data) == 32
-      <<returned_hash::unsigned-big-256>> = final_state.return_data
+      assert byte_size(final_state.frame.return_data) == 32
+      <<returned_hash::unsigned-big-256>> = final_state.frame.return_data
       assert returned_hash == hash
     end
 

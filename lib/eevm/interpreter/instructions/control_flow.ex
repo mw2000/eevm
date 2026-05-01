@@ -57,9 +57,9 @@ defmodule EEVM.Interpreter.Instructions.ControlFlow do
   # JUMPDEST byte in the bytecode. Any other destination is an error.
 
   def execute(0x56, state) do
-    with {:ok, dest, s1} <- Stack.pop(state.stack) do
-      if Helpers.valid_jumpdest?(state.code, dest) do
-        {:ok, %{state | stack: s1, pc: dest}}
+    with {:ok, dest, s1} <- Stack.pop(state.frame.stack) do
+      if Helpers.valid_jumpdest?(state.frame.code, dest) do
+        {:ok, MachineState.update_frame(state, &%{&1 | stack: s1, pc: dest})}
       else
         {:error, :invalid_jump_destination, state}
       end
@@ -72,28 +72,28 @@ defmodule EEVM.Interpreter.Instructions.ControlFlow do
   # If condition is non-zero, validates and jumps. If zero, falls through.
 
   def execute(0x57, state) do
-    with {:ok, dest, s1} <- Stack.pop(state.stack),
+    with {:ok, dest, s1} <- Stack.pop(state.frame.stack),
          {:ok, condition, s2} <- Stack.pop(s1) do
       if condition != 0 do
-        if Helpers.valid_jumpdest?(state.code, dest) do
-          {:ok, %{state | stack: s2, pc: dest}}
+        if Helpers.valid_jumpdest?(state.frame.code, dest) do
+          {:ok, MachineState.update_frame(state, &%{&1 | stack: s2, pc: dest})}
         else
           {:error, :invalid_jump_destination, state}
         end
       else
-        {:ok, %{state | stack: s2} |> MachineState.advance_pc()}
+        {:ok, state |> MachineState.update_frame(&%{&1 | stack: s2}) |> MachineState.advance_pc()}
       end
     else
       {:error, reason} -> {:error, reason, state}
     end
   end
 
-  def execute(0x58, state), do: Helpers.push_value(state, state.pc)
+  def execute(0x58, state), do: Helpers.push_value(state, state.frame.pc)
   def execute(0x5B, state), do: {:ok, MachineState.advance_pc(state)}
   # PUSH0 (EIP-3855, Shanghai+): pushes the constant 0 onto the stack without
   # consuming any inline bytecode bytes. Saves 1 byte and 2 gas vs PUSH1 0x00.
   # Pre-Shanghai, 0x5F is an undefined opcode and halts with :invalid.
-  def execute(0x5F, %{config: %{hardfork: hardfork}} = state) do
+  def execute(0x5F, %{env: %{config: %{hardfork: hardfork}}} = state) do
     if HardforkConfig.enabled?(hardfork, :eip_3855) do
       Helpers.push_value(state, 0)
     else
@@ -108,16 +108,19 @@ defmodule EEVM.Interpreter.Instructions.ControlFlow do
 
   def execute(op, state) when op >= 0x60 and op <= 0x7F do
     n = Registry.push_bytes(op)
-    bytes = MachineState.read_code(state, state.pc + 1, n)
+    bytes = MachineState.read_code(state, state.frame.pc + 1, n)
 
     value =
       bytes
       |> :binary.bin_to_list()
       |> Enum.reduce(0, fn byte, acc -> acc * 256 + byte end)
 
-    case Stack.push(state.stack, value) do
+    case Stack.push(state.frame.stack, value) do
       {:ok, new_stack} ->
-        {:ok, %{state | stack: new_stack} |> MachineState.advance_pc(1 + n)}
+        {:ok,
+         state
+         |> MachineState.update_frame(&%{&1 | stack: new_stack})
+         |> MachineState.advance_pc(1 + n)}
 
       {:error, reason} ->
         {:error, reason, state}
@@ -131,9 +134,12 @@ defmodule EEVM.Interpreter.Instructions.ControlFlow do
   def execute(op, state) when op >= 0x80 and op <= 0x8F do
     depth = op - 0x80
 
-    with {:ok, value} <- Stack.peek(state.stack, depth),
-         {:ok, new_stack} <- Stack.push(state.stack, value) do
-      {:ok, %{state | stack: new_stack} |> MachineState.advance_pc()}
+    with {:ok, value} <- Stack.peek(state.frame.stack, depth),
+         {:ok, new_stack} <- Stack.push(state.frame.stack, value) do
+      {:ok,
+       state
+       |> MachineState.update_frame(&%{&1 | stack: new_stack})
+       |> MachineState.advance_pc()}
     else
       {:error, reason} -> {:error, reason, state}
     end
@@ -145,9 +151,12 @@ defmodule EEVM.Interpreter.Instructions.ControlFlow do
   def execute(op, state) when op >= 0x90 and op <= 0x9F do
     depth = op - 0x90 + 1
 
-    case Stack.swap(state.stack, depth) do
+    case Stack.swap(state.frame.stack, depth) do
       {:ok, new_stack} ->
-        {:ok, %{state | stack: new_stack} |> MachineState.advance_pc()}
+        {:ok,
+         state
+         |> MachineState.update_frame(&%{&1 | stack: new_stack})
+         |> MachineState.advance_pc()}
 
       {:error, reason} ->
         {:error, reason, state}

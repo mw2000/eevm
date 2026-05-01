@@ -62,44 +62,44 @@ defmodule EEVM.Interpreter.Instructions.Arithmetic do
   @spec execute(non_neg_integer(), MachineState.t()) ::
           {:ok, MachineState.t()} | {:error, atom(), MachineState.t()}
   def execute(0x01, state) do
-    with {:ok, a, s1} <- Stack.pop(state.stack),
+    with {:ok, a, s1} <- Stack.pop(state.frame.stack),
          {:ok, b, s2} <- Stack.pop(s1),
          result = band(a + b, @max_uint256),
          {:ok, s3} <- Stack.push(s2, result) do
-      {:ok, %{state | stack: s3} |> MachineState.advance_pc()}
+      {:ok, state |> MachineState.update_frame(&%{&1 | stack: s3}) |> MachineState.advance_pc()}
     else
       {:error, reason} -> {:error, reason, state}
     end
   end
 
   def execute(0x02, state) do
-    with {:ok, a, s1} <- Stack.pop(state.stack),
+    with {:ok, a, s1} <- Stack.pop(state.frame.stack),
          {:ok, b, s2} <- Stack.pop(s1),
          result = band(a * b, @max_uint256),
          {:ok, s3} <- Stack.push(s2, result) do
-      {:ok, %{state | stack: s3} |> MachineState.advance_pc()}
+      {:ok, state |> MachineState.update_frame(&%{&1 | stack: s3}) |> MachineState.advance_pc()}
     else
       {:error, reason} -> {:error, reason, state}
     end
   end
 
   def execute(0x03, state) do
-    with {:ok, a, s1} <- Stack.pop(state.stack),
+    with {:ok, a, s1} <- Stack.pop(state.frame.stack),
          {:ok, b, s2} <- Stack.pop(s1),
          result = band(a - b, @max_uint256),
          {:ok, s3} <- Stack.push(s2, result) do
-      {:ok, %{state | stack: s3} |> MachineState.advance_pc()}
+      {:ok, state |> MachineState.update_frame(&%{&1 | stack: s3}) |> MachineState.advance_pc()}
     else
       {:error, reason} -> {:error, reason, state}
     end
   end
 
   def execute(0x04, state) do
-    with {:ok, a, s1} <- Stack.pop(state.stack),
+    with {:ok, a, s1} <- Stack.pop(state.frame.stack),
          {:ok, b, s2} <- Stack.pop(s1) do
       result = if b == 0, do: 0, else: div(a, b)
       {:ok, s3} = Stack.push(s2, result)
-      {:ok, %{state | stack: s3} |> MachineState.advance_pc()}
+      {:ok, state |> MachineState.update_frame(&%{&1 | stack: s3}) |> MachineState.advance_pc()}
     else
       {:error, reason} -> {:error, reason, state}
     end
@@ -109,7 +109,7 @@ defmodule EEVM.Interpreter.Instructions.Arithmetic do
   # the EVM spec for SDIV. Special case: -2^255 / -1 would overflow to 2^255
   # (outside the signed 256-bit range), so the EVM defines the result as -2^255.
   def execute(0x05, state) do
-    with {:ok, a, s1} <- Stack.pop(state.stack),
+    with {:ok, a, s1} <- Stack.pop(state.frame.stack),
          {:ok, b, s2} <- Stack.pop(s1) do
       result =
         if b == 0 do
@@ -121,18 +121,18 @@ defmodule EEVM.Interpreter.Instructions.Arithmetic do
         end
 
       {:ok, s3} = Stack.push(s2, result)
-      {:ok, %{state | stack: s3} |> MachineState.advance_pc()}
+      {:ok, state |> MachineState.update_frame(&%{&1 | stack: s3}) |> MachineState.advance_pc()}
     else
       {:error, reason} -> {:error, reason, state}
     end
   end
 
   def execute(0x06, state) do
-    with {:ok, a, s1} <- Stack.pop(state.stack),
+    with {:ok, a, s1} <- Stack.pop(state.frame.stack),
          {:ok, b, s2} <- Stack.pop(s1) do
       result = if b == 0, do: 0, else: rem(a, b)
       {:ok, s3} = Stack.push(s2, result)
-      {:ok, %{state | stack: s3} |> MachineState.advance_pc()}
+      {:ok, state |> MachineState.update_frame(&%{&1 | stack: s3}) |> MachineState.advance_pc()}
     else
       {:error, reason} -> {:error, reason, state}
     end
@@ -141,7 +141,7 @@ defmodule EEVM.Interpreter.Instructions.Arithmetic do
   # SMOD: signed modulo. The result takes the sign of the dividend (a),
   # matching the behavior of Elixir's `rem/2` for negative numbers.
   def execute(0x07, state) do
-    with {:ok, a, s1} <- Stack.pop(state.stack),
+    with {:ok, a, s1} <- Stack.pop(state.frame.stack),
          {:ok, b, s2} <- Stack.pop(s1) do
       result =
         if b == 0 do
@@ -153,44 +153,51 @@ defmodule EEVM.Interpreter.Instructions.Arithmetic do
         end
 
       {:ok, s3} = Stack.push(s2, result)
-      {:ok, %{state | stack: s3} |> MachineState.advance_pc()}
+      {:ok, state |> MachineState.update_frame(&%{&1 | stack: s3}) |> MachineState.advance_pc()}
     else
       {:error, reason} -> {:error, reason, state}
     end
   end
 
   def execute(0x08, state) do
-    with {:ok, a, s1} <- Stack.pop(state.stack),
+    with {:ok, a, s1} <- Stack.pop(state.frame.stack),
          {:ok, b, s2} <- Stack.pop(s1),
          {:ok, n, s3} <- Stack.pop(s2) do
       result = if n == 0, do: 0, else: rem(a + b, n)
       {:ok, s4} = Stack.push(s3, result)
-      {:ok, %{state | stack: s4} |> MachineState.advance_pc()}
+      {:ok, state |> MachineState.update_frame(&%{&1 | stack: s4}) |> MachineState.advance_pc()}
     else
       {:error, reason} -> {:error, reason, state}
     end
   end
 
   def execute(0x09, state) do
-    with {:ok, a, s1} <- Stack.pop(state.stack),
+    with {:ok, a, s1} <- Stack.pop(state.frame.stack),
          {:ok, b, s2} <- Stack.pop(s1),
          {:ok, n, s3} <- Stack.pop(s2) do
       result = if n == 0, do: 0, else: rem(a * b, n)
       {:ok, s4} = Stack.push(s3, result)
-      {:ok, %{state | stack: s4} |> MachineState.advance_pc()}
+      {:ok, state |> MachineState.update_frame(&%{&1 | stack: s4}) |> MachineState.advance_pc()}
     else
       {:error, reason} -> {:error, reason, state}
     end
   end
 
   def execute(0x0A, state) do
-    with {:ok, a, s1} <- Stack.pop(state.stack),
+    with {:ok, a, s1} <- Stack.pop(state.frame.stack),
          {:ok, b, s2} <- Stack.pop(s1),
          {:ok, state_after_gas} <-
-           MachineState.consume_gas(%{state | stack: s2}, Dynamic.exp_dynamic_cost(b)) do
+           MachineState.consume_gas(
+             MachineState.update_frame(state, &%{&1 | stack: s2}),
+             Dynamic.exp_dynamic_cost(b)
+           ) do
       result = Helpers.mod_pow(a, b, @max_uint256 + 1)
-      {:ok, s3} = Stack.push(state_after_gas.stack, result)
-      {:ok, %{state_after_gas | stack: s3} |> MachineState.advance_pc()}
+      {:ok, s3} = Stack.push(state_after_gas.frame.stack, result)
+
+      {:ok,
+       state_after_gas
+       |> MachineState.update_frame(&%{&1 | stack: s3})
+       |> MachineState.advance_pc()}
     else
       {:error, reason} -> {:error, reason, state}
       {:error, :out_of_gas, halted_state} -> {:error, :out_of_gas, halted_state}
@@ -203,7 +210,7 @@ defmodule EEVM.Interpreter.Instructions.Arithmetic do
   # all higher bits are set to 1 (bnot mask); if 0 (positive), higher bits
   # are cleared.
   def execute(0x0B, state) do
-    with {:ok, b, s1} <- Stack.pop(state.stack),
+    with {:ok, b, s1} <- Stack.pop(state.frame.stack),
          {:ok, x, s2} <- Stack.pop(s1) do
       result =
         if b < 31 do
@@ -220,7 +227,7 @@ defmodule EEVM.Interpreter.Instructions.Arithmetic do
         end
 
       {:ok, s3} = Stack.push(s2, result)
-      {:ok, %{state | stack: s3} |> MachineState.advance_pc()}
+      {:ok, state |> MachineState.update_frame(&%{&1 | stack: s3}) |> MachineState.advance_pc()}
     else
       {:error, reason} -> {:error, reason, state}
     end

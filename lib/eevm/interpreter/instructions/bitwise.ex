@@ -58,10 +58,10 @@ defmodule EEVM.Interpreter.Instructions.Bitwise do
   def execute(0x18, state), do: Helpers.bitwise_op(state, &bxor/2)
 
   def execute(0x19, state) do
-    with {:ok, a, s1} <- Stack.pop(state.stack) do
+    with {:ok, a, s1} <- Stack.pop(state.frame.stack) do
       result = band(Bitwise.bnot(a), @max_uint256)
       {:ok, s2} = Stack.push(s1, result)
-      {:ok, %{state | stack: s2} |> MachineState.advance_pc()}
+      {:ok, state |> MachineState.update_frame(&%{&1 | stack: s2}) |> MachineState.advance_pc()}
     else
       {:error, reason} -> {:error, reason, state}
     end
@@ -71,7 +71,7 @@ defmodule EEVM.Interpreter.Instructions.Bitwise do
   # `(31 - i) * 8` computes the right-shift amount so the target byte lands in
   # the lowest 8 bits, then we mask with 0xFF to isolate it.
   def execute(0x1A, state) do
-    with {:ok, i, s1} <- Stack.pop(state.stack),
+    with {:ok, i, s1} <- Stack.pop(state.frame.stack),
          {:ok, x, s2} <- Stack.pop(s1) do
       result =
         if i < 32 do
@@ -82,7 +82,7 @@ defmodule EEVM.Interpreter.Instructions.Bitwise do
         end
 
       {:ok, s3} = Stack.push(s2, result)
-      {:ok, %{state | stack: s3} |> MachineState.advance_pc()}
+      {:ok, state |> MachineState.update_frame(&%{&1 | stack: s3}) |> MachineState.advance_pc()}
     else
       {:error, reason} -> {:error, reason, state}
     end
@@ -91,11 +91,11 @@ defmodule EEVM.Interpreter.Instructions.Bitwise do
   # SHL: logical left shift. Shifting by >= 256 must return 0 because no original
   # bits remain. We mask with @max_uint256 after shifting to stay within 256 bits.
   def execute(0x1B, state) do
-    with {:ok, shift, s1} <- Stack.pop(state.stack),
+    with {:ok, shift, s1} <- Stack.pop(state.frame.stack),
          {:ok, value, s2} <- Stack.pop(s1) do
       result = if shift >= 256, do: 0, else: band(value <<< shift, @max_uint256)
       {:ok, s3} = Stack.push(s2, result)
-      {:ok, %{state | stack: s3} |> MachineState.advance_pc()}
+      {:ok, state |> MachineState.update_frame(&%{&1 | stack: s3}) |> MachineState.advance_pc()}
     else
       {:error, reason} -> {:error, reason, state}
     end
@@ -104,11 +104,11 @@ defmodule EEVM.Interpreter.Instructions.Bitwise do
   # SHR: logical right shift. Shifting by >= 256 returns 0.
   # Elixir's `>>>` on a non-negative integer is a logical right shift.
   def execute(0x1C, state) do
-    with {:ok, shift, s1} <- Stack.pop(state.stack),
+    with {:ok, shift, s1} <- Stack.pop(state.frame.stack),
          {:ok, value, s2} <- Stack.pop(s1) do
       result = if shift >= 256, do: 0, else: value >>> shift
       {:ok, s3} = Stack.push(s2, result)
-      {:ok, %{state | stack: s3} |> MachineState.advance_pc()}
+      {:ok, state |> MachineState.update_frame(&%{&1 | stack: s3}) |> MachineState.advance_pc()}
     else
       {:error, reason} -> {:error, reason, state}
     end
@@ -118,7 +118,7 @@ defmodule EEVM.Interpreter.Instructions.Bitwise do
   # fills vacated high bits with 1s for negative values. If shift >= 256 and
   # the value is negative, the result is all 1s (@max_uint256, representing -1).
   def execute(0x1D, state) do
-    with {:ok, shift, s1} <- Stack.pop(state.stack),
+    with {:ok, shift, s1} <- Stack.pop(state.frame.stack),
          {:ok, value, s2} <- Stack.pop(s1) do
       signed = Helpers.to_signed(value)
 
@@ -130,7 +130,7 @@ defmodule EEVM.Interpreter.Instructions.Bitwise do
         end
 
       {:ok, s3} = Stack.push(s2, result)
-      {:ok, %{state | stack: s3} |> MachineState.advance_pc()}
+      {:ok, state |> MachineState.update_frame(&%{&1 | stack: s3}) |> MachineState.advance_pc()}
     else
       {:error, reason} -> {:error, reason, state}
     end

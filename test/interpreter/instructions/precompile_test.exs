@@ -50,7 +50,7 @@ defmodule EEVM.Interpreter.Instructions.PrecompileTest do
       result = EEVM.execute(code, world_state: world_state, gas: 1_000_000)
       assert result.status == :stopped
       assert EEVM.stack_values(result) == [1]
-      assert result.return_data == <<0x2A>>
+      assert result.frame.return_data == <<0x2A>>
     end
 
     test "precompile detection for addresses 0x01 through 0x0A on Cancun" do
@@ -97,7 +97,7 @@ defmodule EEVM.Interpreter.Instructions.PrecompileTest do
       result = EEVM.execute(code, config: config, gas: 1_000_000)
       assert result.status == :stopped
       assert EEVM.stack_values(result) == [1]
-      assert result.return_data == <<0xAA>>
+      assert result.frame.return_data == <<0xAA>>
     end
 
     test "custom precompile detection is config-dependent" do

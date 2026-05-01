@@ -10,7 +10,7 @@ defmodule EEVM.GasTest do
       code = <<0x60, 2, 0x60, 3, 0x01, 0x00>>
       result = EEVM.execute(code, gas: 1_000_000)
       assert result.status == :stopped
-      assert result.gas == 1_000_000 - 9
+      assert result.frame.gas == 1_000_000 - 9
     end
 
     test "out of gas halts execution" do
@@ -25,7 +25,7 @@ defmodule EEVM.GasTest do
       code = <<0x60, 1, 0x00>>
       result = EEVM.execute(code, gas: 3)
       assert result.status == :stopped
-      assert result.gas == 0
+      assert result.frame.gas == 0
     end
 
     test "one gas short causes out_of_gas" do
@@ -39,28 +39,28 @@ defmodule EEVM.GasTest do
       # PUSH1 2, PUSH1 3, MUL, STOP → 3+3+5+0 = 11
       code = <<0x60, 2, 0x60, 3, 0x02, 0x00>>
       result = EEVM.execute(code, gas: 1000)
-      assert result.gas == 1000 - 11
+      assert result.frame.gas == 1000 - 11
     end
 
     test "DIV costs 5 gas" do
       # PUSH1 2, PUSH1 10, DIV, STOP → 3+3+5+0 = 11
       code = <<0x60, 2, 0x60, 10, 0x04, 0x00>>
       result = EEVM.execute(code, gas: 1000)
-      assert result.gas == 1000 - 11
+      assert result.frame.gas == 1000 - 11
     end
 
     test "comparison opcodes cost 3 gas" do
       # PUSH1 1, PUSH1 2, LT, STOP → 3+3+3+0 = 9
       code = <<0x60, 1, 0x60, 2, 0x10, 0x00>>
       result = EEVM.execute(code, gas: 1000)
-      assert result.gas == 1000 - 9
+      assert result.frame.gas == 1000 - 9
     end
 
     test "INVALID consumes all remaining gas" do
       code = <<0xFE>>
       result = EEVM.execute(code, gas: 5000)
       assert result.status == :invalid
-      assert result.gas == 0
+      assert result.frame.gas == 0
     end
 
     test "EXP dynamic gas charges per byte of exponent" do
@@ -71,7 +71,7 @@ defmodule EEVM.GasTest do
       code = <<0x60, 0xFF, 0x60, 2, 0x0A, 0x00>>
       result = EEVM.execute(code, gas: 1000)
       assert result.status == :stopped
-      assert result.gas == 1000 - 66
+      assert result.frame.gas == 1000 - 66
     end
 
     test "EXP with zero exponent has no dynamic gas" do
@@ -80,7 +80,7 @@ defmodule EEVM.GasTest do
       code = <<0x60, 0, 0x60, 2, 0x0A, 0x00>>
       result = EEVM.execute(code, gas: 1000)
       assert result.status == :stopped
-      assert result.gas == 1000 - 16
+      assert result.frame.gas == 1000 - 16
     end
 
     test "EXP with 2-byte exponent charges 100 dynamic gas" do
@@ -89,7 +89,7 @@ defmodule EEVM.GasTest do
       code = <<0x61, 0x01, 0x00, 0x60, 2, 0x0A, 0x00>>
       result = EEVM.execute(code, gas: 1000)
       assert result.status == :stopped
-      assert result.gas == 1000 - 116
+      assert result.frame.gas == 1000 - 116
     end
 
     test "memory expansion gas for MSTORE" do
@@ -100,7 +100,7 @@ defmodule EEVM.GasTest do
       result = EEVM.execute(code, gas: 1000)
       assert result.status == :stopped
       expected_gas = 3 + 3 + 3 + Memory.memory_expansion_cost_word(0, 0) + 0
-      assert result.gas == 1000 - expected_gas
+      assert result.frame.gas == 1000 - expected_gas
     end
 
     test "memory expansion gas grows with offset" do
@@ -112,7 +112,7 @@ defmodule EEVM.GasTest do
       # Memory expanded from 0 to cover offset 1024+32 = 1056 → 33 words
       mem_cost = Memory.memory_expansion_cost_word(0, 1024)
       expected_gas = 3 + 3 + 3 + mem_cost + 0
-      assert result.gas == 100_000 - expected_gas
+      assert result.frame.gas == 100_000 - expected_gas
     end
 
     test "second memory access to same region costs no expansion" do
@@ -126,14 +126,14 @@ defmodule EEVM.GasTest do
       mem_cost1 = Memory.memory_expansion_cost_word(0, 0)
       mem_cost2 = Memory.memory_expansion_cost_word(32, 0)
       expected = 3 + 3 + 3 + mem_cost1 + 3 + 3 + mem_cost2 + 0
-      assert result.gas == 100_000 - expected
+      assert result.frame.gas == 100_000 - expected
     end
 
     test "POP costs 2 gas" do
       # PUSH1 1, POP, STOP → 3+2+0 = 5
       code = <<0x60, 1, 0x50, 0x00>>
       result = EEVM.execute(code, gas: 1000)
-      assert result.gas == 1000 - 5
+      assert result.frame.gas == 1000 - 5
     end
 
     test "JUMP costs 8 gas" do
@@ -141,7 +141,7 @@ defmodule EEVM.GasTest do
       code = <<0x60, 3, 0x56, 0x5B, 0x00>>
       result = EEVM.execute(code, gas: 1000)
       # PUSH1=3, JUMP=8, JUMPDEST=1, STOP=0 → 12
-      assert result.gas == 1000 - 12
+      assert result.frame.gas == 1000 - 12
     end
 
     test "CREATE and CREATE2 static costs are 32000" do

@@ -13,7 +13,7 @@ defmodule EEVM.Interpreter.Instructions.Logging do
   ## Elixir Learning Notes
 
   - We use pattern matching on the topic count (0–4) to dispatch LOG variants.
-  - Logs accumulate in `state.logs` as a list of maps, preserving insertion order.
+  - Logs accumulate in `state.substate.logs` as a list of maps, preserving insertion order.
   - `binary_part/3` extracts a slice from a binary — used to read log data from memory bytes.
   """
 
@@ -35,24 +35,33 @@ defmodule EEVM.Interpreter.Instructions.Logging do
   def execute(_opcode, state), do: {:ok, MachineState.halt(state, :invalid)}
 
   defp execute_log(state, topic_count) do
-    with {:ok, offset, s1} <- Stack.pop(state.stack),
+    with {:ok, offset, s1} <- Stack.pop(state.frame.stack),
          {:ok, size, s2} <- Stack.pop(s1),
          {:ok, topics, s3} <- pop_topics(s2, topic_count, []) do
       dynamic_cost =
         Dynamic.log_cost(topic_count, size) +
-          GasMemory.memory_expansion_cost(Memory.size(state.memory), offset, size)
+          GasMemory.memory_expansion_cost(Memory.size(state.frame.memory), offset, size)
 
-      case MachineState.consume_gas(%{state | stack: s3}, dynamic_cost) do
+      case MachineState.consume_gas(
+             MachineState.update_frame(state, &%{&1 | stack: s3}),
+             dynamic_cost
+           ) do
         {:ok, s4} ->
-          {data, new_memory} = Memory.read_bytes(s4.memory, offset, size)
+          {data, new_memory} = Memory.read_bytes(s4.frame.memory, offset, size)
 
           log_entry = %{
-            address: s4.contract.address,
+            address: s4.frame.contract.address,
             data: data,
             topics: topics
           }
 
-          s5 = %{s4 | memory: new_memory, logs: s4.logs ++ [log_entry]}
+          new_substate = %{s4.substate | logs: s4.substate.logs ++ [log_entry]}
+
+          s5 =
+            s4
+            |> MachineState.update_frame(&%{&1 | memory: new_memory})
+            |> Map.put(:substate, new_substate)
+
           {:ok, MachineState.advance_pc(s5)}
 
         {:error, :out_of_gas, halted_state} ->

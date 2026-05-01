@@ -108,8 +108,8 @@ defmodule EEVM.SystemContracts.BeaconRootsTest do
         |> EEVM.Interpreter.run_loop()
 
       assert final_state.status == :stopped
-      assert byte_size(final_state.return_data) == 32
-      <<returned_root::unsigned-big-256>> = final_state.return_data
+      assert byte_size(final_state.frame.return_data) == 32
+      <<returned_root::unsigned-big-256>> = final_state.frame.return_data
       assert returned_root == root
     end
 

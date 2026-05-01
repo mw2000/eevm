@@ -11,9 +11,12 @@ defmodule EEVM.Interpreter.Instructions.StackMemoryStorage.StackOps do
   @spec execute(non_neg_integer(), MachineState.t()) ::
           {:ok, MachineState.t()} | {:error, atom(), MachineState.t()}
   def execute(0x50, state) do
-    case Stack.pop(state.stack) do
+    case Stack.pop(state.frame.stack) do
       {:ok, _value, new_stack} ->
-        {:ok, %{state | stack: new_stack} |> MachineState.advance_pc()}
+        {:ok,
+         state
+         |> MachineState.update_frame(&%{&1 | stack: new_stack})
+         |> MachineState.advance_pc()}
 
       {:error, reason} ->
         {:error, reason, state}

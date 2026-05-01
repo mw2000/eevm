@@ -89,20 +89,20 @@ defmodule EEVM.Handler.Execution do
   end
 
   defp deploy_runtime_code(%MachineState{status: :stopped} = state, new_address) do
-    runtime_code = state.return_data
+    runtime_code = state.frame.return_data
     size = byte_size(runtime_code)
     deposit_cost = size * @code_deposit_gas_per_byte
 
     cond do
       size > @max_code_size ->
-        {:error, %{state | gas: 0, status: :reverted}}
+        {:error, zero_gas_revert(state)}
 
-      state.gas < deposit_cost ->
-        {:error, %{state | gas: 0, status: :reverted}}
+      state.frame.gas < deposit_cost ->
+        {:error, zero_gas_revert(state)}
 
       size > 0 and :binary.first(runtime_code) == 0xEF and
-          HardforkConfig.enabled?(state.config.hardfork, :eip_3541) ->
-        {:error, %{state | gas: 0, status: :reverted}}
+          HardforkConfig.enabled?(state.env.config.hardfork, :eip_3541) ->
+        {:error, zero_gas_revert(state)}
 
       true ->
         updated_db =
@@ -110,11 +110,18 @@ defmodule EEVM.Handler.Execution do
           |> Database.put_code(new_address, runtime_code)
           |> Database.set_nonce(new_address, 1)
 
-        {:ok, %{state | db: updated_db, gas: state.gas - deposit_cost}}
+        deducted = MachineState.update_frame(state, &%{&1 | gas: &1.gas - deposit_cost})
+        {:ok, %{deducted | db: updated_db}}
     end
   end
 
   defp deploy_runtime_code(state, _new_address), do: {:error, state}
+
+  defp zero_gas_revert(state) do
+    state
+    |> MachineState.update_frame(&%{&1 | gas: 0})
+    |> Map.put(:status, :reverted)
+  end
 
   defp transfer_value(%Database{} = db, _from, _to, 0), do: db
 

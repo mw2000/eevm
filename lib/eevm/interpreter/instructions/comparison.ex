@@ -50,10 +50,10 @@ defmodule EEVM.Interpreter.Instructions.Comparison do
   def execute(0x14, state), do: Helpers.comparison_op(state, &Kernel.==/2)
 
   def execute(0x15, state) do
-    with {:ok, a, s1} <- Stack.pop(state.stack) do
+    with {:ok, a, s1} <- Stack.pop(state.frame.stack) do
       result = if a == 0, do: 1, else: 0
       {:ok, s2} = Stack.push(s1, result)
-      {:ok, %{state | stack: s2} |> MachineState.advance_pc()}
+      {:ok, state |> MachineState.update_frame(&%{&1 | stack: s2}) |> MachineState.advance_pc()}
     else
       {:error, reason} -> {:error, reason, state}
     end

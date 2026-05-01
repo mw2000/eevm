@@ -12,7 +12,7 @@ defmodule EEVM.Interpreter.MachineState.EIP3651Test do
 
       state = MachineState.new(<<0x00>>, block: block)
 
-      assert MapSet.member?(state.accessed_addresses, block.coinbase)
+      assert MapSet.member?(state.substate.accessed_addresses, block.coinbase)
     end
 
     test "new machine state pre-warms zero coinbase by default" do
@@ -20,7 +20,7 @@ defmodule EEVM.Interpreter.MachineState.EIP3651Test do
 
       state = MachineState.new(<<0x00>>, block: block)
 
-      assert MapSet.member?(state.accessed_addresses, block.coinbase)
+      assert MapSet.member?(state.substate.accessed_addresses, block.coinbase)
     end
 
     test "existing pre-warmed addresses remain present" do
@@ -29,10 +29,10 @@ defmodule EEVM.Interpreter.MachineState.EIP3651Test do
 
       state = MachineState.new(<<0x00>>, contract: contract, tx: tx)
 
-      assert MapSet.member?(state.accessed_addresses, contract.address)
-      assert MapSet.member?(state.accessed_addresses, contract.caller)
-      assert MapSet.member?(state.accessed_addresses, tx.origin)
-      assert MapSet.member?(state.accessed_addresses, 0x01)
+      assert MapSet.member?(state.substate.accessed_addresses, contract.address)
+      assert MapSet.member?(state.substate.accessed_addresses, contract.caller)
+      assert MapSet.member?(state.substate.accessed_addresses, tx.origin)
+      assert MapSet.member?(state.substate.accessed_addresses, 0x01)
     end
 
     test "BALANCE access to COINBASE is charged at warm rate (100 gas)" do
@@ -43,8 +43,8 @@ defmodule EEVM.Interpreter.MachineState.EIP3651Test do
 
       result = EEVM.execute(code, gas: initial_gas, block: block, world_state: world_state)
 
-      assert result.gas == initial_gas - 2 - 100
-      refute result.gas == initial_gas - 2 - 2600
+      assert result.frame.gas == initial_gas - 2 - 100
+      refute result.frame.gas == initial_gas - 2 - 2600
     end
 
     test "custom precompile addresses are pre-warmed" do
@@ -52,7 +52,7 @@ defmodule EEVM.Interpreter.MachineState.EIP3651Test do
 
       state = MachineState.new(<<0x00>>, config: config)
 
-      assert MapSet.member?(state.accessed_addresses, 0x100)
+      assert MapSet.member?(state.substate.accessed_addresses, 0x100)
     end
   end
 end
