@@ -60,17 +60,20 @@ defmodule EEVM.Interpreter.Instructions.StackMemoryStorage.StorageOps do
       state_after_stack = %{state | stack: s2}
       contract_address = state_after_stack.contract.address
       access_key = {contract_address, key}
-      is_warm = MapSet.member?(state_after_stack.accessed_storage_keys, access_key)
+      is_warm = MapSet.member?(state_after_stack.substate.accessed_storage_keys, access_key)
 
       state_after_access =
         if is_warm do
           state_after_stack
         else
-          %{
-            state_after_stack
-            | accessed_storage_keys:
-                MapSet.put(state_after_stack.accessed_storage_keys, access_key)
+          sub = state_after_stack.substate
+
+          new_sub = %{
+            sub
+            | accessed_storage_keys: MapSet.put(sub.accessed_storage_keys, access_key)
           }
+
+          %{state_after_stack | substate: new_sub}
         end
 
       cold_cost = if is_warm, do: 0, else: @cold_sload_cost
@@ -99,7 +102,7 @@ defmodule EEVM.Interpreter.Instructions.StackMemoryStorage.StorageOps do
   def execute(0x5C, %{config: %{hardfork: hardfork}} = state) do
     if HardforkConfig.enabled?(hardfork, :eip_1153) do
       with {:ok, key, s1} <- Stack.pop(state.stack),
-           value = Map.get(state.transient_storage, key, 0),
+           value = Map.get(state.substate.transient_storage, key, 0),
            {:ok, s2} <- Stack.push(s1, value) do
         {:ok, %{state | stack: s2} |> MachineState.advance_pc()}
       else
@@ -117,8 +120,9 @@ defmodule EEVM.Interpreter.Instructions.StackMemoryStorage.StorageOps do
     if HardforkConfig.enabled?(hardfork, :eip_1153) do
       with {:ok, key, s1} <- Stack.pop(state.stack),
            {:ok, value, s2} <- Stack.pop(s1) do
-        new_transient = Map.put(state.transient_storage, key, value)
-        {:ok, %{state | stack: s2, transient_storage: new_transient} |> MachineState.advance_pc()}
+        sub = state.substate
+        new_sub = %{sub | transient_storage: Map.put(sub.transient_storage, key, value)}
+        {:ok, %{state | stack: s2, substate: new_sub} |> MachineState.advance_pc()}
       else
         {:error, reason} -> {:error, reason, state}
       end
@@ -130,13 +134,15 @@ defmodule EEVM.Interpreter.Instructions.StackMemoryStorage.StorageOps do
   def execute(_opcode, state), do: {:ok, MachineState.halt(state, :invalid)}
 
   defp get_original_value(state, key) do
-    case Map.fetch(state.original_storage, key) do
+    case Map.fetch(state.substate.original_storage, key) do
       {:ok, value} ->
         {value, state}
 
       :error ->
         value = Database.storage_load(state.db, state.contract.address, key)
-        {value, %{state | original_storage: Map.put(state.original_storage, key, value)}}
+        sub = state.substate
+        new_sub = %{sub | original_storage: Map.put(sub.original_storage, key, value)}
+        {value, %{state | substate: new_sub}}
     end
   end
 

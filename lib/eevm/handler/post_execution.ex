@@ -47,7 +47,7 @@ defmodule EEVM.Handler.PostExecution do
 
     status = result_status(final_state.status)
 
-    logs = if status == :success, do: final_state.logs, else: []
+    logs = if status == :success, do: final_state.substate.logs, else: []
     logs_bloom = Bloom.from_logs(logs)
     receipt_status = if status == :success, do: 1, else: 0
 

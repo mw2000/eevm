@@ -30,6 +30,7 @@ defmodule EEVM.Interpreter.MachineState do
   alias EEVM.Database
   alias EEVM.Database.InMemory, as: InMemoryDB
   alias EEVM.Interpreter.{CallFrame, Memory, Stack}
+  alias EEVM.Interpreter.MachineState.Substate
   alias EEVM.Precompiles
   alias EEVM.Tracer
 
@@ -40,16 +41,11 @@ defmodule EEVM.Interpreter.MachineState do
           stack: Stack.t(),
           memory: Memory.t(),
           db: Database.t(),
-          original_storage: %{non_neg_integer() => non_neg_integer()},
-          transient_storage: %{non_neg_integer() => non_neg_integer()},
+          substate: Substate.t(),
           tx: Transaction.t(),
           block: Block.t(),
           contract: Contract.t(),
           config: Config.t(),
-          touched_addresses: MapSet.t(non_neg_integer()),
-          accessed_addresses: MapSet.t(non_neg_integer()),
-          accessed_storage_keys: MapSet.t({non_neg_integer(), non_neg_integer()}),
-          created_addresses: MapSet.t(non_neg_integer()),
           call_stack: [CallFrame.t()],
           frame_return_offset: non_neg_integer(),
           frame_return_size: non_neg_integer(),
@@ -59,7 +55,6 @@ defmodule EEVM.Interpreter.MachineState do
           refund: non_neg_integer(),
           status: status(),
           return_data: binary(),
-          logs: [%{address: non_neg_integer(), data: binary(), topics: [non_neg_integer()]}],
           code: binary(),
           tracer: Tracer.t() | nil
         }
@@ -69,16 +64,11 @@ defmodule EEVM.Interpreter.MachineState do
             stack: nil,
             memory: nil,
             db: nil,
-            original_storage: %{},
-            transient_storage: %{},
+            substate: nil,
             tx: nil,
             block: nil,
             contract: nil,
             config: nil,
-            touched_addresses: nil,
-            accessed_addresses: nil,
-            accessed_storage_keys: nil,
-            created_addresses: nil,
             call_stack: [],
             frame_return_offset: 0,
             frame_return_size: 0,
@@ -88,7 +78,6 @@ defmodule EEVM.Interpreter.MachineState do
             refund: 0,
             status: :running,
             return_data: <<>>,
-            logs: [],
             code: <<>>,
             tracer: nil
 
@@ -129,22 +118,28 @@ defmodule EEVM.Interpreter.MachineState do
     block = Keyword.get(opts, :block, Block.new())
     config = Keyword.get(opts, :config, Config.new(Keyword.get(opts, :hardfork, :cancun)))
 
+    substate =
+      Substate.new(
+        touched_addresses: Keyword.get(opts, :touched_addresses, MapSet.new()),
+        accessed_addresses:
+          Keyword.get(opts, :accessed_addresses, pre_warm_addresses(contract, tx, block, config)),
+        accessed_storage_keys: Keyword.get(opts, :accessed_storage_keys, MapSet.new()),
+        created_addresses: Keyword.get(opts, :created_addresses, MapSet.new()),
+        original_storage: Keyword.get(opts, :original_storage, %{}),
+        transient_storage: Keyword.get(opts, :transient_storage, %{}),
+        logs: Keyword.get(opts, :logs, [])
+      )
+
     %__MODULE__{
       code: code,
       stack: Stack.new(),
       memory: Memory.new(),
       db: init_db(opts, contract),
-      original_storage: Keyword.get(opts, :original_storage, %{}),
-      transient_storage: Keyword.get(opts, :transient_storage, %{}),
+      substate: substate,
       tx: tx,
       block: block,
       contract: contract,
       config: config,
-      touched_addresses: Keyword.get(opts, :touched_addresses, MapSet.new()),
-      accessed_addresses:
-        Keyword.get(opts, :accessed_addresses, pre_warm_addresses(contract, tx, block, config)),
-      accessed_storage_keys: Keyword.get(opts, :accessed_storage_keys, MapSet.new()),
-      created_addresses: Keyword.get(opts, :created_addresses, MapSet.new()),
       call_stack: Keyword.get(opts, :call_stack, []),
       frame_return_offset: Keyword.get(opts, :frame_return_offset, 0),
       frame_return_size: Keyword.get(opts, :frame_return_size, 0),
@@ -341,7 +336,8 @@ defmodule EEVM.Interpreter.MachineState do
   @doc "Marks an address as touched for EIP-161 post-transaction cleanup."
   @spec touch_address(t(), non_neg_integer()) :: t()
   def touch_address(state, address) do
-    %{state | touched_addresses: MapSet.put(state.touched_addresses, address)}
+    sub = state.substate
+    %{state | substate: %{sub | touched_addresses: MapSet.put(sub.touched_addresses, address)}}
   end
 
   defp write_return_data(memory, _offset, 0, return_data), do: {memory, return_data}

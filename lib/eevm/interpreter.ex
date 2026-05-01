@@ -165,7 +165,7 @@ defmodule EEVM.Interpreter do
 
   defp cleanup_touched_empty_accounts(%MachineState{status: :stopped} = state) do
     cleaned_db =
-      Enum.reduce(state.touched_addresses, state.db, fn address, db_acc ->
+      Enum.reduce(state.substate.touched_addresses, state.db, fn address, db_acc ->
         if Database.account_empty?(db_acc, address) do
           Database.delete_account(db_acc, address)
         else

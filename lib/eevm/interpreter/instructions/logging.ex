@@ -13,7 +13,7 @@ defmodule EEVM.Interpreter.Instructions.Logging do
   ## Elixir Learning Notes
 
   - We use pattern matching on the topic count (0–4) to dispatch LOG variants.
-  - Logs accumulate in `state.logs` as a list of maps, preserving insertion order.
+  - Logs accumulate in `state.substate.logs` as a list of maps, preserving insertion order.
   - `binary_part/3` extracts a slice from a binary — used to read log data from memory bytes.
   """
 
@@ -52,7 +52,8 @@ defmodule EEVM.Interpreter.Instructions.Logging do
             topics: topics
           }
 
-          s5 = %{s4 | memory: new_memory, logs: s4.logs ++ [log_entry]}
+          new_substate = %{s4.substate | logs: s4.substate.logs ++ [log_entry]}
+          s5 = %{s4 | memory: new_memory, substate: new_substate}
           {:ok, MachineState.advance_pc(s5)}
 
         {:error, :out_of_gas, halted_state} ->

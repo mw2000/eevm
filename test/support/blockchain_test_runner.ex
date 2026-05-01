@@ -248,7 +248,7 @@ defmodule EEVM.TestSupport.BlockchainTestRunner do
            %{
              status: if(failed, do: 0, else: 1),
              gas_used: gas_used,
-             logs: if(failed, do: [], else: machine.logs),
+             logs: if(failed, do: [], else: machine.substate.logs),
              db: finalized_db
            }}
         end

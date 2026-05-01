@@ -37,7 +37,7 @@ defmodule EEVM.TestSupport.StateTestRunner do
           {:ok,
            %{
              state_root: StateRoot.compute_state_root(finalized_db),
-             logs_hash: logs_hash(if(failed, do: [], else: machine.logs)),
+             logs_hash: logs_hash(if(failed, do: [], else: machine.substate.logs)),
              output: if(failed, do: <<>>, else: machine.return_data),
              status: machine.status,
              gas_used: tx.gas_limit - machine.gas,

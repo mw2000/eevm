@@ -123,10 +123,10 @@ defmodule EEVM.Interpreter.Instructions.System.Creation do
                         block: state_after_touch.block,
                         contract: child_contract,
                         config: state_after_touch.config,
-                        touched_addresses: state_after_touch.touched_addresses,
-                        accessed_addresses: state_after_touch.accessed_addresses,
-                        accessed_storage_keys: state_after_touch.accessed_storage_keys,
-                        created_addresses: state_after_touch.created_addresses,
+                        touched_addresses: state_after_touch.substate.touched_addresses,
+                        accessed_addresses: state_after_touch.substate.accessed_addresses,
+                        accessed_storage_keys: state_after_touch.substate.accessed_storage_keys,
+                        created_addresses: state_after_touch.substate.created_addresses,
                         is_static: state_after_touch.is_static,
                         depth: state_after_touch.depth + 1,
                         tracer: state_after_touch.tracer
@@ -170,15 +170,18 @@ defmodule EEVM.Interpreter.Instructions.System.Creation do
                             merged =
                               Journal.merge_child_result(state_after_initcode_cost, child_result)
 
+                            merged_substate = %{
+                              merged.substate
+                              | created_addresses:
+                                  MapSet.put(merged.substate.created_addresses, new_address)
+                            }
+
                             {:ok,
                              merged
                              |> Map.put(:stack, stack_after_create)
                              |> Map.put(:memory, memory_after_read)
                              |> Map.put(:db, db_after_deploy)
-                             |> Map.put(
-                               :created_addresses,
-                               MapSet.put(merged.created_addresses, new_address)
-                             )
+                             |> Map.put(:substate, merged_substate)
                              |> Map.put(:gas, child_result.gas - deposit_cost)
                              |> Map.put(:return_data, child_result.return_data)
                              |> MachineState.advance_pc()}
