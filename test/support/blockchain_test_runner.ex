@@ -26,14 +26,13 @@ defmodule EEVM.TestSupport.BlockchainTestRunner do
   alias EEVM.Context.{Block, Transaction}
   alias EEVM.Database
   alias EEVM.Database.InMemory
-  alias EEVM.Handler.Execution
   alias EEVM.HardforkConfig
   alias EEVM.StateRoot
   alias EEVM.SystemContracts.{BeaconRoots, BlockHashes}
   alias EEVM.TestSupport.BlockchainHeaderValidator, as: HeaderValidator
   alias EEVM.TestSupport.BlockchainTestFixture.{Account, Case, TransactionFields, Withdrawal}
   alias EEVM.TestSupport.BlockchainTestFixture.Block, as: FixtureBlock
-  alias EEVM.Transaction.{IntrinsicGas, Validator}
+  alias EEVM.TestSupport.TxExecutor
 
   @min_blob_base_fee 1
 
@@ -222,7 +221,20 @@ defmodule EEVM.TestSupport.BlockchainTestRunner do
   defp tx_executor(%Config{} = config, header) do
     fn %Transaction{} = tx, %Block{} = block_ctx, db ->
       block_ctx_with_blob = put_blob_base_fee(block_ctx, header)
-      execute_transaction(tx, db, block_ctx_with_blob, config)
+
+      case TxExecutor.execute(tx, db, block_ctx_with_blob, config) do
+        {:ok, %{db: db, machine: machine, gas_used: gas_used, failed?: failed?}} ->
+          {:ok,
+           %{
+             status: if(failed?, do: 0, else: 1),
+             gas_used: gas_used,
+             logs: if(failed?, do: [], else: machine.substate.logs),
+             db: db
+           }}
+
+        {:error, _} = err ->
+          err
+      end
     end
   end
 
@@ -232,85 +244,6 @@ defmodule EEVM.TestSupport.BlockchainTestRunner do
   defp put_blob_base_fee(%Block{} = block_ctx, header) do
     blob_base_fee = if header.excess_blob_gas == nil, do: 0, else: @min_blob_base_fee
     %{block_ctx | blob_base_fee: blob_base_fee}
-  end
-
-  defp execute_transaction(%Transaction{} = tx, db, %Block{} = block_ctx, %Config{} = config) do
-    case Validator.validate(tx, db, block_ctx, config.hardfork) do
-      :ok ->
-        db_after_nonce = Database.increment_nonce(db, tx.origin)
-
-        with {:ok, machine} <- run_interpreter(tx, db_after_nonce, block_ctx, config),
-             {:ok, finalized_db} <- finalize_fees(db_after_nonce, machine, tx, block_ctx) do
-          failed = failed_status?(machine.status)
-          gas_used = tx.gas_limit - machine.frame.gas
-
-          {:ok,
-           %{
-             status: if(failed, do: 0, else: 1),
-             gas_used: gas_used,
-             logs: if(failed, do: [], else: machine.substate.logs),
-             db: finalized_db
-           }}
-        end
-
-      {:error, reason} ->
-        {:error, {:validation, reason}}
-    end
-  end
-
-  defp run_interpreter(%Transaction{} = tx, db, %Block{} = block_ctx, %Config{} = config) do
-    intrinsic_gas = IntrinsicGas.calculate(tx)
-    execution_gas = max(tx.gas_limit - intrinsic_gas, 0)
-    {machine, _new_address} = Execution.run_top_level(tx, db, block_ctx, config, execution_gas)
-    {:ok, machine}
-  end
-
-  defp finalize_fees(db_after_nonce, machine, tx, %Block{} = block_ctx) do
-    failed = failed_status?(machine.status)
-    settled = if failed, do: db_after_nonce, else: machine.db
-    gas_used = tx.gas_limit - machine.frame.gas
-    apply_fees(settled, tx, block_ctx, gas_used)
-  end
-
-  defp apply_fees(db, tx, block_ctx, gas_used) do
-    sender_fee = gas_used * effective_gas_price(tx, block_ctx)
-    miner_reward = gas_used * miner_reward_per_gas(tx, block_ctx)
-
-    with {:ok, debited} <- debit_balance(db, tx.origin, sender_fee) do
-      {:ok, credit_balance(debited, block_ctx.coinbase, miner_reward)}
-    end
-  end
-
-  defp effective_gas_price(%Transaction{type: type} = tx, %Block{} = block_ctx)
-       when type in [:eip1559, :eip4844] do
-    min(tx.max_fee_per_gas, block_ctx.basefee + tx.max_priority_fee_per_gas)
-  end
-
-  defp effective_gas_price(%Transaction{} = tx, _block_ctx), do: tx.gasprice
-
-  defp miner_reward_per_gas(%Transaction{type: type} = tx, %Block{} = block_ctx)
-       when type in [:eip1559, :eip4844] do
-    max(effective_gas_price(tx, block_ctx) - block_ctx.basefee, 0)
-  end
-
-  defp miner_reward_per_gas(%Transaction{} = tx, %Block{} = block_ctx) do
-    max(tx.gasprice - block_ctx.basefee, 0)
-  end
-
-  defp failed_status?(status) when status in [:reverted, :invalid, :out_of_gas], do: true
-  defp failed_status?({:error, _}), do: true
-  defp failed_status?(_), do: false
-
-  defp debit_balance(db, _addr, 0), do: {:ok, db}
-
-  defp debit_balance(db, addr, amount) do
-    current = Database.get_balance(db, addr)
-
-    if current < amount do
-      {:error, :insufficient_balance}
-    else
-      {:ok, Database.set_balance(db, addr, current - amount)}
-    end
   end
 
   defp credit_balance(db, _addr, 0), do: db
