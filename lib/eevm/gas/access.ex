@@ -36,7 +36,7 @@ defmodule EEVM.Gas.Access do
   @spec address_access_cost(MachineState.t(), non_neg_integer()) ::
           {non_neg_integer(), MachineState.t()}
   def address_access_cost(state, address) do
-    if HardforkConfig.enabled?(state.config.hardfork, :eip_2929) do
+    if HardforkConfig.enabled?(state.env.config.hardfork, :eip_2929) do
       sub = state.substate
 
       if MapSet.member?(sub.accessed_addresses, address) do
@@ -55,7 +55,7 @@ defmodule EEVM.Gas.Access do
   @spec storage_access_cost(MachineState.t(), non_neg_integer(), non_neg_integer()) ::
           {non_neg_integer(), MachineState.t()}
   def storage_access_cost(state, address, slot) do
-    if HardforkConfig.enabled?(state.config.hardfork, :eip_2929) do
+    if HardforkConfig.enabled?(state.env.config.hardfork, :eip_2929) do
       key = {address, slot}
       sub = state.substate
 

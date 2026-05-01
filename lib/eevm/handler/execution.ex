@@ -101,7 +101,7 @@ defmodule EEVM.Handler.Execution do
         {:error, %{state | gas: 0, status: :reverted}}
 
       size > 0 and :binary.first(runtime_code) == 0xEF and
-          HardforkConfig.enabled?(state.config.hardfork, :eip_3541) ->
+          HardforkConfig.enabled?(state.env.config.hardfork, :eip_3541) ->
         {:error, %{state | gas: 0, status: :reverted}}
 
       true ->

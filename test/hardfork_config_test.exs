@@ -392,7 +392,7 @@ defmodule EEVM.HardforkConfigTest do
 
     test "config.hardfork is set to Cancun by default" do
       result = EEVM.execute(<<0x00>>)
-      assert result.config.hardfork.spec_id == :cancun
+      assert result.env.config.hardfork.spec_id == :cancun
     end
   end
 end

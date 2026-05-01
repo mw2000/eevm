@@ -69,7 +69,7 @@ defmodule EEVM.Interpreter.Instructions.StackMemoryStorage.MemoryOps do
 
   # MCOPY (EIP-5656, Cancun+): copies a region of memory to another location.
   # Pre-Cancun, 0x5E is undefined → :invalid.
-  def execute(0x5E, %{config: %{hardfork: hardfork}} = state) do
+  def execute(0x5E, %{env: %{config: %{hardfork: hardfork}}} = state) do
     if HardforkConfig.enabled?(hardfork, :eip_5656) do
       with {:ok, dst, s1} <- Stack.pop(state.stack),
            {:ok, src, s2} <- Stack.pop(s1),

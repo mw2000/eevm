@@ -79,12 +79,12 @@ defmodule EEVM.Interpreter.Instructions.System.Creation do
         db_after_nonce =
           Database.increment_nonce(state_after_cost.db, creator)
 
-        if HardforkConfig.enabled?(state_after_cost.config.hardfork, :eip_3860) and
+        if HardforkConfig.enabled?(state_after_cost.env.config.hardfork, :eip_3860) and
              size > @max_initcode_size do
           create_failed(%{state_after_cost | db: db_after_nonce}, stack)
         else
           initcode_cost =
-            if HardforkConfig.enabled?(state_after_cost.config.hardfork, :eip_3860),
+            if HardforkConfig.enabled?(state_after_cost.env.config.hardfork, :eip_3860),
               do: @initcode_word_cost * div(size + 31, 32),
               else: 0
 
@@ -119,10 +119,10 @@ defmodule EEVM.Interpreter.Instructions.System.Creation do
                       MachineState.new(init_code,
                         gas: state_after_initcode_cost.gas,
                         db: db_after_transfer,
-                        tx: state_after_touch.tx,
-                        block: state_after_touch.block,
+                        tx: state_after_touch.env.tx,
+                        block: state_after_touch.env.block,
                         contract: child_contract,
-                        config: state_after_touch.config,
+                        config: state_after_touch.env.config,
                         touched_addresses: state_after_touch.substate.touched_addresses,
                         accessed_addresses: state_after_touch.substate.accessed_addresses,
                         accessed_storage_keys: state_after_touch.substate.accessed_storage_keys,
@@ -144,7 +144,7 @@ defmodule EEVM.Interpreter.Instructions.System.Creation do
                     if deployment_success do
                       runtime_code = child_result.return_data
 
-                      if HardforkConfig.enabled?(child_result.config.hardfork, :eip_170) and
+                      if HardforkConfig.enabled?(child_result.env.config.hardfork, :eip_170) and
                            byte_size(runtime_code) > @max_code_size do
                         create_failed(post_child_fail_state, stack)
                       else
@@ -153,7 +153,7 @@ defmodule EEVM.Interpreter.Instructions.System.Creation do
                         # This check runs after EIP-170 size validation and after init code
                         # execution -- so init code gas is already consumed but no code is
                         # deposited. Empty runtime code is explicitly allowed.
-                        if HardforkConfig.enabled?(child_result.config.hardfork, :eip_3541) and
+                        if HardforkConfig.enabled?(child_result.env.config.hardfork, :eip_3541) and
                              reject_eip_3541_runtime_code?(runtime_code) do
                           create_failed(post_child_fail_state, stack)
                         else

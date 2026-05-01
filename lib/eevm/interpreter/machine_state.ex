@@ -30,7 +30,7 @@ defmodule EEVM.Interpreter.MachineState do
   alias EEVM.Database
   alias EEVM.Database.InMemory, as: InMemoryDB
   alias EEVM.Interpreter.{CallFrame, Memory, Stack}
-  alias EEVM.Interpreter.MachineState.Substate
+  alias EEVM.Interpreter.MachineState.{Env, Substate}
   alias EEVM.Precompiles
   alias EEVM.Tracer
 
@@ -41,11 +41,9 @@ defmodule EEVM.Interpreter.MachineState do
           stack: Stack.t(),
           memory: Memory.t(),
           db: Database.t(),
+          env: Env.t(),
           substate: Substate.t(),
-          tx: Transaction.t(),
-          block: Block.t(),
           contract: Contract.t(),
-          config: Config.t(),
           call_stack: [CallFrame.t()],
           frame_return_offset: non_neg_integer(),
           frame_return_size: non_neg_integer(),
@@ -64,11 +62,9 @@ defmodule EEVM.Interpreter.MachineState do
             stack: nil,
             memory: nil,
             db: nil,
+            env: nil,
             substate: nil,
-            tx: nil,
-            block: nil,
             contract: nil,
-            config: nil,
             call_stack: [],
             frame_return_offset: 0,
             frame_return_size: 0,
@@ -135,11 +131,9 @@ defmodule EEVM.Interpreter.MachineState do
       stack: Stack.new(),
       memory: Memory.new(),
       db: init_db(opts, contract),
+      env: Env.new(tx: tx, block: block, config: config),
       substate: substate,
-      tx: tx,
-      block: block,
       contract: contract,
-      config: config,
       call_stack: Keyword.get(opts, :call_stack, []),
       frame_return_offset: Keyword.get(opts, :frame_return_offset, 0),
       frame_return_size: Keyword.get(opts, :frame_return_size, 0),

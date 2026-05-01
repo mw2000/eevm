@@ -194,10 +194,11 @@ defmodule EEVM.Interpreter.Instructions.System.Calls do
         {:ok, state_after_forward} ->
           target_code = Database.get_code(db_after_transfer, address)
 
-          if Precompiles.precompile?(address, state_after_forward.config) and target_code == <<>> do
+          if Precompiles.precompile?(address, state_after_forward.env.config) and
+               target_code == <<>> do
             child_gas = forwarded_gas + Dynamic.call_stipend(value)
 
-            case Precompiles.execute(address, calldata, child_gas, state_after_forward.config) do
+            case Precompiles.execute(address, calldata, child_gas, state_after_forward.env.config) do
               {:ok, output, gas_used} ->
                 remaining_gas = child_gas - gas_used
                 memory_result = write_return_data(memory_after_read, ret_offset, ret_size, output)
@@ -241,10 +242,10 @@ defmodule EEVM.Interpreter.Instructions.System.Calls do
               MachineState.new(target_code,
                 gas: child_gas,
                 db: db_after_transfer,
-                tx: state_after_touch.tx,
-                block: state_after_touch.block,
+                tx: state_after_touch.env.tx,
+                block: state_after_touch.env.block,
                 contract: child_contract,
-                config: state_after_touch.config,
+                config: state_after_touch.env.config,
                 touched_addresses: state_after_touch.substate.touched_addresses,
                 accessed_addresses: state_after_touch.substate.accessed_addresses,
                 accessed_storage_keys: state_after_touch.substate.accessed_storage_keys,
@@ -318,8 +319,9 @@ defmodule EEVM.Interpreter.Instructions.System.Calls do
 
           target_code = Database.get_code(state_after_forward.db, address)
 
-          if Precompiles.precompile?(address, state_after_forward.config) and target_code == <<>> do
-            case Precompiles.execute(address, calldata, child_gas, state_after_forward.config) do
+          if Precompiles.precompile?(address, state_after_forward.env.config) and
+               target_code == <<>> do
+            case Precompiles.execute(address, calldata, child_gas, state_after_forward.env.config) do
               {:ok, output, gas_used} ->
                 remaining_gas = child_gas - gas_used
                 memory_result = write_return_data(memory_after_read, ret_offset, ret_size, output)
@@ -361,10 +363,10 @@ defmodule EEVM.Interpreter.Instructions.System.Calls do
               MachineState.new(target_code,
                 gas: child_gas,
                 db: state_after_touch.db,
-                tx: state_after_touch.tx,
-                block: state_after_touch.block,
+                tx: state_after_touch.env.tx,
+                block: state_after_touch.env.block,
                 contract: child_contract,
-                config: state_after_touch.config,
+                config: state_after_touch.env.config,
                 touched_addresses: state_after_touch.substate.touched_addresses,
                 accessed_addresses: state_after_touch.substate.accessed_addresses,
                 accessed_storage_keys: state_after_touch.substate.accessed_storage_keys,

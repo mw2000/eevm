@@ -99,7 +99,7 @@ defmodule EEVM.Interpreter.Instructions.StackMemoryStorage.StorageOps do
 
   # TLOAD (EIP-1153, Cancun+): reads from transient storage — a key-value map
   # cleared at the end of each transaction. Pre-Cancun, 0x5C is undefined → :invalid.
-  def execute(0x5C, %{config: %{hardfork: hardfork}} = state) do
+  def execute(0x5C, %{env: %{config: %{hardfork: hardfork}}} = state) do
     if HardforkConfig.enabled?(hardfork, :eip_1153) do
       with {:ok, key, s1} <- Stack.pop(state.stack),
            value = Map.get(state.substate.transient_storage, key, 0),
@@ -116,7 +116,7 @@ defmodule EEVM.Interpreter.Instructions.StackMemoryStorage.StorageOps do
   # TSTORE (EIP-1153, Cancun+): writes to transient storage. The static-context
   # guard in the executor rejects TSTORE before this clause is reached in static mode.
   # Pre-Cancun, 0x5D is undefined → :invalid.
-  def execute(0x5D, %{config: %{hardfork: hardfork}} = state) do
+  def execute(0x5D, %{env: %{config: %{hardfork: hardfork}}} = state) do
     if HardforkConfig.enabled?(hardfork, :eip_1153) do
       with {:ok, key, s1} <- Stack.pop(state.stack),
            {:ok, value, s2} <- Stack.pop(s1) do

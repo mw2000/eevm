@@ -93,7 +93,7 @@ defmodule EEVM.Interpreter.Instructions.ControlFlow do
   # PUSH0 (EIP-3855, Shanghai+): pushes the constant 0 onto the stack without
   # consuming any inline bytecode bytes. Saves 1 byte and 2 gas vs PUSH1 0x00.
   # Pre-Shanghai, 0x5F is an undefined opcode and halts with :invalid.
-  def execute(0x5F, %{config: %{hardfork: hardfork}} = state) do
+  def execute(0x5F, %{env: %{config: %{hardfork: hardfork}}} = state) do
     if HardforkConfig.enabled?(hardfork, :eip_3855) do
       Helpers.push_value(state, 0)
     else

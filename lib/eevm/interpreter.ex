@@ -144,18 +144,18 @@ defmodule EEVM.Interpreter do
     # EIP-3529 (London+): cap refunds at 1/5 of gas used.
     # Pre-London: cap was 1/2 of gas used.
     refund_cap_divisor =
-      if HardforkConfig.enabled?(state.config.hardfork, :eip_3529), do: 5, else: 2
+      if HardforkConfig.enabled?(state.env.config.hardfork, :eip_3529), do: 5, else: 2
 
     effective_refund = min(state.refund, div(gas_used, refund_cap_divisor))
 
     refunded_gas = state.gas + effective_refund
 
     calldata_floor_gas =
-      IntrinsicGas.calldata_floor_gas_cost(state.tx, state.config.hardfork)
+      IntrinsicGas.calldata_floor_gas_cost(state.env.tx, state.env.config.hardfork)
 
     gas_after_floor =
-      if calldata_floor_gas > 0 and state.tx.gas_limit > 0 do
-        min(refunded_gas, max(state.tx.gas_limit - calldata_floor_gas, 0))
+      if calldata_floor_gas > 0 and state.env.tx.gas_limit > 0 do
+        min(refunded_gas, max(state.env.tx.gas_limit - calldata_floor_gas, 0))
       else
         refunded_gas
       end

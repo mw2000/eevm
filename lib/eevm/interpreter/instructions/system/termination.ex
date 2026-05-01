@@ -72,7 +72,8 @@ defmodule EEVM.Interpreter.Instructions.System.Termination do
           # EIP-6780 (Cancun+): SELFDESTRUCT only fully deletes the account when
           # the contract was created in the same transaction. Pre-Cancun, every
           # SELFDESTRUCT unconditionally deletes the account and transfers the balance.
-          eip_6780_active? = HardforkConfig.enabled?(state_after_touch.config.hardfork, :eip_6780)
+          eip_6780_active? =
+            HardforkConfig.enabled?(state_after_touch.env.config.hardfork, :eip_6780)
 
           created_this_tx =
             MapSet.member?(state_after_touch.substate.created_addresses, contract_address)
