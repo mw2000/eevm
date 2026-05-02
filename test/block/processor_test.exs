@@ -1,7 +1,7 @@
 defmodule EEVM.Block.ProcessorTest do
   use ExUnit.Case, async: true
 
-  alias EEVM.Block.{Bloom, Header, Processor, Receipt, Result}
+  alias EEVM.Block.{Bloom, Header, Processor, Receipt, Result, Withdrawal}
   alias EEVM.{Database, StateRoot}
   alias EEVM.Database.InMemory
   alias EEVM.MPT.Trie
@@ -287,6 +287,76 @@ defmodule EEVM.Block.ProcessorTest do
       assert r2.logs_bloom == Bloom.from_logs([log_b])
 
       assert result.logs_bloom == Bloom.merge(r1.logs_bloom, r2.logs_bloom)
+    end
+  end
+
+  # ---------------------------------------------------------------------------
+  # Withdrawals (EIP-4895)
+  # ---------------------------------------------------------------------------
+
+  describe "withdrawals" do
+    test "credits each address with amount * 1_000_000_000 (gwei → wei)" do
+      db = InMemory.new()
+      header = noop_header()
+
+      withdrawals = [
+        %Withdrawal{index: 0, validator_index: 1, address: 0xAAAA, amount: 5},
+        %Withdrawal{index: 1, validator_index: 2, address: 0xBBBB, amount: 7}
+      ]
+
+      {:ok, result} = run(header, [], db, withdrawals: withdrawals)
+
+      assert Database.get_balance(result.post_state_db, 0xAAAA) == 5_000_000_000
+      assert Database.get_balance(result.post_state_db, 0xBBBB) == 7_000_000_000
+    end
+
+    test "state_root reflects withdrawals (applied before commitments)" do
+      db = InMemory.new()
+      header = noop_header()
+      pre_root = StateRoot.compute_state_root(db)
+
+      {:ok, result} =
+        run(header, [], db,
+          withdrawals: [%Withdrawal{index: 0, validator_index: 0, address: 0xCAFE, amount: 1}]
+        )
+
+      assert result.state_root != pre_root
+      assert result.state_root == StateRoot.compute_state_root(result.post_state_db)
+    end
+
+    test "applies after the transaction fold so txs cannot observe the credit" do
+      db = InMemory.new()
+      header = noop_header()
+
+      observing_executor = fn _tx, _ctx, db_in ->
+        observed = Database.get_balance(db_in, 0xCAFE)
+        new_db = Database.set_balance(db_in, 0xCAFE_BABE, observed)
+        {:ok, %{status: 1, gas_used: 21_000, logs: [], db: new_db}}
+      end
+
+      {:ok, result} =
+        Processor.process_block(
+          header,
+          [tx(id: 1, gas_limit: 100_000)],
+          db,
+          tx_executor: observing_executor,
+          tx_encoder: tx_encoder(),
+          withdrawals: [%Withdrawal{index: 0, validator_index: 0, address: 0xCAFE, amount: 1}]
+        )
+
+      # The tx ran *before* the withdrawal landed, so it observed a zero balance.
+      assert Database.get_balance(result.post_state_db, 0xCAFE_BABE) == 0
+      assert Database.get_balance(result.post_state_db, 0xCAFE) == 1_000_000_000
+    end
+
+    test "empty withdrawals list is a no-op" do
+      db = InMemory.new()
+      header = noop_header()
+      pre_root = StateRoot.compute_state_root(db)
+
+      {:ok, result} = run(header, [], db, withdrawals: [])
+
+      assert result.state_root == pre_root
     end
   end
 

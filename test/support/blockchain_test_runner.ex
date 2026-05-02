@@ -21,17 +21,17 @@ defmodule EEVM.TestSupport.BlockchainTestRunner do
   follow-ups.
   """
 
-  alias EEVM.Block.{Header, Processor}
+  alias EEVM.Block.{Header, Processor, Withdrawal}
   alias EEVM.Config
   alias EEVM.Context.{Block, Transaction}
   alias EEVM.Database
   alias EEVM.Database.InMemory
   alias EEVM.HardforkConfig
-  alias EEVM.StateRoot
   alias EEVM.SystemContracts.{BeaconRoots, BlockHashes}
   alias EEVM.TestSupport.BlockchainHeaderValidator, as: HeaderValidator
-  alias EEVM.TestSupport.BlockchainTestFixture.{Account, Case, TransactionFields, Withdrawal}
+  alias EEVM.TestSupport.BlockchainTestFixture.{Account, Case, TransactionFields}
   alias EEVM.TestSupport.BlockchainTestFixture.Block, as: FixtureBlock
+  alias EEVM.TestSupport.BlockchainTestFixture.Withdrawal, as: FixtureWithdrawal
   alias EEVM.TestSupport.TxExecutor
 
   @min_blob_base_fee 1
@@ -119,22 +119,20 @@ defmodule EEVM.TestSupport.BlockchainTestRunner do
     opts = [
       tx_executor: tx_executor(config, header),
       tx_encoder: fn _tx -> <<>> end,
-      system_calls: system_calls(header, config)
+      system_calls: system_calls(header, config),
+      withdrawals: Enum.map(block.withdrawals, &to_eevm_withdrawal/1)
     ]
 
     case Processor.process_block(eevm_header, transactions, db, opts) do
       {:ok, result} ->
-        verify_post_block(result, header, block.withdrawals)
+        verify_post_block(result, header)
 
       {:error, _} = error ->
         error
     end
   end
 
-  defp verify_post_block(result, header, withdrawals) do
-    final_db = apply_withdrawals(result.post_state_db, withdrawals)
-    final_state_root = StateRoot.compute_state_root(final_db)
-
+  defp verify_post_block(result, header) do
     cond do
       result.gas_used != header.gas_used ->
         {:error, {:invalid_gas_used, expected: header.gas_used, actual: result.gas_used}}
@@ -142,20 +140,22 @@ defmodule EEVM.TestSupport.BlockchainTestRunner do
       result.logs_bloom != header.logs_bloom ->
         {:error, :invalid_logs_bloom}
 
-      final_state_root != header.state_root ->
-        {:error, {:state_root_mismatch, expected: header.state_root, actual: final_state_root}}
+      result.state_root != header.state_root ->
+        {:error,
+         {:state_root_mismatch, expected: header.state_root, actual: result.state_root}}
 
       true ->
-        {:ok, final_db}
+        {:ok, result.post_state_db}
     end
   end
 
-  @gwei 1_000_000_000
-
-  defp apply_withdrawals(db, withdrawals) do
-    Enum.reduce(withdrawals, db, fn %Withdrawal{address: addr, amount: amount}, db_acc ->
-      credit_balance(db_acc, addr, amount * @gwei)
-    end)
+  defp to_eevm_withdrawal(%FixtureWithdrawal{} = w) do
+    %Withdrawal{
+      index: w.index,
+      validator_index: w.validator_index,
+      address: w.address,
+      amount: w.amount
+    }
   end
 
   defp to_eevm_header(header) do
@@ -239,11 +239,6 @@ defmodule EEVM.TestSupport.BlockchainTestRunner do
     blob_base_fee = if header.excess_blob_gas == nil, do: 0, else: @min_blob_base_fee
     %{block_ctx | blob_base_fee: blob_base_fee}
   end
-
-  defp credit_balance(db, _addr, 0), do: db
-
-  defp credit_balance(db, addr, amount),
-    do: Database.set_balance(db, addr, Database.get_balance(db, addr) + amount)
 
   defp verify_post_state(db, post) do
     Enum.find_value(post, :ok, fn {addr, %Account{} = expected} ->
