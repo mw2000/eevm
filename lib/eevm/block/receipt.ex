@@ -1,23 +1,17 @@
 defmodule EEVM.Block.Receipt do
   @moduledoc """
-  Per-transaction receipt emitted after execution.
+  Per-transaction receipt emitted after execution (Byzantium-and-later layout).
 
-  ## EVM Concepts
+  ### Fields
 
-  A receipt is the execution-layer's summary of what happened when a transaction
-  ran. It does not carry the full transaction payload — instead it records the
-  post-conditions an observer needs to validate state transitions:
-
-  - `status` — `1` if the top-level call completed, `0` if it reverted. The
-    Byzantium hardfork replaced the pre-image `state_root` field with this
-    one-byte status code; this module follows that modern layout.
+  - `status` — `1` if the top-level call completed, `0` if it reverted.
   - `cumulative_gas_used` — total gas consumed in the block up to and including
-    this transaction. Per the Yellow Paper, receipts are ordered and the
-    `cumulative_gas_used` of the last receipt equals the block's `gas_used`.
+    this transaction. The `cumulative_gas_used` of the last receipt equals the
+    block's `gas_used`.
   - `logs` — every log entry emitted by this transaction, in emission order.
     Each log is a map matching `t:EEVM.Block.Bloom.log_entry/0`.
-  - `logs_bloom` — the 2048-bit bloom filter over this receipt's logs, i.e.
-    `EEVM.Block.Bloom.from_logs(logs)`. We store it pre-computed so block-level
+  - `logs_bloom` — the 2048-bit bloom filter over this receipt's logs
+    (`EEVM.Block.Bloom.from_logs(logs)`); stored pre-computed so block-level
     aggregation is a fast bytewise OR.
 
   ## Wire encoding (EIP-2718)

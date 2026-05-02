@@ -1,29 +1,14 @@
 defmodule EEVM.Database.InMemory do
   @moduledoc """
-  In-memory database implementation using plain maps.
-
-  ## EVM Concepts
-
-  This is the default database backend for eevm. It stores all account state
-  (balances, nonces, code) and contract storage in Elixir maps — the same
-  data structures used by `EEVM.WorldState` and `EEVM.Storage` before the
-  Database abstraction was introduced.
+  In-memory `EEVM.Database` backend backed by plain maps.
 
   The state is a map with two keys:
 
   - `:accounts` — `%{address => account_map}` (balances, nonces, code)
   - `:storage` — `%{address => %{slot => value}}` (per-contract storage)
 
-  This implementation is suitable for testing, single-transaction execution,
-  and learning. For production use with persistent state, implement the
-  `EEVM.Database` behaviour with a disk-backed store.
-
-  ## Elixir Learning Notes
-
-  - `@behaviour EEVM.Database` tells the compiler to verify that this module
-    implements all required callbacks. Missing callbacks produce warnings.
-  - The state is a plain map (not a struct) to keep it lightweight and
-    easy to inspect in tests.
+  Suitable for testing and single-transaction execution. For persistent
+  state, implement the `EEVM.Database` behaviour against a disk-backed store.
   """
 
   @behaviour EEVM.Database

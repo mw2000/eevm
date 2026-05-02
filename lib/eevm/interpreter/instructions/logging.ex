@@ -1,21 +1,5 @@
 defmodule EEVM.Interpreter.Instructions.Logging do
-  @moduledoc """
-  EVM logging opcodes — LOG0 through LOG4.
-
-  ## EVM Concepts
-
-  - LOG instructions emit event logs that are stored in transaction receipts.
-  - Each log contains the emitting contract address, a data payload from memory,
-    and 0–4 indexed topic values from the stack.
-  - Topics are 256-bit values used for efficient off-chain filtering (e.g. event signatures).
-  - Gas cost: 375 base + 375 per topic + 8 per byte of data + memory expansion.
-
-  ## Elixir Learning Notes
-
-  - We use pattern matching on the topic count (0–4) to dispatch LOG variants.
-  - Logs accumulate in `state.substate.logs` as a list of maps, preserving insertion order.
-  - `binary_part/3` extracts a slice from a binary — used to read log data from memory bytes.
-  """
+  @moduledoc "EVM logging opcodes — LOG0 through LOG4."
 
   alias EEVM.Gas.Dynamic
   alias EEVM.Gas.Memory, as: GasMemory

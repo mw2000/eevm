@@ -1,23 +1,10 @@
 defmodule EEVM.Precompiles.ModExp do
   @moduledoc """
-  Modular exponentiation precompile — address `0x05`.
+  Modular exponentiation precompile — address `0x05` (EIP-198).
 
-  ## EVM Concepts
-
-  ModExp computes `base^exp mod modulus` over arbitrarily large integers. It was
-  introduced by EIP-198 so contracts can perform heavy number-theoretic
-  operations without reimplementing bignum arithmetic in EVM bytecode.
-
-  This precompile is a core primitive for:
-
-  - **RSA signature verification**, where exponentiation modulo a large integer
-    is the fundamental operation.
-  - **Zero-knowledge proofs**, whose verifier circuits frequently require
-    modular exponentiation over large fields.
+  Computes `base^exp mod modulus` over arbitrarily large integers.
 
   ### Gas schedule (EIP-2565)
-
-  The gas charge uses the EIP-2565 repricing formula:
 
   `gas = max(200, floor(multiplication_complexity * iteration_count / 3))`
 
@@ -35,8 +22,6 @@ defmodule EEVM.Precompiles.ModExp do
 
   ### Input format
 
-  Input is ABI-like (but not standard Solidity ABI):
-
   - bytes `0..31`: `base_length` (big-endian uint256)
   - bytes `32..63`: `exp_length` (big-endian uint256)
   - bytes `64..95`: `mod_length` (big-endian uint256)
@@ -48,15 +33,6 @@ defmodule EEVM.Precompiles.ModExp do
   Output is the big-endian value of `base^exp mod modulus`, left-padded with
   zeros to exactly `mod_length` bytes. If `modulus == 0` or `mod_length == 0`,
   the precompile returns `mod_length` zero bytes.
-
-  ## Elixir Learning Notes
-
-  - `:crypto.mod_pow(base, exp, modulus)` delegates modular exponentiation to
-    Erlang/OTP's `:crypto` NIF, which uses optimized native big-integer code.
-  - `<<len::unsigned-size(256)>>` is binary pattern matching for parsing
-    big-endian uint256 fields directly from a binary.
-  - Elixir integers are arbitrary precision, so converting between bytes and
-    integers with `:binary.decode_unsigned/1` works for very large values.
   """
 
   @behaviour EEVM.Precompile

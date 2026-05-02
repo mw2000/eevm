@@ -1,71 +1,27 @@
 defmodule EEVM.SystemContracts.BlockHashes do
   @moduledoc """
-  EIP-2935 historical block hashes contract.
+  EIP-2935 historical block hashes contract (activated in Prague).
 
-  ## EVM Concepts
+  Installs the canonical EIP-2935 deployed bytecode at
+  `0x0000F90827F1C53a10cb7A02335B175320002935` and drives it through the
+  normal executor. At the start of every block the execution layer performs
+  a system call (caller = SYSTEM_ADDRESS `0xff..fe`) with the parent block
+  hash as 32-byte calldata; the contract stashes the hash in a ring buffer
+  of `HISTORY_SERVE_WINDOW = 8191` slots keyed by the parent block number.
+  User contracts read past hashes back via a plain `CALL` with a 32-byte
+  block number.
 
-  The `BLOCKHASH` opcode can only address the previous 256 ancestors of the
-  current block. That 256-block window is a protocol-imposed limit that keeps
-  clients from having to retain arbitrarily-deep history in order to execute
-  contracts. EIP-2935 extends the reachable history to the last 8191 blocks
-  without touching the opcode itself — instead, an ordinary contract deployed
-  at
-
-      0x0000F90827F1C53a10cb7A02335B175320002935
-
-  exposes the hashes through a plain `CALL`. The `BLOCKHASH` opcode's rules
-  are unchanged; dapps that want deeper history do so explicitly by CALLing
-  this address.
-
-  At the start of every block the execution client performs a *system call*
-  into the contract with the parent block hash as 32-byte calldata, signed as
-  coming from the SYSTEM_ADDRESS (`0xff..fe`). The contract notices the
-  system caller and stashes the hash in a ring buffer slot keyed by the
-  parent block number:
-
-      storage[(block.number - 1) % 8191] = parent_block_hash
-
-  User contracts later `CALL` the same address with a 32-byte block number
-  as calldata. The bytecode validates that the calldata is exactly 32 bytes
-  and that the requested block is strictly in the past
-  (`requested < block.number`); otherwise it reverts. When the upper-bound
-  check passes the contract returns `storage[requested mod 8191]`. The
-  EIP-canonical bytecode does *not* additionally enforce a lower bound — a
-  request that ranges further back than 8191 blocks will simply return
-  whatever stale entry currently sits in that ring-buffer slot.
-
-  Activated in Prague.
-
-  ## Design
-
-  We do not invent a custom precompile. Instead we install the exact deployed
-  bytecode specified by EIP-2935 at the canonical address and drive it
-  through the normal executor — the same code path any user CALL takes. This
-  keeps behavior faithful to mainnet and means any future changes to CALL
-  semantics come along for free.
+  ## API
 
   - `install/1` — place the deployed bytecode into a `Database`.
   - `commit/3`  — perform the block-start system call that stores a hash.
-  - `lookup/2`  — read a stored hash directly from storage (convenience).
-
-  `commit/3` takes the *current* block (whose `number` is, say, N) plus the
-  hash of its parent (block N-1). The contract does the `N - 1` subtraction
-  internally before writing to `storage[(N - 1) mod 8191]`, so the caller
-  never has to know about the ring-buffer offset.
-
-  `commit/3` returns `{:ok, updated_db}` on success and `{:error, reason, db}`
-  on an execution failure; the caller decides what to do about it.
-
-  ## Elixir Learning Notes
-
-  - The deployed bytecode lives as a compile-time constant via `@deployed_code`
-    so there is no per-call decoding cost.
-  - `install/1` and `commit/3` both work on plain `Database` values — no
-    `MachineState` is exposed to callers — keeping the integration surface
-    small for higher layers that aren't yet aware of full EVM state.
-  - `lookup/2` reads storage directly: a slot that has never been written
-    returns `:not_found`, distinguishable from a genuinely-stored zero only
-    if the caller knows the slot was written.
+    Takes the *current* block (number N) plus the hash of its parent
+    (block N-1); the contract does the `N - 1` subtraction internally
+    before writing to `storage[(N - 1) mod 8191]`. Returns `{:ok, db}`
+    on success and `{:error, reason, db}` on execution failure.
+  - `lookup/2`  — read a stored hash directly from storage. A slot that
+    has never been written returns `:not_found` (distinguishable from a
+    genuinely-stored zero only if the caller knows the slot was written).
   """
 
   alias EEVM.Context.{Block, Contract, Transaction}

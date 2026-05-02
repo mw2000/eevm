@@ -2,16 +2,7 @@ defmodule EEVM.Precompiles.Blake2F do
   @moduledoc """
   Blake2f precompile — address `0x09` (EIP-152).
 
-  ## EVM Concepts
-
-  EIP-152 adds the Blake2b compression function `F` as an EVM precompile so
-  contracts can verify data structures from ecosystems that rely on BLAKE2,
-  especially **Zcash block headers** and **Equihash proofs**, without expensive
-  in-EVM emulation.
-
-  This also benefits interoperability with chains and protocols that use
-  Blake2-based primitives, including **Filecoin proof systems**, where on-chain
-  verification needs the exact compression round function.
+  Implements the Blake2b compression function `F`.
 
   ### Gas schedule
 
@@ -29,16 +20,6 @@ defmodule EEVM.Precompiles.Blake2F do
   - byte `212`     — `f` final block flag (`0` or `1` only)
 
   Output is 64 bytes: the 8 updated state words in little-endian.
-
-  ## Elixir Learning Notes
-
-  - Cryptographic compression can be implemented in pure Elixir with
-    `import Bitwise` plus explicit 64-bit masking (`0xFFFFFFFFFFFFFFFF`) after
-    additions to preserve modulo `2^64` behavior.
-  - Binary pattern matching with little-endian fields (`<<w::little-64>>`) is
-    ideal for parsing EIP-152 state/message/counter words directly from input.
-  - Tuple-based state management (`put_elem/3`, `elem/2`) is a practical fit for
-    fixed-size vectors like Blake2b's 16-word working vector.
   """
 
   @behaviour EEVM.Precompile

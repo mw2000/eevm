@@ -1,14 +1,7 @@
 defmodule EEVM.Context.Contract do
   @moduledoc """
   Contract/message-level context — the current call frame's environment.
-
-  ## EVM Concepts
-
-  Each call frame (triggered by CALL, DELEGATECALL, etc.) has its own message
-  context. This is the innermost of the three context layers and changes with
-  every nested call.
-
-  In revm, this maps to the `Host` trait's per-frame data.
+  Each CALL / DELEGATECALL / STATICCALL / CREATE frame has its own.
 
   ### Fields
 
@@ -27,16 +20,7 @@ defmodule EEVM.Context.Contract do
   - `origin` (ORIGIN/tx.origin, in `EEVM.Context.Transaction`) = the EOA that
     signed the transaction. Never changes.
 
-  Example: EOA → Contract A → Contract B
-  - In Contract B: `caller` = A, `origin` = EOA
-
-  ## Elixir Learning Notes
-
-  - `calldata` is a raw binary (`<<>>`). Elixir's binary pattern matching
-    makes zero-copy slicing trivial via `binary_part/3`.
-  - `calldata_load/2` implements EVM spec behavior: reads 32 bytes from an
-    offset, right-padding with zeros if calldata is shorter than offset+32.
-  - `balances` is a simplified model — a real EVM would query a state database.
+  Example: EOA -> Contract A -> Contract B; in B, `caller = A`, `origin = EOA`.
   """
 
   @type t :: %__MODULE__{

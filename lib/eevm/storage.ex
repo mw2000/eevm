@@ -1,46 +1,9 @@
 defmodule EEVM.Storage do
   @moduledoc """
-  Persistent key-value storage for the EVM.
+  Persistent key-value storage for a single contract account: a mapping from
+  256-bit slot keys to 256-bit values.
 
-  ## EVM Concepts
-
-  Storage is the EVM's persistent state — it survives across transactions and
-  blocks. Each contract (account) has its own isolated storage, a mapping from
-  256-bit keys ("slots") to 256-bit values.
-
-  This is what makes Ethereum a *stateful* computer. When a Solidity contract
-  declares `uint256 public counter`, that variable lives in storage slot 0.
-  `SSTORE` writes to it, `SLOAD` reads from it.
-
-  ### Storage vs Memory
-
-  | Property | Storage | Memory |
-  |----------|---------|--------|
-  | Lifetime | Permanent (on-chain) | Cleared after each call |
-  | Cost | Very expensive (20,000 gas to write) | Cheap (3 gas + expansion) |
-  | Size | 2^256 slots per account | Grows dynamically |
-  | Access | Key-value (slot → value) | Byte-addressable (offset → byte) |
-
-  ### Gas Costs (Simplified)
-
-  In a production EVM, storage gas depends on cold/warm access (EIP-2929) and
-  whether you're writing to a fresh vs dirty slot (EIP-2200). We use simplified
-  flat costs for learning:
-
-  - `SLOAD`: 200 gas (warm access cost)
-  - `SSTORE`: 20,000 gas (fresh write cost)
-
-  The full EIP-2929 + EIP-2200 model tracks an "access set" per transaction and
-  distinguishes between original, current, and new values to compute refunds.
-
-  ## Elixir Learning Notes
-
-  - We use a plain `Map` as the underlying data structure. Elixir maps have
-    O(log n) access which is fine for our learning purposes.
-  - Uninitialized slots return 0 — we use `Map.get/3` with a default value
-    rather than checking for key existence.
-  - The module is purely functional: `store/3` returns a new storage, it doesn't
-    mutate the old one. This is a core Elixir/functional programming pattern.
+  Uninitialized slots return `0`. All values are masked to 256 bits on write.
   """
 
   @type t :: %__MODULE__{

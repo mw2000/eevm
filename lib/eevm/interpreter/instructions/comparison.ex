@@ -1,29 +1,5 @@
 defmodule EEVM.Interpreter.Instructions.Comparison do
-  @moduledoc """
-  EVM comparison opcodes: LT, GT, SLT, SGT, EQ, ISZERO.
-
-  ## EVM Concepts
-
-  Comparison opcodes consume their operands and push a boolean result as either
-  1 (true) or 0 (false). The EVM has no native boolean type.
-
-  Key behaviors:
-
-  1. **Unsigned comparisons** — LT, GT, and EQ treat both operands as uint256.
-     `1 < 2` is true; `max_uint256 < 0` is false.
-  2. **Signed comparisons** — SLT and SGT interpret operands as two's complement
-     signed integers. The high bit is the sign bit, so `max_uint256` is -1.
-  3. **ISZERO is unary** — it pops one value and pushes 1 if it is zero, 0
-     otherwise. It's also used to negate a boolean (ISZERO of a comparison result).
-
-  ## Elixir Learning Notes
-
-  - Passing comparison functions as arguments (`&Kernel.</2`) is higher-order
-    programming — the helpers module does the boilerplate and we just supply
-    the predicate.
-  - `&Kernel.</2` captures the less-than operator as an anonymous function.
-    The `/2` means it takes two arguments.
-  """
+  @moduledoc "EVM comparison opcodes: LT, GT, SLT, SGT, EQ, ISZERO."
   alias EEVM.Interpreter.Instructions.Helpers
   alias EEVM.Interpreter.{MachineState, Stack}
 

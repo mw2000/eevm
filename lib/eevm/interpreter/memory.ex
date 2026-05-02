@@ -2,20 +2,9 @@ defmodule EEVM.Interpreter.Memory do
   @moduledoc """
   EVM memory — a byte-addressable, dynamically expanding linear memory.
 
-  ## EVM Concepts
-
-  - Memory is a word-addressed byte array that expands in 32-byte chunks.
-  - Reading/writing beyond current size auto-expands (zero-filled).
-  - Gas cost increases quadratically with memory size (see `EEVM.Gas.Memory`).
-
-  ## Elixir Learning Notes
-
-  - We use a `Map` for sparse storage — only written bytes are stored.
-    This is more memory-efficient than a huge binary for a learning impl.
-  - `Map.get(map, key, default)` returns a default if the key is missing —
-    perfect for zero-filled memory semantics.
-  - Binaries (`<<>>`) are Elixir's way of handling raw bytes. We use them
-    for reading contiguous chunks.
+  Memory expands in 32-byte chunks. Reads or writes beyond the current size
+  auto-expand and are zero-filled. Gas cost increases quadratically with
+  memory size (see `EEVM.Gas.Memory`).
   """
 
   @type t :: %__MODULE__{
