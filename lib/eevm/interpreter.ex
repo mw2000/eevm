@@ -2,38 +2,19 @@ defmodule EEVM.Interpreter do
   @moduledoc """
   The EVM interpreter — fetches, decodes, and dispatches opcodes in a loop.
 
-  This is the core opcode-execution engine. It is invoked by the
-  `EEVM.Handler` (the transaction-level pipeline) and by system
-  contracts that need to evaluate bytecode against an existing world state.
+  This is the core opcode-execution engine. It is invoked by `EEVM.Handler`
+  (the transaction-level pipeline) and by system contracts that need to
+  evaluate bytecode against an existing world state.
 
-  ## EVM Concepts
-
-  The executor implements the EVM's fetch-decode-execute cycle:
-
-  1. **Fetch**: Read one byte from bytecode at the current program counter.
-  2. **Decode**: Look up the base gas cost and identify which opcode module
-     handles this byte.
-  3. **Execute**: Deduct base gas, delegate to the opcode module, and loop.
-
-  Execution ends when:
-  - A terminating opcode is reached (STOP, RETURN, REVERT, INVALID).
-  - The program counter advances past the end of the bytecode (implicit STOP).
-  - Gas runs out before the opcode can execute.
-
-  INVALID (0xFE) is special-cased: its "base" gas cost is set to the entire
+  Execution ends when a terminating opcode is reached (STOP, RETURN, REVERT,
+  INVALID), the program counter advances past the end of the bytecode
+  (implicit STOP), or gas runs out before the opcode can execute. INVALID
+  (0xFE) is special-cased: its "base" gas cost is set to the entire
   remaining gas, draining it completely before the opcode runs.
 
-  ## Elixir Learning Notes
-
-  - `run_loop/1` is tail-recursive — Elixir optimizes tail calls, so the loop
-    runs in constant stack space even for long-running contracts.
-  - The three `run_loop/1` clauses use pattern matching on `status` to cleanly
-    separate running, halted, and out-of-gas states without any conditionals.
-  - Opcode dispatch is data-driven: `EEVM.Interpreter.Instructions.Registry`
-    maps each opcode to its implementing module, and `execute_opcode/2` is a
-    single registry lookup rather than a hand-maintained case table.
-  - Separation of concerns: the executor only orchestrates; opcode modules own
-    their semantics.
+  Opcode dispatch is data-driven via
+  `EEVM.Interpreter.Instructions.Registry`; opcode modules own their
+  semantics, and the interpreter only orchestrates.
   """
 
   alias EEVM.Database

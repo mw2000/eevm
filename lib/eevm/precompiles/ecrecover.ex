@@ -2,37 +2,27 @@ defmodule EEVM.Precompiles.ECRecover do
   @moduledoc """
   ECRecover precompile — address `0x01`.
 
-  ## EVM Concepts
-
-  `ecrecover` is the canonical on-chain signature verification primitive. It takes
-  a message hash and ECDSA signature tuple `(v, r, s)`, recovers the signer public
-  key, and converts it into an Ethereum address. Solidity exposes this directly via
-  `ecrecover(...)`, and higher-level standards like **EIP-712 typed data** and
-  permit-style token approvals depend on it heavily.
-
-  The precompile does not return a boolean validity flag. Instead, callers infer
-  validity from output shape: successful recovery returns an address; invalid
-  signature data returns empty bytes.
+  Takes a message hash and ECDSA signature tuple `(v, r, s)`, recovers the
+  signer public key, and converts it into an Ethereum address. Callers infer
+  validity from output shape: successful recovery returns an address;
+  invalid signature data returns empty bytes.
 
   ### Gas schedule (Yellow Paper §E.1)
 
   Flat `3000` gas, independent of input size.
+
+  ### Input format
+
+  Parsed as a normalized 128-byte frame `hash(32) || v(32) || r(32) || s(32)`;
+  shorter input is right-padded with zeros.
 
   ### Output format
 
   On success, returns a 32-byte word containing the recovered 20-byte address
   left-padded with 12 zero bytes.
 
-  On failure (invalid `v/r/s`, invalid signature, or recovery failure), returns an
-  empty binary `<<>>` while still consuming the fixed 3000 gas.
-
-  ## Elixir Learning Notes
-
-  - Erlang's `:crypto` supports secp256k1 primitives but does not provide a direct
-    `ec_recover` operation; this module uses `ExSecp256k1.recover_compact/3`.
-  - The input layout is parsed with binary pattern matching over a normalized
-    128-byte frame: `hash(32) || v(32) || r(32) || s(32)`.
-  - Ethereum addresses are derived as `keccak256(pubkey_without_0x04)[12..31]`.
+  On failure (invalid `v/r/s`, invalid signature, or recovery failure),
+  returns an empty binary `<<>>` while still consuming the fixed 3000 gas.
   """
 
   @behaviour EEVM.Precompile

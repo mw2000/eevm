@@ -2,16 +2,12 @@ defmodule EEVM.Interpreter.Journal do
   @moduledoc """
   Snapshot/commit semantics for nested EVM call frames.
 
-  ## EVM Concepts
+  When a child frame halts normally (`:stopped`), its mutations to the
+  parent's revertible fields are promoted; on any other halt they are
+  discarded and the parent observes the pre-call state.
 
-  When a child frame runs (CALL, DELEGATECALL, STATICCALL, CREATE, CREATE2),
-  its mutations to world state become permanent only if the child halts
-  normally (`:stopped`). On revert, out-of-gas, invalid, or any other abnormal
-  halt, those mutations must be discarded — the parent must observe the world
-  state it had before the child was spawned.
-
-  Concretely, the `db` field and the entire `substate` struct on
-  `EEVM.Interpreter.MachineState` participate in this revert behaviour:
+  Revertible fields (the `db` plus all of `substate`) participate in the
+  merge:
 
   - `db` — the unified world database (accounts + storage)
   - `substate.logs` — emitted log entries (parent's first, then child's)
@@ -23,15 +19,6 @@ defmodule EEVM.Interpreter.Journal do
   The `tracer` field is *not* revertible — trace events accumulate
   monotonically and are always preserved across child boundaries regardless
   of the child's outcome.
-
-  ## Why a dedicated module
-
-  Before this module existed, every call/create site re-implemented the
-  conditional "if child succeeded, take child's six fields, else keep
-  parent's" with six per-field local variables and six explicit `Map.put/3`
-  calls. Centralising the merge means: (1) a future revertible field is
-  added in one place, not six; (2) call sites read as "merge child result"
-  rather than as a hand-wired six-field reconciliation.
 
   ## What this module does NOT cover
 

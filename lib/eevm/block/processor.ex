@@ -4,33 +4,14 @@ defmodule EEVM.Block.Processor do
   beacon-chain withdrawals, then the commitments a consensus-level verifier
   will check.
 
-  ## EVM Concepts
-
-  A block is not just a bag of transactions. The execution client must:
-
-  1. Fire any *system calls* the active hardfork mandates before user code
-     runs. Post-Cancun this is EIP-4788 (beacon roots) and post-Prague this
-     is EIP-2935 (historical block hashes).
-  2. Reject the block outright if the transactions, taken together, declare
-     more gas than the header allows.
-  3. Execute each transaction against the evolving state, recording a receipt
-     whose `cumulative_gas_used` is the running total across the block.
-  4. Produce the three MPT roots — `state_root`, `transactions_root`,
-     `receipts_root` — plus the aggregated `logs_bloom` and the block
-     `gas_used` figure. These are what external verifiers compare against the
-     header.
-
   If any transaction fails (the injected executor returns an `{:error, _}`)
   the processor halts and reports the failing index. The post-state database
   is left at whatever the last *successful* transaction produced — this
   processor does not attempt optimistic rollback.
 
-  ## Design: dependency injection
+  ## Options
 
-  The issues that own the real transaction executor (#83) and the real
-  system-call hooks (#81 EIP-2935 / #82 EIP-4788) are being developed on
-  parallel branches and are not yet merged. To keep this PR independently
-  mergeable, we do not `alias` those modules here — callers pass them in:
+  Callers inject the executor and any per-block hooks:
 
   - `:tx_executor` — `(tx, %Context.Block{}, %Database{}) ->
     {:ok, tx_result} | {:error, reason}`. Each call receives the *current*
@@ -50,20 +31,6 @@ defmodule EEVM.Block.Processor do
     reflects them. Defaults to `[]`.
   - `:hardfork` — optional atom, purely informational today; the real
     executor will consume it once wired in.
-
-  Once #83 / #81 / #82 land, a follow-up PR will set sensible defaults for
-  `:tx_executor` and supply the real system-call hooks; until then callers
-  inject their own.
-
-  ## Elixir Learning Notes
-
-  - The transaction fold uses `Enum.reduce_while/3` so we can bail out
-    early on the first executor error without recursing manually.
-  - The receipts / transactions trie roots use `EEVM.MPT.Trie.root_hash/1`
-    (non-secure — keys are RLP-encoded indices, not hashes), matching the
-    Yellow Paper's specification for block-level tries.
-  - The logs-bloom aggregation reuses `EEVM.Block.Bloom.merge/2`: a 256-byte
-    bitwise OR already optimised in the bloom module.
   """
 
   alias EEVM.Block.{Bloom, Header, Receipt, Result, Withdrawal}
