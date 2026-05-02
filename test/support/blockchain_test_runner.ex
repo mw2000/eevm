@@ -141,8 +141,7 @@ defmodule EEVM.TestSupport.BlockchainTestRunner do
         {:error, :invalid_logs_bloom}
 
       result.state_root != header.state_root ->
-        {:error,
-         {:state_root_mismatch, expected: header.state_root, actual: result.state_root}}
+        {:error, {:state_root_mismatch, expected: header.state_root, actual: result.state_root}}
 
       true ->
         {:ok, result.post_state_db}
