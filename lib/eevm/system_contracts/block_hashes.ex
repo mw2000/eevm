@@ -133,12 +133,10 @@ defmodule EEVM.SystemContracts.BlockHashes do
   should never happen with the canonical bytecode, but we surface it rather
   than swallow it).
   """
-  @spec commit(Database.t(), Block.t(), non_neg_integer()) ::
+  @spec commit(Database.t(), Block.t(), <<_::256>>) ::
           {:ok, Database.t()} | {:error, atom(), Database.t()}
   def commit(%Database{} = db, %Block{} = block, parent_block_hash)
-      when is_integer(parent_block_hash) and parent_block_hash >= 0 do
-    calldata = <<parent_block_hash::unsigned-big-256>>
-
+      when is_binary(parent_block_hash) and byte_size(parent_block_hash) == 32 do
     final_state =
       @deployed_code
       |> MachineState.new(
@@ -149,7 +147,7 @@ defmodule EEVM.SystemContracts.BlockHashes do
           address: @address,
           caller: @system_address,
           callvalue: 0,
-          calldata: calldata
+          calldata: parent_block_hash
         },
         gas: @system_call_gas
       )
