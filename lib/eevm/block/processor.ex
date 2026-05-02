@@ -1,7 +1,8 @@
 defmodule EEVM.Block.Processor do
   @moduledoc """
   Execute a block end-to-end: system calls, then transactions in order, then
-  the commitments a consensus-level verifier will check.
+  beacon-chain withdrawals, then the commitments a consensus-level verifier
+  will check.
 
   ## EVM Concepts
 
@@ -43,6 +44,10 @@ defmodule EEVM.Block.Processor do
     `transactions_root`. Defaults to `EEVM.Transaction.Envelope.encode/1`,
     which handles every typed envelope this codebase knows about. Tests
     using plain maps supply their own.
+  - `:withdrawals` — list of `EEVM.Block.Withdrawal` structs (EIP-4895).
+    Applied as flat balance credits after the transaction fold and before
+    the state root is computed, so the returned `state_root` already
+    reflects them. Defaults to `[]`.
   - `:hardfork` — optional atom, purely informational today; the real
     executor will consume it once wired in.
 
@@ -61,12 +66,14 @@ defmodule EEVM.Block.Processor do
     bitwise OR already optimised in the bloom module.
   """
 
-  alias EEVM.Block.{Bloom, Header, Receipt, Result}
+  alias EEVM.Block.{Bloom, Header, Receipt, Result, Withdrawal}
   alias EEVM.Context.Block, as: BlockCtx
   alias EEVM.Database
   alias EEVM.MPT.Trie
   alias EEVM.StateRoot
   alias EEVM.Transaction.Envelope
+
+  @gwei 1_000_000_000
 
   @type tx_result :: %{
           required(:status) => 0 | 1,
@@ -86,6 +93,7 @@ defmodule EEVM.Block.Processor do
           tx_executor: tx_executor(),
           system_calls: [system_call()],
           tx_encoder: tx_encoder(),
+          withdrawals: [Withdrawal.t()],
           hardfork: atom() | nil
         ]
 
@@ -114,6 +122,7 @@ defmodule EEVM.Block.Processor do
     tx_executor = fetch_executor!(opts)
     system_calls = Keyword.get(opts, :system_calls, [])
     tx_encoder = Keyword.get(opts, :tx_encoder, &Envelope.encode/1)
+    withdrawals = Keyword.get(opts, :withdrawals, [])
 
     block_ctx = to_block_ctx(header)
 
@@ -121,7 +130,8 @@ defmodule EEVM.Block.Processor do
       db_after_system = apply_system_calls(pre_state_db, block_ctx, system_calls)
 
       case execute_transactions(transactions, block_ctx, db_after_system, tx_executor) do
-        {:ok, receipts, post_db, gas_used} ->
+        {:ok, receipts, post_tx_db, gas_used} ->
+          post_db = apply_withdrawals(post_tx_db, withdrawals)
           {:ok, build_result(post_db, receipts, transactions, gas_used, tx_encoder)}
 
         {:error, _} = error ->
@@ -202,7 +212,25 @@ defmodule EEVM.Block.Processor do
   end
 
   # ---------------------------------------------------------------------------
-  # Phase 4 — commitments
+  # Phase 4 — withdrawals (EIP-4895)
+  # ---------------------------------------------------------------------------
+
+  # Each withdrawal is a flat balance credit; `amount` is in gwei per the EIP,
+  # so we scale to wei before applying.
+  @spec apply_withdrawals(Database.t(), [Withdrawal.t()]) :: Database.t()
+  defp apply_withdrawals(db, withdrawals) do
+    Enum.reduce(withdrawals, db, fn %Withdrawal{address: addr, amount: amount}, db_acc ->
+      credit_balance(db_acc, addr, amount * @gwei)
+    end)
+  end
+
+  defp credit_balance(db, _addr, 0), do: db
+
+  defp credit_balance(db, addr, amount),
+    do: Database.set_balance(db, addr, Database.get_balance(db, addr) + amount)
+
+  # ---------------------------------------------------------------------------
+  # Phase 5 — commitments
   # ---------------------------------------------------------------------------
 
   @spec build_result(
