@@ -1,35 +1,5 @@
 defmodule EEVM.Interpreter.Instructions.Arithmetic do
-  @moduledoc """
-  EVM arithmetic opcodes: ADD, MUL, SUB, DIV, SDIV, MOD, SMOD, ADDMOD, MULMOD, EXP, SIGNEXTEND.
-
-  ## EVM Concepts
-
-  All arithmetic operates on unsigned 256-bit integers (uint256). Overflow wraps
-  silently modulo 2^256 — there are no exceptions or traps. This means, for
-  example, that `max_uint256 + 1 == 0`.
-
-  Key rules:
-
-  1. **Wrapping arithmetic** — ADD, MUL, SUB all wrap mod 2^256. We enforce
-     this with a bitwise AND mask after each operation.
-  2. **Division by zero returns 0** — unlike most languages, DIV, SDIV, MOD,
-     and SMOD all return 0 when the divisor is zero. No exception is raised.
-  3. **Signed operations use two's complement** — SDIV and SMOD interpret
-     operands as signed 256-bit integers before dividing.
-  4. **ADDMOD and MULMOD use unlimited precision** — they compute `(a + b) mod n`
-     and `(a * b) mod n` without the intermediate result wrapping at 2^256.
-     Elixir's arbitrary-precision integers make this free.
-  5. **EXP has dynamic gas** — cost grows with the byte length of the exponent.
-
-  ## Elixir Learning Notes
-
-  - Elixir integers are arbitrary-precision, so `a * b` never overflows. We
-    apply a `band(..., @max_uint256)` mask to truncate to 256 bits explicitly.
-  - Each opcode clause is a separate `execute/2` head matched by the opcode byte.
-    This is idiomatic pattern matching on function arguments.
-  - `with` chains short-circuit on `{:error, reason}` — each line binds a
-    variable only if the previous step succeeded.
-  """
+  @moduledoc "EVM arithmetic opcodes: ADD, MUL, SUB, DIV, SDIV, MOD, SMOD, ADDMOD, MULMOD, EXP, SIGNEXTEND."
   import Bitwise
 
   alias EEVM.Gas.Dynamic

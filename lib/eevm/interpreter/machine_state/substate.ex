@@ -2,11 +2,7 @@ defmodule EEVM.Interpreter.MachineState.Substate do
   @moduledoc """
   Transaction-scoped accumulators that survive nested call frames.
 
-  ## EVM Concepts
-
-  The Yellow Paper calls this "substate" — fields that accumulate across
-  successful call frames within a single transaction and are discarded
-  on revert. Concretely:
+  ### Fields
 
   - `touched_addresses` — EIP-161 cleanup set; empty accounts touched during
     the transaction are deleted on commit.

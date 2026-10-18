@@ -1,21 +1,14 @@
 defmodule EEVM.SystemContracts.BeaconRoots do
   @moduledoc """
-  EIP-4788 beacon block root contract.
+  EIP-4788 beacon block root contract (activated in Cancun).
 
-  ## EVM Concepts
-
-  Before Cancun the consensus-layer (CL) beacon block root was invisible to
-  the EVM. EIP-4788 bridges that gap with an ordinary contract deployed at a
-  well-known address:
-
-      0x000F3df6D732807Ef1319fB7B8bB8522d0Beac02
-
-  At the start of every block the execution client performs a *system call*
-  into this contract with the parent beacon-block root as calldata, signed as
-  coming from the SYSTEM_ADDRESS (`0xff..fe`). The contract keys the root by
-  the current block timestamp and stashes it in a ring buffer of
-  `HISTORY_BUFFER_LENGTH = 8191` slots. User contracts later `CALL` the same
-  address with a 32-byte timestamp to read back the root.
+  Installs the canonical EIP-4788 deployed bytecode at
+  `0x000F3df6D732807Ef1319fB7B8bB8522d0Beac02` and drives it through the
+  normal executor. At the start of every block the execution layer performs
+  a system call (caller = SYSTEM_ADDRESS `0xff..fe`) with the parent
+  beacon-block root as calldata; the contract keys it by `block.timestamp`
+  in a ring buffer of `HISTORY_BUFFER_LENGTH = 8191` slots. User contracts
+  read past roots back via a plain `CALL` with a 32-byte timestamp.
 
   Storage layout (per the EIP):
 
@@ -23,31 +16,16 @@ defmodule EEVM.SystemContracts.BeaconRoots do
   - `storage[(timestamp % 8191) + 8191]`  = beacon_root
 
   On read, the contract verifies the timestamp slot matches the queried
-  timestamp (so collisions from the ring buffer return an empty result
-  instead of a stale root).
+  timestamp (so ring-buffer collisions return empty rather than a stale root).
 
-  ## Design
-
-  We do not invent a custom precompile. Instead we install the exact deployed
-  bytecode specified by the EIP at the canonical address and drive it through
-  the normal executor — the same code path any CALL would take. This keeps
-  behavior faithful to mainnet and means any future changes to CALL semantics
-  come along for free.
+  ## API
 
   - `install/1` — place the deployed bytecode into a `Database`.
   - `commit/3`  — perform the block-start system call that stores a root.
-  - `lookup/2`  — read a stored root directly from storage (convenience).
-
-  `commit/3` returns `{:ok, updated_db}` on success and `{:error, reason, db}`
-  on an execution failure; the caller decides what to do about it.
-
-  ## Elixir Learning Notes
-
-  - The deployed bytecode lives as a compile-time constant via `@deployed_code`
-    so there is no per-call decoding cost.
-  - `install/1` and `commit/3` both work on plain `Database` values — no
-    `MachineState` is exposed to callers — keeping the integration surface
-    small for higher layers that aren't yet aware of full EVM state.
+    Returns `{:ok, db}` on success and `{:error, reason, db}` on execution
+    failure.
+  - `lookup/2`  — read a stored root directly from storage (`{:ok, root}`
+    when the timestamp slot matches, `:not_found` otherwise).
   """
 
   alias EEVM.Context.{Block, Contract, Transaction}

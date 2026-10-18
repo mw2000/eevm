@@ -1,22 +1,6 @@
 defmodule EEVM.Precompiles.Identity do
   @moduledoc """
-  Identity precompile — address `0x04`.
-
-  ## EVM Concepts
-
-  The identity precompile is the simplest of the built-in contracts: it returns
-  its input bytes unchanged. Despite that triviality, it is one of the most
-  frequently called precompiles on mainnet because **Solidity uses it to copy
-  memory regions via an inline `CALL`**. The `memcpy` assembly pattern in many
-  contracts looks like:
-
-  ```
-  assembly { pop(call(gas(), 0x04, 0, src, len, dst, len)) }
-  ```
-
-  This works because CALL writes the return data directly into the specified
-  output memory range, giving Solidity a cheap, predictable copy primitive that
-  does not require a custom opcode.
+  Identity precompile — address `0x04`. Returns its input bytes unchanged.
 
   ### Gas schedule (Yellow Paper §E.2)
 
@@ -26,15 +10,6 @@ defmodule EEVM.Precompiles.Identity do
   | Per word  | 3 (one word = 32 bytes, rounded up) |
 
   An empty input costs the 15-gas base with no word component.
-
-  ## Elixir Learning Notes
-
-  - `div(n + 31, 32)` is the idiomatic ceiling-division-by-32 pattern. Adding
-    `(divisor - 1)` before integer-dividing avoids a conditional while keeping
-    the expression branchless.
-  - The function returns a tagged tuple — `{:ok, output, gas_used}` on success
-    and `{:error, :out_of_gas}` on failure — following the same convention used
-    throughout the opcode modules.
   """
 
   @behaviour EEVM.Precompile

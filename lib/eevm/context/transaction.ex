@@ -1,14 +1,7 @@
 defmodule EEVM.Context.Transaction do
   @moduledoc """
-  Transaction-level context — information about the original transaction.
-
-  ## EVM Concepts
-
-  Every EVM execution is triggered by a transaction. The transaction context
-  captures who initiated the transaction and the gas economics they agreed to.
-
-  In a production EVM (like revm), this is the `Transaction` trait — one of
-  three context layers that the VM reads from via environment opcodes.
+  Transaction-level context — information about the original transaction
+  exposed to the EVM via environment opcodes.
 
   ### Fields
 
@@ -23,12 +16,6 @@ defmodule EEVM.Context.Transaction do
   `origin` is always the EOA that signed the transaction — it never changes,
   even through nested contract calls. `caller` (in `EEVM.Context.Contract`) is the
   *direct* caller of the current frame and changes with each CALL.
-
-  ## Elixir Learning Notes
-
-  - This is a simple struct with `struct!/2` for construction with validation.
-  - `new/0` and `new/1` pattern shows how to provide both zero-arg and keyword
-    constructors idiomatically.
   """
 
   @type t :: %__MODULE__{

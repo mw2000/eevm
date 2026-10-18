@@ -1,31 +1,5 @@
 defmodule EEVM.Interpreter.Instructions.Crypto do
-  @moduledoc """
-  EVM cryptographic opcodes: KECCAK256.
-
-  ## EVM Concepts
-
-  KECCAK256 (opcode 0x20, formerly called SHA3 before standardization) hashes a
-  region of memory and pushes the 256-bit hash onto the stack.
-
-  It's one of the most frequently used opcodes in real contracts:
-
-  - **Solidity mappings** — `mapping(key => value)` computes storage slots as
-    `keccak256(abi.encode(key, slot_index))`.
-  - **Event signatures** — `Transfer(address,address,uint256)` is identified by
-    the first 4 bytes of `keccak256("Transfer(address,address,uint256)")`.
-  - **CREATE2 addresses** — deterministic contract addresses use keccak256.
-
-  Gas cost: 30 (static) + 6 per 32-byte word of input (dynamic).
-  Memory expansion cost applies if the input range extends beyond current memory.
-
-  ## Elixir Learning Notes
-
-  - We use the `ExKeccak` NIF (native implemented function) for hashing.
-    NIFs call into compiled C code, making them much faster than a pure Elixir
-    implementation for cryptographic operations.
-  - The binary pattern `<<hash_int::unsigned-big-256>>` decodes the raw 32-byte
-    hash binary into a single 256-bit unsigned integer in one step.
-  """
+  @moduledoc "EVM cryptographic opcode: KECCAK256 (0x20)."
   alias EEVM.Gas.Dynamic
   alias EEVM.Gas.Memory, as: GasMemory
   alias EEVM.Interpreter.{MachineState, Memory, Stack}

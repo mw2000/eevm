@@ -1,17 +1,5 @@
 defmodule EEVM.Interpreter.Stack do
-  @moduledoc """
-  The EVM stack — a LIFO data structure with a max depth of 1024.
-
-  ## Elixir Learning Notes
-
-  - We use a simple list as the underlying data structure. In Elixir, lists are
-    linked lists, so prepending (push) is O(1) and popping the head is O(1).
-  - The `@max_depth` is a module attribute — Elixir's version of a constant.
-  - Pattern matching in function heads (`[top | rest]`) is idiomatic Elixir —
-    we destructure data right where we receive it.
-  - We return tagged tuples like `{:ok, value}` and `{:error, reason}` which is
-    the Elixir convention for fallible operations.
-  """
+  @moduledoc "The EVM stack — a LIFO data structure with a max depth of 1024."
 
   @max_depth 1024
 

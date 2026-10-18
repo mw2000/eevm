@@ -2,21 +2,6 @@ defmodule EEVM.Precompiles.SHA256 do
   @moduledoc """
   SHA-256 precompile — address `0x02`.
 
-  ## EVM Concepts
-
-  SHA-256 is the second built-in contract and the only precompile that uses a
-  different hash function than the EVM's native Keccak-256. It is included
-  primarily for **Bitcoin interoperability**: Bitcoin addresses and block headers
-  are SHA-256 based, so on-chain verification of Bitcoin proofs requires access
-  to the function.
-
-  SHA-256 also appears in:
-
-  - **EIP-197 (BN256)** pairing checks, whose inputs are sometimes hashed with
-    SHA-256 before being passed on-chain.
-  - **Beacon chain / consensus layer** — the Ethereum consensus layer uses
-    SHA-256 (not Keccak) for its Merkle tree.
-
   ### Gas schedule (Yellow Paper §E.2)
 
   | Component | Cost |
@@ -27,14 +12,6 @@ defmodule EEVM.Precompiles.SHA256 do
   ### Output format
 
   Always 32 bytes — the raw SHA-256 digest.
-
-  ## Elixir Learning Notes
-
-  - `:crypto.hash(:sha256, data)` calls into Erlang's OpenSSL-backed `:crypto`
-    NIF (native implemented function). It is significantly faster than a pure
-    Elixir implementation and requires no extra dependencies.
-  - The atom `:sha256` maps to OpenSSL's `EVP_sha256` digest under the hood;
-    Erlang exposes the full OpenSSL digest catalogue this way.
   """
 
   @behaviour EEVM.Precompile

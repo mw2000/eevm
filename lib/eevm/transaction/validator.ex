@@ -2,17 +2,8 @@ defmodule EEVM.Transaction.Validator do
   @moduledoc """
   Transaction pre-execution validation.
 
-  ## EVM Concepts
-
-  Before running bytecode, Ethereum clients validate transaction envelope and
-  sender constraints against current state and block context. This module
-  performs those checks in deterministic order and returns the first failure.
-
-  ## Elixir Learning Notes
-
-  - Validation is modeled as a pipeline of `with` steps returning `:ok` or
-    `{:error, reason}`.
-  - Small private helpers keep each rule isolated and testable.
+  Performs envelope and sender checks in deterministic order against current
+  state and block context, returning `:ok` or the first `{:error, reason}`.
   """
 
   alias EEVM.Context.{Block, Transaction}

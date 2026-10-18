@@ -1,23 +1,9 @@
 defmodule EEVM.Database do
   @moduledoc """
-  Behaviour defining the external state interface for the EVM.
-
-  ## EVM Concepts
-
-  The EVM requires access to two categories of persistent state during execution:
-
-  - **Account state** — balances, nonces, and bytecode for all addresses (the
-    "world state" in Yellow Paper terminology).
-  - **Contract storage** — per-contract key-value mappings of 256-bit slots.
-
-  This behaviour abstracts both behind a single interface, allowing different
-  backends (in-memory maps, Merkle-backed stores, databases) to be plugged in
-  without changing opcode implementations.
-
-  The default implementation is `EEVM.Database.InMemory`, which wraps the
-  existing `EEVM.WorldState` and `EEVM.Storage` modules.
-
-  ## Design
+  Behaviour defining the external state interface for the EVM — account
+  state (balances, nonces, code) plus per-contract storage — abstracted
+  behind a single interface so different backends (in-memory, Merkle-backed,
+  disk) can be plugged in without changing opcode implementations.
 
   A database value is a `%EEVM.Database{}` struct containing:
 
@@ -25,19 +11,8 @@ defmodule EEVM.Database do
   - `state` — the implementation-specific state (opaque to callers)
 
   All public functions in this module dispatch to the `impl` module, passing
-  and receiving the opaque `state`. This keeps opcode modules decoupled from
-  any particular storage backend.
-
-  ## Elixir Learning Notes
-
-  - **Behaviours** define a contract (set of callbacks) that implementing modules
-    must fulfill — similar to interfaces in OOP languages.
-  - The `%Database{}` struct acts as a "type-erased wrapper": callers interact
-    with it through this module's public API, while the actual work is done by
-    whatever module sits behind `impl`.
-  - This pattern avoids Protocols (which dispatch on the first argument's struct
-    type) because we want a single struct type (`%Database{}`) that can wrap
-    any backend.
+  and receiving the opaque `state`. The default implementation is
+  `EEVM.Database.InMemory`.
   """
 
   @type account :: %{

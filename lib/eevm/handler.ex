@@ -2,12 +2,8 @@ defmodule EEVM.Handler do
   @moduledoc """
   End-to-end transaction handler.
 
-  ## EVM Concepts
-
-  A signed Ethereum transaction is not a single operation — it is a sequence
-  of well-defined steps the client must perform against current world state.
-  This module orchestrates those steps, deferring each phase to a sibling
-  module so the layering stays inspectable:
+  Orchestrates the per-transaction pipeline, deferring each phase to a
+  sibling module so the layering stays inspectable:
 
   - `EEVM.Handler.Validation`    — decode → recover sender → validate
   - `EEVM.Handler.PreExecution`  — charge upfront → intrinsic gas → bump nonce
@@ -17,14 +13,6 @@ defmodule EEVM.Handler do
   This split mirrors revm's `handler/` crate (`validation.rs`,
   `pre_execution.rs`, `execution.rs`, `post_execution.rs`) and keeps each
   phase independently testable.
-
-  ## Elixir Learning Notes
-
-  - The pipeline is a `with` chain: each step returns `{:ok, …}` or
-    `{:error, reason}`, and the chain short-circuits on the first failure.
-  - The sender is represented two ways: as a 20-byte binary (from the wire
-    and from `Signer.recover_sender/2`) and as an integer (inside
-    `EEVM.Context.Transaction` and `EEVM.Database`'s key space).
   """
 
   alias EEVM.{Config, Database, TransactionResult}

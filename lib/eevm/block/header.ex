@@ -1,17 +1,7 @@
 defmodule EEVM.Block.Header do
   @moduledoc """
-  Ethereum block header — the consensus-critical metadata for a block.
-
-  ## EVM Concepts
-
-  A block header is a thin descriptor of a block. It advertises the pre-state
-  parent pointers, the execution parameters (gas limit, base fee, randomness),
-  and the post-execution commitments (state / receipts / transactions roots
-  plus the aggregated logs bloom).
-
-  The execution client is responsible for checking that the post-execution
-  commitments it computes match the ones advertised here. This struct is a
-  pure data carrier — validation lives in `EEVM.Block.Processor`.
+  Ethereum block header — the consensus-critical metadata for a block. A pure
+  data carrier; validation lives in `EEVM.Block.Processor`.
 
   ### Fields
 
@@ -29,15 +19,6 @@ defmodule EEVM.Block.Header do
   | `receipts_root` | MPT root of `{rlp(index) => rlp(receipt)}` |
   | `transactions_root` | MPT root of `{rlp(index) => rlp(transaction)}` |
   | `logs_bloom` | 256-byte bloom summarising every log in the block |
-
-  ## Elixir Learning Notes
-
-  - This module defines only a struct plus tiny constructors. The field types
-    deliberately mirror `EEVM.Context.Block` where they overlap so callers can
-    move values between the "what the network says" layer (`Header`) and the
-    "what opcodes see" layer (`Context.Block`) without impedance.
-  - `new/0` and `new/1` follow the same zero-arg / keyword-override idiom used
-    by the rest of the codebase.
   """
 
   @type t :: %__MODULE__{

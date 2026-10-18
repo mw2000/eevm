@@ -2,14 +2,7 @@ defmodule EEVM.Precompiles.KZGPointEval do
   @moduledoc """
   KZG point evaluation precompile — address `0x0A` (EIP-4844).
 
-  ## EVM Concepts
-
-  EIP-4844 (proto-danksharding) introduces **blob transactions** where large data
-  blobs are carried outside normal calldata and represented on-chain by compact
-  **KZG commitments**. Contracts do not process full blobs directly; they verify
-  evaluation claims against commitments.
-
-  This precompile performs that evaluation check flow:
+  The precompile flow:
 
   1. Validate the `versioned_hash` derived from the commitment.
   2. Validate field element bounds for the evaluation point `z` and value `y`.
@@ -33,14 +26,6 @@ defmodule EEVM.Precompiles.KZGPointEval do
 
   - `FIELD_ELEMENTS_PER_BLOB` (`4096`)
   - `BLS_MODULUS`
-
-  ## Elixir Learning Notes
-
-  - Binary pattern matching (`<<...>>`) gives direct fixed-offset parsing with no
-    manual indexing.
-  - `:binary.decode_unsigned/1` converts 32-byte big-endian field elements to
-    arbitrary-precision Elixir integers for range checks.
-  - `:crypto.hash(:sha256, commitment)` computes the versioned hash preimage.
 
   ### Verification implementation note
 

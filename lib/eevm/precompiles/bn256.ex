@@ -1,14 +1,7 @@
 defmodule EEVM.Precompiles.BN256 do
   @moduledoc """
-  BN256 (alt_bn128) curve precompiles — addresses `0x06`, `0x07`, `0x08`.
-
-  ## EVM Concepts
-
-  The alt_bn128 (also called BN254) is a pairing-friendly elliptic curve
-  introduced into the EVM by EIP-196 and EIP-197. These precompiles enable
-  efficient on-chain verification of **zero-knowledge proofs** (notably Groth16
-  and PLONK), which underpin zkRollups like zkSync and Polygon zkEVM, as well as
-  privacy protocols and decentralized identity systems.
+  BN256 (alt_bn128) curve precompiles — addresses `0x06`, `0x07`, `0x08`
+  (EIP-196, EIP-197).
 
   Three operations are exposed:
 
@@ -37,16 +30,6 @@ defmodule EEVM.Precompiles.BN256 do
     Input length must be divisible by 192.
 
   The identity/infinity point is encoded as `(0, 0)`.
-
-  ## Elixir Learning Notes
-
-  - The `bn` hex package provides pure-Elixir BN128 field arithmetic
-    (`BN.FQ`, `BN.FQ2`) and curve operations (`BN.BN128Arithmetic`,
-    `BN.Pairing`), so no NIF compilation is required.
-  - Points are represented as `{BN.FQ.t(), BN.FQ.t()}` tuples for G1 and
-    `{BN.FQP.t(), BN.FQP.t()}` tuples for G2.
-  - `:binary.decode_unsigned/1` converts big-endian binaries to Elixir's
-    arbitrary-precision integers for coordinate parsing.
   """
 
   alias BN.{BN128Arithmetic, FQ, FQ2, Pairing}

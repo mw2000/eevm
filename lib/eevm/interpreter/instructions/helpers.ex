@@ -2,33 +2,14 @@ defmodule EEVM.Interpreter.Instructions.Helpers do
   @moduledoc """
   Shared utilities for opcode implementations.
 
-  ## EVM Concepts
+  Provides:
 
-  Many opcode categories (arithmetic, comparison, bitwise) share the same
-  structural patterns: pop operands, compute, push result, advance PC. Pulling
-  those patterns into helpers keeps each opcode module focused on what makes it
-  unique and avoids duplicating error-handling boilerplate.
-
-  Key responsibilities:
-
-  1. **Signed arithmetic** — the EVM stack stores everything as uint256, but
-     several opcodes (SLT, SGT, SDIV, SMOD, SAR) interpret values as signed.
-     Two's complement conversion is the bridge between the two representations.
-  2. **Modular exponentiation** — the EXP opcode raises a base to an exponent
-     mod 2^256. A naive loop would be impossibly slow for large exponents, so
-     we use square-and-multiply (binary exponentiation).
-  3. **Jump validation** — JUMP and JUMPI must land on a JUMPDEST (0x5B) byte.
-     Any other destination is invalid and halts execution.
-
-  ## Elixir Learning Notes
-
-  - These helpers are `def` (public) so any opcode module can call them.
-    Each module keeps its own private helpers private (`defp`) to avoid
-    polluting the shared namespace.
-  - `with` chains let us sequence fallible stack operations cleanly. If any
-    step returns `{:error, reason}`, execution jumps to the `else` clause.
-  - Pattern matching in `to_signed/1` guards (`when value >= @sign_bit`)
-    avoids a conditional branch — the correct clause is selected at call time.
+  - Stack-pop / push helpers for the common pop-pop-compute-push shape used
+    by arithmetic, comparison, and bitwise opcodes.
+  - Two's-complement conversion (`to_signed/1`, `to_unsigned/1`) bridging
+    the uint256 stack with signed opcodes (SLT, SGT, SDIV, SMOD, SAR).
+  - `mod_pow/3`, square-and-multiply modular exponentiation used by EXP.
+  - `valid_jumpdest?/2` for JUMP / JUMPI destination validation.
   """
   import Bitwise
 

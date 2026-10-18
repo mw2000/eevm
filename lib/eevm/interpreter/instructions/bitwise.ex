@@ -1,33 +1,5 @@
 defmodule EEVM.Interpreter.Instructions.Bitwise do
-  @moduledoc """
-  EVM bitwise opcodes: AND, OR, XOR, NOT, BYTE, SHL, SHR, SAR.
-
-  ## EVM Concepts
-
-  Bitwise opcodes operate on the full 256-bit integer values on the stack.
-  There are no partial-width operations; every operand is treated as a 256-bit
-  number.
-
-  Key behaviors:
-
-  1. **NOT is bitwise complement** — it flips all 256 bits. Equivalent to XOR
-     with `max_uint256` (all bits set).
-  2. **BYTE extracts a single byte** — byte index 0 is the most significant byte
-     (big-endian). If the index is >= 32, the result is 0.
-  3. **SHL and SHR are logical shifts** — zeros fill in from the empty side.
-     Added in Constantinople via EIP-145. Shifting by >= 256 always returns 0.
-  4. **SAR is arithmetic right shift** — it preserves the sign bit, filling the
-     top bits with 1s when shifting a negative value. Added in Constantinople.
-
-  ## Elixir Learning Notes
-
-  - `import Bitwise` brings in `band/2`, `bor/2`, `bxor/2`, `bnot/1`, `<<<`,
-    and `>>>` as local functions and operators.
-  - Elixir's integers are arbitrary-precision, so left shifts don't saturate.
-    We mask with `@max_uint256` after left shifts to stay within 256 bits.
-  - SAR converts to signed via `Helpers.to_signed/1`, shifts with `>>>` (which
-    fills with 1s for negative numbers in Elixir), then converts back to uint256.
-  """
+  @moduledoc "EVM bitwise opcodes: AND, OR, XOR, NOT, BYTE, SHL, SHR, SAR."
   import Bitwise
 
   alias EEVM.Interpreter.Instructions.Helpers

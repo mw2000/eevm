@@ -1,13 +1,7 @@
 defmodule EEVM.Context.Block do
   @moduledoc """
-  Block-level context — information about the block being executed.
-
-  ## EVM Concepts
-
-  The EVM has access to the block it's executing within. Smart contracts
-  use this to read timestamps, block numbers, and randomness (PREVRANDAO).
-
-  In revm, this is the `Block` trait — the second of three context layers.
+  Block-level context — information about the block being executed, exposed
+  to the EVM via environment opcodes.
 
   ### Fields
 
@@ -35,13 +29,6 @@ defmodule EEVM.Context.Block do
 
   Before The Merge, opcode 0x44 was DIFFICULTY. Post-Merge, the same opcode
   returns the RANDAO mix from the Beacon Chain — a source of on-chain randomness.
-
-  ## Elixir Learning Notes
-
-  - The `hashes` field is a Map — Elixir maps provide O(log n) lookup.
-  - `hash/2` validates that the requested block is within the last 256 blocks,
-    matching the EVM spec's constraint.
-  - `max/2` is a Kernel function — we use it to avoid negative numbers.
   """
 
   @type t :: %__MODULE__{

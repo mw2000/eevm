@@ -2,40 +2,14 @@ defmodule EEVM.Interpreter.Instructions.ControlFlow do
   @moduledoc """
   Opcodes for program counter manipulation and stack data loading.
 
-  ## EVM Concepts
+  Covers:
 
-  This module covers everything that moves the program counter and loads data:
-
-  - **Branching**: JUMP (0x56) and JUMPI (0x57) are the only branching
-    instructions in the EVM — there is no native if/else or loop construct at
-    the opcode level. The jump destination must be a JUMPDEST (0x5B) byte in the
-    bytecode. This prevents jumping into the middle of PUSH data, which could
-    be exploited to confuse disassemblers or bypass security checks.
-
-  - **Stack loading (PUSH)**: PUSH0 (0x5F, EIP-3855) pushes zero without
-    consuming any inline bytecode bytes. PUSH1-PUSH32 (0x60-0x7F) read the next
-    1-32 bytes from bytecode and push the value. PUSH0 saves 1 byte of bytecode
-    and 2 gas compared to PUSH1 0x00.
-
-  - **Stack duplication (DUP)**: DUP1-DUP16 (0x80-0x8F) copy an item from deep
-    in the stack and push the copy on top. DUP1 copies the top, DUP2 copies the
-    second item, etc.
-
-  - **Stack swapping (SWAP)**: SWAP1-SWAP16 (0x90-0x9F) exchange the top of
-    stack with an item below it. SWAP1 swaps positions 0 and 1, SWAP16 swaps
-    positions 0 and 16.
-
-  PC (0x58) pushes the current program counter value. JUMPDEST (0x5B) is a
-  no-op marker that costs 1 gas and marks a valid jump target.
-
-  ## Elixir Learning Notes
-
-  - Guard ranges (`when op >= 0x60 and op <= 0x7F`) match all PUSH opcodes in
-    a single clause, avoiding 32 separate function heads.
-  - Binary pattern matching (`MachineState.read_code/3`) extracts raw bytes
-    from the bytecode binary with no intermediate parsing step.
-  - DUP depth is derived by subtracting the base opcode (`op - 0x80`), and
-    SWAP depth adds 1 (`op - 0x90 + 1`) to include the top-of-stack position.
+  - **Branching**: JUMP (0x56), JUMPI (0x57) — destination must land on a
+    JUMPDEST (0x5B) byte.
+  - **PUSH**: PUSH0 (0x5F, EIP-3855), PUSH1-PUSH32 (0x60-0x7F).
+  - **DUP**: DUP1-DUP16 (0x80-0x8F).
+  - **SWAP**: SWAP1-SWAP16 (0x90-0x9F).
+  - **PC** (0x58) and **JUMPDEST** (0x5B).
   """
 
   alias EEVM.HardforkConfig
