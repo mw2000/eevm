@@ -171,6 +171,44 @@ defmodule EEVM.HardforkConfigTest do
   end
 
   # ---------------------------------------------------------------------------
+  # Opcode availability: each opcode is undefined (halts like INVALID) on the
+  # fork before its EIP and defined from its activation fork on.
+  # ---------------------------------------------------------------------------
+
+  describe "opcode availability by hardfork" do
+    for {opcode, name, previous_fork, activation_fork} <- [
+          {0xF4, "DELEGATECALL", :frontier, :homestead},
+          {0xFD, "REVERT", :spurious_dragon, :byzantium},
+          {0x3D, "RETURNDATASIZE", :spurious_dragon, :byzantium},
+          {0x3E, "RETURNDATACOPY", :spurious_dragon, :byzantium},
+          {0xFA, "STATICCALL", :spurious_dragon, :byzantium},
+          {0x1B, "SHL", :byzantium, :constantinople},
+          {0x1C, "SHR", :byzantium, :constantinople},
+          {0x1D, "SAR", :byzantium, :constantinople},
+          {0x3F, "EXTCODEHASH", :byzantium, :constantinople},
+          {0xF5, "CREATE2", :byzantium, :constantinople},
+          {0x46, "CHAINID", :constantinople, :istanbul},
+          {0x47, "SELFBALANCE", :constantinople, :istanbul},
+          {0x48, "BASEFEE", :berlin, :london},
+          {0x5F, "PUSH0", :paris, :shanghai},
+          {0x5C, "TLOAD", :shanghai, :cancun},
+          {0x5D, "TSTORE", :shanghai, :cancun},
+          {0x5E, "MCOPY", :shanghai, :cancun},
+          {0x49, "BLOBHASH", :shanghai, :cancun},
+          {0x4A, "BLOBBASEFEE", :shanghai, :cancun},
+          {0x1E, "CLZ", :prague, :osaka}
+        ] do
+      test "#{name} is undefined on #{previous_fork} and defined from #{activation_fork}" do
+        # Eight zero arguments satisfy every opcode's stack inputs.
+        code = <<0x60, 0x00, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, unquote(opcode), 0x00>>
+
+        assert EEVM.execute(code, hardfork: unquote(previous_fork)).status == :invalid
+        refute EEVM.execute(code, hardfork: unquote(activation_fork)).status == :invalid
+      end
+    end
+  end
+
+  # ---------------------------------------------------------------------------
   # EIP-3855 (PUSH0) behavioral tests
   # ---------------------------------------------------------------------------
 

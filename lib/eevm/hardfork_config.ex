@@ -10,17 +10,17 @@ defmodule EEVM.HardforkConfig do
   | Hardfork         | Notable EIPs |
   |------------------|--------------|
   | `:frontier`      | baseline     |
-  | `:homestead`     | —            |
+  | `:homestead`     | EIP-7 (DELEGATECALL) |
   | `:tangerine_whistle` | EIP-150 gas repricing |
   | `:spurious_dragon` | EIP-155, EIP-161, EIP-170 (code size limit) |
-  | `:byzantium`     | REVERT, RETURNDATASIZE, RETURNDATACOPY, STATICCALL |
-  | `:constantinople` | CREATE2, SHL/SHR/SAR, EXTCODEHASH |
+  | `:byzantium`     | EIP-140 (REVERT), EIP-211 (RETURNDATASIZE/RETURNDATACOPY), EIP-214 (STATICCALL) |
+  | `:constantinople` | EIP-1014 (CREATE2), EIP-145 (SHL/SHR/SAR), EIP-1052 (EXTCODEHASH) |
   | `:istanbul`      | EIP-1344 (CHAINID), EIP-1884 (SELFBALANCE), EIP-2200 (SSTORE) |
   | `:berlin`        | EIP-2929 (cold/warm access), EIP-2930 (access lists) |
-  | `:london`        | EIP-1559 (basefee), EIP-3529 (refund cap), EIP-3541 (0xEF rejection) |
+  | `:london`        | EIP-1559 (basefee), EIP-3198 (BASEFEE), EIP-3529 (refund cap), EIP-3541 (0xEF rejection) |
   | `:paris`         | The Merge (PREVRANDAO replaces DIFFICULTY) |
   | `:shanghai`      | EIP-3651 (COINBASE pre-warm), EIP-3855 (PUSH0), EIP-3860 (initcode limit) |
-  | `:cancun`        | EIP-1153 (TLOAD/TSTORE), EIP-4844 (blobs), EIP-5656 (MCOPY), EIP-6780 (SELFDESTRUCT) |
+  | `:cancun`        | EIP-1153 (TLOAD/TSTORE), EIP-4844 (blobs, BLOBHASH), EIP-5656 (MCOPY), EIP-6780 (SELFDESTRUCT), EIP-7516 (BLOBBASEFEE) |
    | `:prague`        | EIP-2537 (BLS12-381 precompiles), EIP-7623 (calldata floor), EIP-7702 (set-code) |
   | `:osaka`         | EIP-7825 (tx gas limit cap), EIP-7918 (blob base fee floor), EIP-7934 (block RLP size limit), EIP-7939 (CLZ) |
   |                  | EIP-7823 (ModExp bounds), EIP-7883 (ModExp repricing), EIP-7951 (P256VERIFY precompile) |
@@ -69,22 +69,40 @@ defmodule EEVM.HardforkConfig do
 
   # Maps each EIP feature flag to the first hardfork that activates it.
   @eip_activation %{
+    # EIP-7 (Homestead): DELEGATECALL opcode
+    eip_7: :homestead,
     # EIP-150 (Tangerine Whistle): IO-heavy opcode repricing
     eip_150: :tangerine_whistle,
     # EIP-161 (Spurious Dragon): empty-account clearing
     eip_161: :spurious_dragon,
     # EIP-170 (Spurious Dragon): 24,576-byte runtime code size limit
     eip_170: :spurious_dragon,
+    # EIP-140 (Byzantium): REVERT opcode
+    eip_140: :byzantium,
+    # EIP-211 (Byzantium): RETURNDATASIZE and RETURNDATACOPY opcodes
+    eip_211: :byzantium,
+    # EIP-214 (Byzantium): STATICCALL opcode
+    eip_214: :byzantium,
+    # EIP-145 (Constantinople): SHL, SHR and SAR opcodes
+    eip_145: :constantinople,
+    # EIP-1052 (Constantinople): EXTCODEHASH opcode
+    eip_1052: :constantinople,
     # EIP-1014 (Constantinople): CREATE2 opcode
     eip_1014: :constantinople,
     # EIP-2200 (Istanbul): structured SSTORE net metering
     eip_2200: :istanbul,
+    # EIP-1344 (Istanbul): CHAINID opcode
+    eip_1344: :istanbul,
+    # EIP-1884 (Istanbul): SELFBALANCE opcode; BALANCE, SLOAD, EXTCODEHASH repricing
+    eip_1884: :istanbul,
     # EIP-2929 (Berlin): cold/warm address & storage access costs
     eip_2929: :berlin,
     # EIP-1559 (London): fee market; header base_fee_per_gas follows the parent's gas usage
     eip_1559: :london,
     # EIP-3529 (London): reduce gas refunds (cap at 1/5 of gas used)
     eip_3529: :london,
+    # EIP-3198 (London): BASEFEE opcode
+    eip_3198: :london,
     # EIP-3541 (London): reject runtime code with 0xEF prefix (EOF reserved)
     eip_3541: :london,
     # EIP-3675 (Paris): proof of stake; difficulty, nonce, and ommers are fixed to empty values
@@ -103,6 +121,8 @@ defmodule EEVM.HardforkConfig do
     eip_4844: :cancun,
     # EIP-5656 (Cancun): MCOPY opcode
     eip_5656: :cancun,
+    # EIP-7516 (Cancun): BLOBBASEFEE opcode
+    eip_7516: :cancun,
     # EIP-6780 (Cancun): SELFDESTRUCT only deletes if created this tx
     eip_6780: :cancun,
     # EIP-4788 (Cancun): parent beacon block root system contract at 0x000F3df6...Beac02
