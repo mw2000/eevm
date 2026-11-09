@@ -58,6 +58,21 @@ defmodule EEVM.Precompiles.ECRecoverTest do
       assert output == <<0::96, expected_address::binary-size(20)>>
     end
 
+    # The precompile has no low-s rule (that is EIP-2, for transactions only).
+    # Vector from ethereum/tests stCreate2/create2callPrecompiles: s > n/2,
+    # recovering 0xa94f5374fce5edbc8e2a8697c15331677e6ebf0b.
+    test "high s value recovers the signer" do
+      hash = Base.decode16!("18C547E4F7B0F325AD1E56F57E26C745B09A3E503D86E00E5255FF7F715D3D1C")
+      r = 0x73B1693892219D736CABA55BDB67216E485557EA6B6AF75F37096C9AA6A5A75F
+      s = 0xEEB940B1D03B21E36B0E47E79769F095FE2AB855BD91E3A38756B7D75A9C4549
+      assert s > div(@curve_order, 2)
+
+      input = hash <> <<28::256, r::256, s::256>>
+
+      assert {:ok, <<0::96, 0xA94F5374FCE5EDBC8E2A8697C15331677E6EBF0B::160>>, @gas_cost} =
+               ECRecover.execute(input, 10_000)
+    end
+
     test "invalid v (not 27/28) returns empty output" do
       hash = :crypto.hash(:sha256, "test message")
       {:ok, {signature, _recovery_id}} = ExSecp256k1.sign_compact(hash, @private_key)
