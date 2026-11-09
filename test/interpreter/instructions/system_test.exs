@@ -451,6 +451,45 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
     end
   end
 
+  # execution-specs `call` / `callcode` charge the access, value, and forwarded
+  # gas, then on `sender_balance < value` or the depth limit push 0 without
+  # running the callee and add back `message_call_gas.sub_call`: the forwarded
+  # gas plus the 2300 stipend.
+  describe "value-bearing CALL and CALLCODE that fail before running the callee" do
+    for {opcode, op} <- [{"CALL", 0xF1}, {"CALLCODE", 0xF2}],
+        {reason, balance, depth} <- [{"insufficient balance", 4, 0}, {"depth limit", 10, 1024}] do
+      test "#{opcode} on #{reason} returns the forwarded gas and the stipend" do
+        # Callee: PUSH1 1, PUSH1 0, SSTORE (would write slot 0 if it ran).
+        world_state =
+          WorldState.new(%{
+            0 => %{balance: unquote(balance)},
+            0xAA => %{code: <<0x60, 1, 0x60, 0, 0x55>>}
+          })
+
+        # CALL(gas 100, 0xAA, value 5, 0, 0, 0, 0), STOP
+        code =
+          <<0x60, 0, 0x60, 0, 0x60, 0, 0x60, 0, 0x60, 5, 0x60, 0xAA, 0x60, 100, unquote(op),
+            0x00>>
+
+        result =
+          EEVM.execute(code,
+            gas: 100_000,
+            depth: unquote(depth),
+            world_state: world_state,
+            accessed_addresses: MapSet.new([0, 0xAA])
+          )
+
+        assert result.status == :stopped
+        assert EEVM.stack_values(result) == [0]
+        # 7x PUSH1 (21) + warm access 100 + value transfer 9000 - stipend 2300.
+        assert result.frame.gas == 100_000 - 21 - 100 - 9_000 + 2_300
+        assert Database.get_balance(result.db, 0) == unquote(balance)
+        assert Database.storage_load(result.db, 0, 0) == 0
+        assert Database.storage_load(result.db, 0xAA, 0) == 0
+      end
+    end
+  end
+
   describe "STATICCALL (0xFA)" do
     test "calls external code in static mode and pushes success flag" do
       child_code = <<0x60, 0x2A, 0x60, 0x00, 0x53, 0x60, 0x01, 0x60, 0x00, 0xF3>>

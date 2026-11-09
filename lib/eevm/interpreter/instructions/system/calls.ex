@@ -213,10 +213,14 @@ defmodule EEVM.Interpreter.Instructions.System.Calls do
              forwarded_gas
            ) do
         # The depth limit is checked only after access, memory, and value costs
-        # are charged; the forwarded gas comes back unused.
+        # are charged; the forwarded gas comes back unused, plus the stipend
+        # (execution-specs `call`: `evm.gas_left += message_call_gas.sub_call`).
         {:ok, _state_after_forward} when depth >= @max_call_depth ->
           call_failed(
-            MachineState.update_frame(state_after_cost, &%{&1 | memory: memory_after_read}),
+            MachineState.update_frame(
+              state_after_cost,
+              &%{&1 | memory: memory_after_read, gas: &1.gas + Dynamic.call_stipend(value)}
+            ),
             stack
           )
 
@@ -334,9 +338,14 @@ defmodule EEVM.Interpreter.Instructions.System.Calls do
           {:error, :out_of_gas, halted_state}
       end
     else
+      # A value transfer the caller can't fund fails like the depth limit: the
+      # forwarded gas and the stipend come back.
       {:error, :insufficient_balance} ->
         call_failed(
-          MachineState.update_frame(state, &%{&1 | stack: stack, gas: &1.gas - call_cost}),
+          MachineState.update_frame(
+            state,
+            &%{&1 | stack: stack, gas: &1.gas - call_cost + Dynamic.call_stipend(value)}
+          ),
           stack
         )
 
@@ -361,6 +370,10 @@ defmodule EEVM.Interpreter.Instructions.System.Calls do
        ) do
     {access_cost, state, target_code, delegated?} = access_target(state, address)
     depth = state.frame.depth
+    stipend = if add_stipend?, do: Dynamic.call_stipend(callvalue), else: 0
+
+    insufficient_balance? =
+      Database.get_balance(state.db, state.frame.contract.address) < callvalue
 
     call_cost =
       access_cost +
@@ -392,17 +405,21 @@ defmodule EEVM.Interpreter.Instructions.System.Calls do
              MachineState.update_frame(state_after_cost, &%{&1 | memory: memory_after_read}),
              forwarded_gas
            ) do
-        # The depth limit is checked only after access, memory, and value costs
-        # are charged; the forwarded gas comes back unused.
-        {:ok, _state_after_forward} when depth >= @max_call_depth ->
+        # The depth limit and CALLCODE's balance check come only after access,
+        # memory, and value costs are charged; the forwarded gas comes back
+        # unused, plus the stipend (execution-specs `callcode`).
+        {:ok, _state_after_forward}
+        when depth >= @max_call_depth or (charge_value_cost? and insufficient_balance?) ->
           call_failed(
-            MachineState.update_frame(state_after_cost, &%{&1 | memory: memory_after_read}),
+            MachineState.update_frame(
+              state_after_cost,
+              &%{&1 | memory: memory_after_read, gas: &1.gas + stipend}
+            ),
             stack
           )
 
         {:ok, state_after_forward} ->
-          child_gas =
-            forwarded_gas + if(add_stipend?, do: Dynamic.call_stipend(callvalue), else: 0)
+          child_gas = forwarded_gas + stipend
 
           if not delegated? and Precompiles.precompile?(address, state_after_forward.env.config) and
                target_code == <<>> do
