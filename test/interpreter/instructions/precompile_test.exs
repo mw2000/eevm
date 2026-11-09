@@ -53,6 +53,20 @@ defmodule EEVM.Interpreter.Instructions.PrecompileTest do
       assert result.frame.return_data == <<0x2A>>
     end
 
+    test "successful CALL with value credits the precompile" do
+      world_state = WorldState.new(%{0 => %{balance: 5_000}})
+
+      # CALL(gas: 0xFFFF, to: 0x04 identity, value: 1000, no args, no return data), STOP
+      code =
+        <<0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x61, 0x03, 0xE8, 0x60, 0x04, 0x61,
+          0xFF, 0xFF, 0xF1, 0x00>>
+
+      result = EEVM.execute(code, world_state: world_state, gas: 1_000_000)
+      assert EEVM.stack_values(result) == [1]
+      assert EEVM.Database.get_balance(result.db, 0x04) == 1_000
+      assert EEVM.Database.get_balance(result.db, 0) == 4_000
+    end
+
     test "precompile detection for addresses 0x01 through 0x0A on Cancun" do
       alias EEVM.Precompiles
 

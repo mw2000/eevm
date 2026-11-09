@@ -226,7 +226,12 @@ defmodule EEVM.Interpreter.Instructions.System.Calls do
                 remaining_gas = child_gas - gas_used
                 memory_result = write_return_data(memory_after_read, ret_offset, ret_size, output)
                 {:ok, stack_after_call} = Stack.push(state_after_forward.frame.stack, 1)
-                state_after_touch = MachineState.touch_address(state_after_forward, address)
+                # The call succeeded, so its value transfer stands.
+                state_after_touch =
+                  MachineState.touch_address(
+                    %{state_after_forward | db: db_after_transfer},
+                    address
+                  )
 
                 {:ok,
                  state_after_touch
