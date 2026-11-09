@@ -67,7 +67,7 @@ defmodule EEVM.TestSupport.StateTestFixture do
             max_fee_per_gas: non_neg_integer(),
             max_priority_fee_per_gas: non_neg_integer(),
             max_fee_per_blob_gas: non_neg_integer(),
-            access_list: [{non_neg_integer(), [non_neg_integer()]}],
+            access_lists: [[{non_neg_integer(), [non_neg_integer()]}]],
             blob_hashes: [non_neg_integer()],
             authorization_list: [Transaction.authorization()],
             type: :legacy | :eip2930 | :eip1559 | :eip4844 | :eip7702,
@@ -84,7 +84,7 @@ defmodule EEVM.TestSupport.StateTestFixture do
       :max_fee_per_gas,
       :max_priority_fee_per_gas,
       :max_fee_per_blob_gas,
-      :access_list,
+      :access_lists,
       :blob_hashes,
       :type,
       authorization_list: [],
@@ -156,7 +156,7 @@ defmodule EEVM.TestSupport.StateTestFixture do
   @spec build_transaction(Case.t(), PostExpectation.t()) :: Transaction.t()
   def build_transaction(
         %Case{transaction: tx_template},
-        %PostExpectation{indexes: indexes, hardfork: hardfork}
+        %PostExpectation{indexes: indexes}
       ) do
     origin = secret_key_to_address(tx_template.secret_key)
 
@@ -173,11 +173,11 @@ defmodule EEVM.TestSupport.StateTestFixture do
       gasprice: base_gas_price,
       max_fee_per_gas: tx_template.max_fee_per_gas,
       max_priority_fee_per_gas: tx_template.max_priority_fee_per_gas,
-      access_list: tx_template.access_list,
+      access_list: Enum.at(tx_template.access_lists, indexes.data, []),
       blob_hashes: tx_template.blob_hashes,
       authorization_list: tx_template.authorization_list,
       max_fee_per_blob_gas: tx_template.max_fee_per_blob_gas,
-      type: tx_type_for_hardfork(tx_template.type, hardfork)
+      type: tx_template.type
     )
   end
 
@@ -234,7 +234,7 @@ defmodule EEVM.TestSupport.StateTestFixture do
       max_fee_per_gas: parse_quantity!(Map.get(tx, "maxFeePerGas", "0x0")),
       max_priority_fee_per_gas: parse_quantity!(Map.get(tx, "maxPriorityFeePerGas", "0x0")),
       max_fee_per_blob_gas: parse_quantity!(Map.get(tx, "maxFeePerBlobGas", "0x0")),
-      access_list: parse_access_list(Map.get(tx, "accessLists", [])),
+      access_lists: Enum.map(Map.get(tx, "accessLists", []), &parse_access_list/1),
       blob_hashes: parse_blob_hashes(Map.get(tx, "blobVersionedHashes", [])),
       authorization_list: parse_authorization_list(Map.get(tx, "authorizationList", [])),
       type: parse_tx_type(Map.get(tx, "type", infer_tx_type(tx))),
@@ -271,20 +271,17 @@ defmodule EEVM.TestSupport.StateTestFixture do
 
   defp parse_quantity_list(values) when is_list(values), do: Enum.map(values, &parse_quantity!/1)
 
-  defp parse_access_list([]), do: []
+  # `accessLists` holds one access list per `data` entry; `null` means none.
+  defp parse_access_list(nil), do: []
 
-  defp parse_access_list([first | _] = access_lists) when is_list(first) do
-    access_lists
-    |> hd()
-    |> Enum.map(fn entry ->
+  defp parse_access_list(entries) when is_list(entries) do
+    Enum.map(entries, fn entry ->
       {
         parse_address!(Map.fetch!(entry, "address")),
         Enum.map(Map.get(entry, "storageKeys", []), &parse_quantity!/1)
       }
     end)
   end
-
-  defp parse_access_list(_), do: []
 
   defp parse_blob_hashes(values) when is_list(values), do: Enum.map(values, &parse_quantity!/1)
 
@@ -306,6 +303,7 @@ defmodule EEVM.TestSupport.StateTestFixture do
   defp infer_tx_type(%{"authorizationList" => _}), do: "0x4"
   defp infer_tx_type(%{"blobVersionedHashes" => _}), do: "0x3"
   defp infer_tx_type(%{"maxFeePerGas" => _}), do: "0x2"
+  defp infer_tx_type(%{"accessLists" => _}), do: "0x1"
   defp infer_tx_type(_tx), do: nil
 
   defp parse_tx_type(nil), do: :legacy
@@ -315,8 +313,6 @@ defmodule EEVM.TestSupport.StateTestFixture do
   defp parse_tx_type("0x3"), do: :eip4844
   defp parse_tx_type("0x4"), do: :eip7702
   defp parse_tx_type(_), do: :legacy
-
-  defp tx_type_for_hardfork(type, _hardfork), do: type
 
   defp parse_hardfork!("Frontier"), do: :frontier
   defp parse_hardfork!("Homestead"), do: :homestead
