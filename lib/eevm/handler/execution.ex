@@ -206,12 +206,9 @@ defmodule EEVM.Handler.Execution do
         {:error, zero_gas_revert(state)}
 
       true ->
-        # An account that SELFDESTRUCTed during its own init is gone;
-        # depositing code would resurrect it.
-        updated_db =
-          if Database.account_exists?(state.db, new_address),
-            do: Database.put_code(state.db, new_address, runtime_code),
-            else: state.db
+        # If the initcode SELFDESTRUCTed, Interpreter.finalize/3 still deletes
+        # the account afterwards, code included.
+        updated_db = Database.put_code(state.db, new_address, runtime_code)
 
         deducted = MachineState.update_frame(state, &%{&1 | gas: &1.gas - deposit_cost})
         {:ok, %{deducted | db: updated_db}}

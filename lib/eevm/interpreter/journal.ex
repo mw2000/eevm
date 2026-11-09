@@ -14,6 +14,7 @@ defmodule EEVM.Interpreter.Journal do
   - `substate.accessed_addresses` — EIP-2929 access list
   - `substate.accessed_storage_keys` — EIP-2929 access list
   - `substate.created_addresses` — EIP-6780 set of contracts created in this tx
+  - `substate.selfdestructed_addresses` — accounts to delete when the tx ends
   - `substate.touched_addresses` — EIP-161 cleanup set
   - `frame.refund` — the gas refund counter. A child starts at 0, so on
     success its (possibly negative) counter is added to the parent's; on

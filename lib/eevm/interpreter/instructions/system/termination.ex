@@ -92,7 +92,7 @@ defmodule EEVM.Interpreter.Instructions.System.Termination do
 
           # EIP-6780 (Cancun+): SELFDESTRUCT only fully deletes the account when
           # the contract was created in the same transaction. Pre-Cancun, every
-          # SELFDESTRUCT unconditionally deletes the account and transfers the balance.
+          # SELFDESTRUCT deletes the account. Either way the balance moves now.
           eip_6780_active? =
             HardforkConfig.enabled?(state_after_touch.env.config.hardfork, :eip_6780)
 
@@ -101,36 +101,45 @@ defmodule EEVM.Interpreter.Instructions.System.Termination do
 
           full_delete? = not eip_6780_active? or created_this_tx
 
-          db_after =
-            if full_delete? do
-              # Full deletion: account is removed and balance transferred
-              db = Database.delete_account(state_after_touch.db, contract_address)
+          db = state_after_touch.db
 
-              if beneficiary != contract_address do
-                Database.set_balance(
-                  db,
+          db_after =
+            cond do
+              beneficiary != contract_address ->
+                db
+                |> Database.set_balance(contract_address, 0)
+                |> Database.set_balance(
                   beneficiary,
                   Database.get_balance(db, beneficiary) + balance
                 )
-              else
-                db
-              end
-            else
-              # EIP-6780 partial: only transfer balance, keep account intact
-              if beneficiary == contract_address do
-                state_after_gas.db
-              else
-                beneficiary_balance =
-                  Database.get_balance(state_after_touch.db, beneficiary)
 
-                state_after_touch.db
-                |> Database.set_balance(contract_address, 0)
-                |> Database.set_balance(beneficiary, beneficiary_balance + balance)
-              end
+              # Being its own beneficiary burns the balance of a deleted account.
+              full_delete? ->
+                Database.set_balance(db, contract_address, 0)
+
+              true ->
+                db
             end
 
+          # The account itself (code, nonce, storage) stays until the transaction
+          # ends, when `EEVM.Interpreter.finalize/3` deletes every address in
+          # `selfdestructed_addresses`. The set is journaled with the substate, so
+          # a reverted frame's SELFDESTRUCT doesn't count.
+          substate = state_after_touch.substate
+
+          substate_after =
+            if full_delete?,
+              do: %{
+                substate
+                | selfdestructed_addresses:
+                    MapSet.put(substate.selfdestructed_addresses, contract_address)
+              },
+              else: substate
+
           {:ok,
-           %{state_after_touch | db: db_after} |> clear_output() |> MachineState.halt(:stopped)}
+           %{state_after_touch | db: db_after, substate: substate_after}
+           |> clear_output()
+           |> MachineState.halt(:stopped)}
 
         {:error, :out_of_gas, halted_state} ->
           {:error, :out_of_gas, halted_state}

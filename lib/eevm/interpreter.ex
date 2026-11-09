@@ -53,8 +53,8 @@ defmodule EEVM.Interpreter do
   end
 
   @doc """
-  Applies the transaction-end steps to a halted top-level state: deletes
-  touched empty accounts (EIP-161), then settles the refund counter into
+  Applies the transaction-end steps to a halted top-level state: deletes the
+  accounts that SELFDESTRUCTed and touched empty accounts (EIP-161), then settles the refund counter into
   `frame.gas` and resets the counter to 0.
 
   The refund is capped at a fraction of the gas used by the whole
@@ -71,6 +71,7 @@ defmodule EEVM.Interpreter do
   @spec finalize(MachineState.t(), non_neg_integer(), non_neg_integer()) :: MachineState.t()
   def finalize(%MachineState{} = state, initial_gas, authorization_refund \\ 0) do
     state
+    |> delete_selfdestructed_accounts()
     |> cleanup_touched_empty_accounts()
     |> apply_refund(initial_gas, authorization_refund)
   end
@@ -173,6 +174,19 @@ defmodule EEVM.Interpreter do
 
     MachineState.update_frame(state, &%{&1 | gas: gas_after_floor, refund: 0})
   end
+
+  # SELFDESTRUCT only marks an account; it disappears, storage included, when
+  # the transaction ends (EIP-6780 keeps this for same-transaction contracts).
+  defp delete_selfdestructed_accounts(%MachineState{status: :stopped} = state) do
+    db =
+      Enum.reduce(state.substate.selfdestructed_addresses, state.db, fn address, db_acc ->
+        Database.delete_account(db_acc, address)
+      end)
+
+    %{state | db: db}
+  end
+
+  defp delete_selfdestructed_accounts(state), do: state
 
   defp cleanup_touched_empty_accounts(%MachineState{status: :stopped} = state) do
     cleaned_db =

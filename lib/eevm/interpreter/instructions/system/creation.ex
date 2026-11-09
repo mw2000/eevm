@@ -195,6 +195,7 @@ defmodule EEVM.Interpreter.Instructions.System.Creation do
                     created_addresses:
                       MapSet.put(state_after_touch.substate.created_addresses, new_address),
                     transient_storage: state_after_touch.substate.transient_storage,
+                    selfdestructed_addresses: state_after_touch.substate.selfdestructed_addresses,
                     original_storage: state_after_touch.substate.original_storage,
                     is_static: state_after_touch.frame.is_static,
                     depth: state_after_touch.frame.depth + 1,
@@ -233,12 +234,10 @@ defmodule EEVM.Interpreter.Instructions.System.Creation do
                       deposit_cost = Dynamic.code_deposit_cost(byte_size(runtime_code))
 
                       if child_result.frame.gas >= deposit_cost do
-                        # An account that SELFDESTRUCTed during its own init is
-                        # gone; depositing code would resurrect it.
+                        # If the initcode SELFDESTRUCTed, the account is still
+                        # deleted when the transaction ends, code included.
                         db_after_deploy =
-                          if Database.account_exists?(child_result.db, new_address),
-                            do: Database.put_code(child_result.db, new_address, runtime_code),
-                            else: child_result.db
+                          Database.put_code(child_result.db, new_address, runtime_code)
 
                         {:ok, stack_after_create} = Stack.push(stack, new_address)
 

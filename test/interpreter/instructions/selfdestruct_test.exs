@@ -3,6 +3,7 @@ defmodule EEVM.Interpreter.Instructions.SelfdestructTest do
 
   alias EEVM.Context.Contract
   alias EEVM.Database
+  alias EEVM.Database.InMemory
   alias EEVM.Gas.Static
   alias EEVM.WorldState
 
@@ -206,6 +207,55 @@ defmodule EEVM.Interpreter.Instructions.SelfdestructTest do
       assert Database.get_nonce(result.db, 0xAA) == 10
       assert Database.get_balance(result.db, 0xAA) == 0
       assert Database.get_balance(result.db, 0xCC) == 75
+    end
+  end
+
+  # SELFDESTRUCT marks the account; it is deleted, storage included, only when
+  # the transaction ends (Yellow Paper A_s, geth StateDB.Finalise).
+  describe "SELFDESTRUCT (0xFF) - deletion at the end of the transaction" do
+    # CALL `address` with no value or data, POP
+    defp call(address),
+      do:
+        <<0x60, 0, 0x60, 0, 0x60, 0, 0x60, 0, 0x60, 0, 0x60, address, 0x61, 0xFF, 0xFF, 0xF1,
+          0x50>>
+
+    test "pre-Cancun, the code stays until the transaction ends" do
+      world_state = WorldState.new(%{0xAA => %{balance: 10, code: <<0x60, 0xBB, 0xFF>>}})
+      # CALL 0xAA, then EXTCODESIZE(0xAA)
+      code = call(0xAA) <> <<0x60, 0xAA, 0x3B, 0x00>>
+
+      result = EEVM.execute(code, world_state: world_state, hardfork: :shanghai)
+
+      assert EEVM.stack_values(result) == [3]
+      refute Database.account_exists?(result.db, 0xAA)
+      assert Database.get_balance(result.db, 0xBB) == 10
+    end
+
+    test "deleting the account also deletes its storage" do
+      db =
+        InMemory.new(
+          accounts: %{0xAA => %{balance: 0, code: <<0x60, 0xBB, 0xFF>>}},
+          storage: %{0xAA => %{0 => 1}}
+        )
+
+      result = EEVM.execute(call(0xAA) <> <<0x00>>, db: db, hardfork: :shanghai)
+
+      refute Database.account_exists?(result.db, 0xAA)
+      assert Database.storage_load(result.db, 0xAA, 0) == 0
+    end
+
+    test "a SELFDESTRUCT inside a reverted frame deletes nothing" do
+      world_state =
+        WorldState.new(%{
+          0xAA => %{balance: 10, code: <<0x60, 0xCC, 0xFF>>},
+          # CALL 0xAA, then REVERT
+          0xBB => %{code: call(0xAA) <> <<0x60, 0, 0x60, 0, 0xFD>>}
+        })
+
+      result = EEVM.execute(call(0xBB) <> <<0x00>>, world_state: world_state, hardfork: :shanghai)
+
+      assert Database.get_code(result.db, 0xAA) == <<0x60, 0xCC, 0xFF>>
+      assert Database.get_balance(result.db, 0xAA) == 10
     end
   end
 end

@@ -96,6 +96,7 @@ defmodule EEVM.Interpreter.MachineState do
           Keyword.get(opts, :accessed_addresses, pre_warm_addresses(contract, tx, block, config)),
         accessed_storage_keys: Keyword.get(opts, :accessed_storage_keys, MapSet.new()),
         created_addresses: Keyword.get(opts, :created_addresses, MapSet.new()),
+        selfdestructed_addresses: Keyword.get(opts, :selfdestructed_addresses, MapSet.new()),
         original_storage: Keyword.get(opts, :original_storage, %{}),
         transient_storage: Keyword.get(opts, :transient_storage, %{}),
         logs: Keyword.get(opts, :logs, [])

@@ -117,8 +117,8 @@ defmodule EEVM.Database.InMemory do
   end
 
   @impl true
-  def delete_account(%{accounts: accounts} = state, address) do
-    %{state | accounts: Map.delete(accounts, address)}
+  def delete_account(%{accounts: accounts, storage: storage} = state, address) do
+    %{state | accounts: Map.delete(accounts, address), storage: Map.delete(storage, address)}
   end
 
   @impl true

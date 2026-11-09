@@ -12,6 +12,10 @@ defmodule EEVM.Interpreter.MachineState.Substate do
     only these can be fully deleted by `SELFDESTRUCT` post-Cancun. An
     address joins the set before its initcode runs, so a `SELFDESTRUCT`
     during init deletes it, and leaves the set if that creation fails.
+  - `selfdestructed_addresses` — accounts whose `SELFDESTRUCT` deletes them
+    (all of them pre-Cancun, only those in `created_addresses` under
+    EIP-6780). They stay in the database until the transaction ends, then
+    `EEVM.Interpreter.finalize/3` deletes them with their storage.
   - `original_storage` — per-tx snapshot of the first-observed value of
     each storage slot, keyed by `{address, key}`, used by EIP-2200 `SSTORE`
     accounting.
@@ -21,7 +25,7 @@ defmodule EEVM.Interpreter.MachineState.Substate do
     prepend; `EEVM.logs/1` and the transaction result reverse them into
     emission order.
 
-  All seven fields revert together when a child frame fails (see
+  All eight fields revert together when a child frame fails (see
   `EEVM.Interpreter.Journal`). Stack, memory, pc, and gas are *not*
   substate — they belong to the per-frame execution context.
   """
@@ -37,6 +41,7 @@ defmodule EEVM.Interpreter.MachineState.Substate do
           accessed_addresses: MapSet.t(non_neg_integer()),
           accessed_storage_keys: MapSet.t({non_neg_integer(), non_neg_integer()}),
           created_addresses: MapSet.t(non_neg_integer()),
+          selfdestructed_addresses: MapSet.t(non_neg_integer()),
           original_storage: %{{non_neg_integer(), non_neg_integer()} => non_neg_integer()},
           transient_storage: %{{non_neg_integer(), non_neg_integer()} => non_neg_integer()},
           logs: [log_entry()]
@@ -46,6 +51,7 @@ defmodule EEVM.Interpreter.MachineState.Substate do
             accessed_addresses: nil,
             accessed_storage_keys: nil,
             created_addresses: nil,
+            selfdestructed_addresses: nil,
             original_storage: %{},
             transient_storage: %{},
             logs: []
@@ -61,6 +67,7 @@ defmodule EEVM.Interpreter.MachineState.Substate do
       accessed_addresses: Keyword.get(opts, :accessed_addresses, MapSet.new()),
       accessed_storage_keys: Keyword.get(opts, :accessed_storage_keys, MapSet.new()),
       created_addresses: Keyword.get(opts, :created_addresses, MapSet.new()),
+      selfdestructed_addresses: Keyword.get(opts, :selfdestructed_addresses, MapSet.new()),
       original_storage: Keyword.get(opts, :original_storage, %{}),
       transient_storage: Keyword.get(opts, :transient_storage, %{}),
       logs: Keyword.get(opts, :logs, [])

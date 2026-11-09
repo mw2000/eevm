@@ -59,7 +59,10 @@ defmodule EEVM.Database do
   @callback put_account(state :: term(), address :: non_neg_integer(), account :: account()) ::
               term()
 
-  @doc "Remove an account entirely (used by SELFDESTRUCT under EIP-6780)."
+  @doc """
+  Remove an account entirely, storage included (SELFDESTRUCT at the end of the
+  transaction, EIP-161 cleanup of touched empty accounts).
+  """
   @callback delete_account(state :: term(), address :: non_neg_integer()) :: term()
 
   @doc "Set the bytecode at `address`."
