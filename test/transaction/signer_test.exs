@@ -1,7 +1,14 @@
 defmodule EEVM.Transaction.SignerTest do
   use ExUnit.Case, async: true
 
-  alias EEVM.Transaction.{FeeMarket, Legacy, Signer}
+  alias EEVM.Config
+  alias EEVM.Transaction.{Envelope, FeeMarket, Legacy, Signer}
+
+  doctest Signer
+
+  # EIP-155 example: private key 0x4646...46 and its address.
+  @eip155_key :binary.copy(<<0x46>>, 32)
+  @eip155_sender "9d8a62f656a8d1615c1294fd71e9cfb3e4855a4f"
 
   @secp256k1n 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141
 
@@ -109,6 +116,68 @@ defmodule EEVM.Transaction.SignerTest do
       }
 
       assert {:error, :invalid_signature} = Signer.recover_sender(tx, 1)
+    end
+  end
+
+  describe "sign/3" do
+    test "signs a legacy transaction exactly as the EIP-155 example" do
+      tx = %Legacy{
+        nonce: 9,
+        gas_price: 20_000_000_000,
+        gas_limit: 21_000,
+        to: address(0x35),
+        value: 1_000_000_000_000_000_000
+      }
+
+      assert {:ok, signed} = Signer.sign(tx, @eip155_key, Config.new(:cancun, chain_id: 1))
+
+      # The signed transaction from EIP-155, "Example".
+      assert Envelope.encode(signed) ==
+               hex!(
+                 "f86c098504a817c800825208943535353535353535353535353535353535353535880de0b6b3a76400008025a0" <>
+                   "28ef61340bd939bc2195fe537567866003e1a15d3c71ff63e1590620aa636276a0" <>
+                   "67cbe9d8997f761aecb703304b3800ccf555c9f3dc64214b297fb1966a3b6d83"
+               )
+    end
+
+    test "a legacy v of 27 doesn't select the pre-EIP-155 hash; v encodes the config's chain" do
+      tx = %Legacy{gas_price: 1, gas_limit: 21_000, to: address(0x35), v: 27, r: 1, s: 1}
+
+      assert {:ok, signed} = Signer.sign(tx, @eip155_key, Config.new(:cancun, chain_id: 5))
+      assert signed.v in [45, 46]
+      assert {:ok, sender} = Signer.recover_sender(signed, 5)
+      assert Base.encode16(sender, case: :lower) == @eip155_sender
+    end
+
+    test "a typed transaction takes the config's chain id only when it has none" do
+      tx = %FeeMarket{
+        max_priority_fee_per_gas: 1,
+        max_fee_per_gas: 2,
+        gas_limit: 21_000,
+        to: address(1)
+      }
+
+      config = Config.new(:cancun, chain_id: 5)
+
+      assert {:ok, %FeeMarket{chain_id: 5} = signed} = Signer.sign(tx, @eip155_key, config)
+      assert {:ok, sender} = Signer.recover_sender(signed, 5)
+      assert Base.encode16(sender, case: :lower) == @eip155_sender
+
+      assert {:ok, %FeeMarket{chain_id: 7}} =
+               Signer.sign(%{tx | chain_id: 7}, @eip155_key, config)
+    end
+
+    test "rejects a zero key and one at or above the curve order" do
+      tx = %FeeMarket{
+        max_priority_fee_per_gas: 1,
+        max_fee_per_gas: 2,
+        gas_limit: 21_000,
+        to: address(1)
+      }
+
+      for key <- [<<0::256>>, <<@secp256k1n::256>>] do
+        assert {:error, :invalid_private_key} = Signer.sign(tx, key, Config.new())
+      end
     end
   end
 

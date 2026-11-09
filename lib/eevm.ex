@@ -21,7 +21,7 @@ defmodule EEVM do
   The public API:
 
   - `EEVM` — run raw bytecode (`execute/2`, `trace/2`) and disassemble it
-  - `EEVM.Config` and `EEVM.HardforkConfig` — the hardfork and custom precompiles
+  - `EEVM.Config` — the hardfork, chain id, and custom precompiles
   - `EEVM.Error` — every error reason
   - `EEVM.Handler` — validate and execute one signed transaction
   - `EEVM.Transaction` and its `Envelope` and `Signer` — transaction structs,

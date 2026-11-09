@@ -109,7 +109,6 @@ defmodule EEVM.MixProject do
         "Getting started": [
           EEVM,
           EEVM.Config,
-          EEVM.HardforkConfig,
           EEVM.Error,
           ~r/^EEVM\.Context\./
         ],

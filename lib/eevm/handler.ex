@@ -24,11 +24,9 @@ defmodule EEVM.Handler do
 
   @type opts :: [
           hardfork: EEVM.HardforkConfig.spec_id(),
-          chain_id: non_neg_integer(),
-          config: Config.t()
+          config: Config.t(),
+          chain_id: non_neg_integer()
         ]
-
-  @default_chain_id 1
 
   @doc """
   Execute a single transaction end-to-end.
@@ -38,12 +36,12 @@ defmodule EEVM.Handler do
 
   ## Options
 
-  - `:chain_id` — chain id used when recovering the sender and checking
-    EIP-7702 authorization tuples (default: `1`).
-  - `:hardfork` — hardfork spec id governing gas rules and EIP activation
-    (default: `:cancun`).
-  - `:config` — fully assembled `EEVM.Config` to use instead of deriving one
-    from `:hardfork`. Takes precedence when both are provided.
+  - `:config` — the `EEVM.Config`: hardfork, chain id (used to recover the
+    sender and check EIP-7702 authorizations), and custom precompiles.
+  - `:hardfork` — shorthand for `config: EEVM.Config.new(hardfork)` (default
+    `:cancun`). `:config` takes precedence when both are given.
+  - `:chain_id` — deprecated; set it with `EEVM.Config.new/2`. Overrides the
+    config's chain id when given.
 
   ## Returns
 
@@ -56,8 +54,8 @@ defmodule EEVM.Handler do
   @spec execute(wire_tx(), Block.t(), Database.t(), opts()) ::
           {:ok, TransactionResult.t()} | {:error, atom()}
   def execute(tx_or_bytes, %Block{} = block, %Database{} = db, opts \\ []) do
-    chain_id = Keyword.get(opts, :chain_id, @default_chain_id)
     config = Validation.resolve_config(opts)
+    chain_id = config.chain_id
 
     with {:ok, wire_tx} <- Validation.ensure_decoded(tx_or_bytes),
          {:ok, sender_bytes} <- Validation.recover_sender(wire_tx, chain_id),

@@ -33,12 +33,22 @@ defmodule EEVM.Handler.Validation do
 
   @default_hardfork :cancun
 
-  @doc "Use `opts[:config]` if given, else build one from `opts[:hardfork]` (default `:cancun`)."
+  @doc """
+  Use `opts[:config]` if given, else build one from `opts[:hardfork]` (default
+  `:cancun`). The deprecated `:chain_id` option, when given, overrides the
+  config's chain id.
+  """
   @spec resolve_config(keyword()) :: Config.t()
   def resolve_config(opts) do
-    case Keyword.fetch(opts, :config) do
-      {:ok, %Config{} = config} -> config
-      _ -> Config.new(Keyword.get(opts, :hardfork, @default_hardfork))
+    config =
+      case Keyword.fetch(opts, :config) do
+        {:ok, %Config{} = config} -> config
+        _ -> Config.new(Keyword.get(opts, :hardfork, @default_hardfork))
+      end
+
+    case Keyword.fetch(opts, :chain_id) do
+      {:ok, chain_id} -> %{config | chain_id: chain_id}
+      :error -> config
     end
   end
 

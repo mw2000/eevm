@@ -3,6 +3,8 @@ defmodule EEVM.ConfigTest do
 
   alias EEVM.{Config, HardforkConfig}
 
+  doctest Config
+
   test "register_precompile stores custom module at address" do
     config = Config.new() |> Config.register_precompile(0x100, EEVM.Precompiles.Identity)
 

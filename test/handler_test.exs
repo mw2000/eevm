@@ -1,8 +1,8 @@
 defmodule EEVM.HandlerTest do
   use ExUnit.Case, async: true
 
+  alias EEVM.{Config, Database, Delegation, Handler, TransactionResult}
   alias EEVM.Context.Block
-  alias EEVM.{Database, Delegation, Handler, TransactionResult}
   alias EEVM.Database.InMemory
   alias EEVM.Transaction.{Authorization, Blob, Envelope, FeeMarket, Legacy, SetCode, Signer}
 
@@ -99,6 +99,28 @@ defmodule EEVM.HandlerTest do
       }
 
       assert {:error, _} = run(unsigned, db_with_sender())
+    end
+  end
+
+  describe "execute/4 — chain id" do
+    test "comes from the config and must match an EIP-155 signature" do
+      {:ok, tx} =
+        Signer.sign(
+          %Legacy{gas_price: 1, gas_limit: 21_000, to: <<@recipient::160>>},
+          @priv_key,
+          Config.new(:cancun, chain_id: 5)
+        )
+
+      db = db_with_sender(balance: 1_000_000)
+
+      assert {:ok, %TransactionResult{status: :success}} =
+               Handler.execute(tx, simple_block(), db, config: Config.new(:cancun, chain_id: 5))
+
+      assert {:error, :invalid_v} =
+               Handler.execute(tx, simple_block(), db, config: Config.new(:cancun, chain_id: 1))
+
+      # The deprecated :chain_id option still overrides the config's.
+      assert {:ok, _} = Handler.execute(tx, simple_block(), db, config: Config.new(), chain_id: 5)
     end
   end
 
@@ -464,11 +486,11 @@ defmodule EEVM.HandlerTest do
   end
 
   defp run(tx, db, block \\ simple_block()) do
-    Handler.execute(tx, block, db, chain_id: @chain_id)
+    Handler.execute(tx, block, db, config: Config.new(:cancun, chain_id: @chain_id))
   end
 
   defp run_prague(tx, db) do
-    Handler.execute(tx, simple_block(), db, chain_id: @chain_id, hardfork: :prague)
+    Handler.execute(tx, simple_block(), db, config: Config.new(:prague, chain_id: @chain_id))
   end
 
   defp set_code_tx(authorizations, opts \\ []) do

@@ -44,7 +44,7 @@ defmodule EEVM.Error do
   ## Transaction Decoding and Signature Errors
 
   Returned by `EEVM.Transaction.Envelope.decode/1` and
-  `EEVM.Transaction.Signer.recover_sender/2`, and so by
+  `EEVM.Transaction.Signer`, and so by
   `EEVM.Handler.execute/4` when it is given raw bytes or a bad signature.
 
   | Error | Meaning |
@@ -57,6 +57,7 @@ defmodule EEVM.Error do
   | `:invalid_fields` | The RLP list has the wrong number or shape of fields for its type |
   | `:invalid_v` | A legacy `v` is neither 27/28 nor a valid EIP-155 value for the chain |
   | `:invalid_signature` | `r`, `s`, or `y_parity` is out of range (including high `s`, EIP-2), or no key recovers |
+  | `:invalid_private_key` | `EEVM.Transaction.Signer.sign/3` got a key that is zero or not below the curve order |
 
   ## Transaction Validation Errors
 
@@ -178,6 +179,7 @@ defmodule EEVM.Error do
           | :invalid_fields
           | :invalid_v
           | :invalid_signature
+          | :invalid_private_key
 
   @type transaction_validation_error ::
           :tx_type_not_supported
@@ -266,6 +268,7 @@ defmodule EEVM.Error do
     invalid_fields: "wrong transaction fields for its type",
     invalid_v: "invalid signature v value",
     invalid_signature: "invalid signature",
+    invalid_private_key: "invalid private key",
     tx_type_not_supported: "transaction type not supported by this hardfork",
     set_code_tx_no_creation: "set-code transaction can't create a contract",
     empty_authorization_list: "set-code transaction with no authorizations",

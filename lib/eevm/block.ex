@@ -15,8 +15,9 @@ defmodule EEVM.Block do
   - `build/4` produces a child block of a parent: it derives the header,
     executes the transactions, fills in every commitment, and hashes it.
 
-  Options follow `EEVM.Handler.execute/4`: `:hardfork` (default `:cancun`) or
-  a full `:config`, and `:chain_id` (default `1`). `:block_hashes` maps
+  Options follow `EEVM.Handler.execute/4`: a full `:config` (hardfork, chain
+  id, custom precompiles) or the `:hardfork` shorthand (default `:cancun`);
+  `:chain_id` is deprecated in favour of the config's. `:block_hashes` maps
   recent block numbers to their hashes for BLOCKHASH. From Prague,
   `:deposit_contract_address` names the chain's EIP-6110 deposit contract
   (default: mainnet's, `EEVM.Block.Requests.mainnet_deposit_contract/0`).
@@ -53,8 +54,6 @@ defmodule EEVM.Block do
 
   # EIP-7934: MAX_BLOCK_SIZE (10 MiB) minus a 2 MiB beacon-block SAFETY_MARGIN.
   @max_rlp_block_size 10_485_760 - 2_097_152
-
-  @default_chain_id 1
 
   @type transaction :: Legacy.t() | AccessList.t() | FeeMarket.t() | Blob.t() | SetCode.t()
 
@@ -245,13 +244,11 @@ defmodule EEVM.Block do
   # ---------------------------------------------------------------------------
 
   defp run(%__MODULE__{header: header} = block, db, %Config{} = config, opts) do
-    chain_id = Keyword.get(opts, :chain_id, @default_chain_id)
-
     Processor.process_block(header, block.transactions, db,
-      tx_executor: tx_executor(config, chain_id),
+      tx_executor: tx_executor(config),
       system_calls: system_calls(header, config.hardfork),
       withdrawals: block.withdrawals || [],
-      block_context: block_context(header, config.hardfork, chain_id, opts),
+      block_context: block_context(header, config, opts),
       requests: requests(config, opts)
     )
   end
@@ -265,9 +262,9 @@ defmodule EEVM.Block do
     end
   end
 
-  defp tx_executor(config, chain_id) do
+  defp tx_executor(config) do
     fn tx, block_ctx, db ->
-      case Handler.execute(tx, block_ctx, db, config: config, chain_id: chain_id) do
+      case Handler.execute(tx, block_ctx, db, config: config) do
         {:ok, %TransactionResult{} = result} ->
           {:ok,
            %{
@@ -284,7 +281,7 @@ defmodule EEVM.Block do
     end
   end
 
-  defp block_context(%Header{} = header, hardfork, chain_id, opts) do
+  defp block_context(%Header{} = header, %Config{} = config, opts) do
     %BlockContext{
       number: header.number,
       timestamp: header.timestamp,
@@ -292,8 +289,8 @@ defmodule EEVM.Block do
       gaslimit: header.gas_limit,
       prevrandao: header.prev_randao,
       basefee: header.base_fee_per_gas || 0,
-      blob_base_fee: blob_base_fee(header, hardfork),
-      chain_id: chain_id,
+      blob_base_fee: blob_base_fee(header, config.hardfork),
+      chain_id: config.chain_id,
       hashes: Keyword.get(opts, :block_hashes, %{}),
       parent_beacon_block_root: header.parent_beacon_block_root || 0
     }

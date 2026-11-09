@@ -76,8 +76,8 @@ returns `{:ok, %EEVM.TransactionResult{}}` for any transaction that passes
 validation, including reverted ones, and `{:error, reason}` otherwise.
 
 ```elixir
+alias EEVM.{Config, Database}
 alias EEVM.Context.Block
-alias EEVM.Database
 alias EEVM.Database.InMemory
 alias EEVM.Transaction.{FeeMarket, Signer}
 
@@ -88,24 +88,14 @@ recipient = 0xB0B
 
 db = InMemory.new(accounts: %{sender => %{balance: 10 ** 18, nonce: 0, code: <<>>}})
 block = Block.new(number: 1, gaslimit: 30_000_000, basefee: 7, coinbase: 0xC0FFEE)
+config = Config.new(:cancun, chain_id: 1)
 
-tx = %FeeMarket{
-  chain_id: 1,
-  nonce: 0,
-  max_priority_fee_per_gas: 1,
-  max_fee_per_gas: 10,
-  gas_limit: 21_000,
-  to: <<recipient::160>>,
-  value: 1_000,
-  data: <<>>,
-  access_list: []
-}
+{:ok, tx} =
+  %FeeMarket{max_priority_fee_per_gas: 1, max_fee_per_gas: 10, gas_limit: 21_000,
+             to: <<recipient::160>>, value: 1_000}
+  |> Signer.sign(private_key, config)
 
-{:ok, {<<r::256, s::256>>, y_parity}} =
-  ExSecp256k1.sign_compact(Signer.signing_hash(tx, 1), private_key)
-
-{:ok, result} =
-  EEVM.Handler.execute(%{tx | y_parity: y_parity, r: r, s: s}, block, db, hardfork: :cancun)
+{:ok, result} = EEVM.Handler.execute(tx, block, db, config: config)
 
 result.status
 #=> :success
@@ -129,7 +119,7 @@ fills in every root. `encode/1` and `decode/1` convert to and from canonical
 RLP. `execute/4` validates a block against its parent (including the EIP-7934
 size limit from Osaka), applies the system calls, transactions, withdrawals,
 and from Prague the EIP-7685 requests, and checks the header's commitments.
-Both take the same `:hardfork` and `:config` options as
+Both take the same `:config` (or `:hardfork` shorthand) option as
 `EEVM.Handler.execute/4`, and errors are listed in `EEVM.Error`.
 
 ```elixir
@@ -139,13 +129,14 @@ iex> private_key = <<0x46::256>>
 iex> {:ok, <<4, public_key::binary-size(64)>>} = ExSecp256k1.create_public_key(private_key)
 iex> <<_::binary-size(12), sender::unsigned-big-160>> = ExKeccak.hash_256(public_key)
 iex> db = EEVM.Database.InMemory.new(accounts: %{sender => %{balance: 10 ** 18, nonce: 0, code: <<>>}})
-iex> tx = %FeeMarket{chain_id: 1, nonce: 0, max_priority_fee_per_gas: 1, max_fee_per_gas: 10,
-...>   gas_limit: 21_000, to: <<0xB0B::160>>, value: 1_000, data: <<>>, access_list: []}
-iex> {:ok, {<<r::256, s::256>>, y_parity}} = ExSecp256k1.sign_compact(Signer.signing_hash(tx, 1), private_key)
+iex> config = EEVM.Config.new(:cancun, chain_id: 1)
+iex> tx = %FeeMarket{max_priority_fee_per_gas: 1, max_fee_per_gas: 10, gas_limit: 21_000,
+...>   to: <<0xB0B::160>>, value: 1_000}
+iex> {:ok, tx} = Signer.sign(tx, private_key, config)
 iex> parent = EEVM.Block.Header.new(gas_limit: 30_000_000, base_fee_per_gas: 7, hash: <<1::256>>)
-iex> {:ok, block, _result} = Block.build(parent, [%{tx | y_parity: y_parity, r: r, s: s}], db, timestamp: 12)
+iex> {:ok, block, _result} = Block.build(parent, [tx], db, config: config, timestamp: 12)
 iex> {:ok, decoded} = block |> Block.encode() |> Block.decode()
-iex> {:ok, result} = Block.execute(decoded, parent, db, hardfork: :cancun)
+iex> {:ok, result} = Block.execute(decoded, parent, db, config: config)
 iex> {result.gas_used, EEVM.Database.get_balance(result.post_state_db, 0xB0B)}
 {21000, 1000}
 ```
@@ -158,14 +149,15 @@ built-in backend; implement the behaviour to execute against your own storage.
 
 ## Hardforks and EIPs
 
-Pick the rules with the `:hardfork` option (default `:cancun`). `EEVM.HardforkConfig`
-knows every fork from `:frontier` to `:osaka`.
+Pick the rules with `config: EEVM.Config.new(fork, chain_id: id)`, or the
+`:hardfork` shorthand (default `:cancun`). `EEVM.Config.hardforks/0` lists every
+fork from `:frontier` to `:osaka`, and `EEVM.Config.enabled?/2` says whether an
+EIP is active.
 
 Each fork gets its own opcode set, static and dynamic gas schedule (Frontier,
 EIP-150, EIP-160, EIP-1884, then EIP-2929), SSTORE metering (pre-Istanbul,
 EIP-2200, EIP-2929, EIP-3529), intrinsic gas, and precompile set and prices.
-Every rule is gated on the EIP that introduced it through
-`EEVM.HardforkConfig.enabled?/2`; the opcode table and precompile registry for
+Every rule is gated on the EIP that introduced it; the opcode table and precompile registry for
 each fork are built at compile time.
 
 | Area | Implemented |

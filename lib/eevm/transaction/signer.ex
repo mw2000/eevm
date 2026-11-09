@@ -1,13 +1,64 @@
 defmodule EEVM.Transaction.Signer do
   @moduledoc """
-  Transaction signing-hash computation and sender recovery.
+  Transaction signing, signing hashes, and sender recovery.
+
+  ## Example
+
+      iex> alias EEVM.Transaction.{FeeMarket, Signer}
+      iex> tx = %FeeMarket{max_priority_fee_per_gas: 1, max_fee_per_gas: 10, gas_limit: 21_000, to: <<0xB0B::160>>}
+      iex> private_key = :binary.copy(<<0x46>>, 32)
+      iex> {:ok, signed} = Signer.sign(tx, private_key, EEVM.Config.new(:cancun, chain_id: 5))
+      iex> signed.chain_id
+      5
+      iex> {:ok, sender} = Signer.recover_sender(signed, 5)
+      iex> Base.encode16(sender)
+      "9D8A62F656A8D1615C1294FD71E9CFB3E4855A4F"
   """
 
-  alias EEVM.Transaction
+  alias EEVM.{Config, Transaction}
   alias EEVM.Transaction.{AccessList, Authorization, Blob, FeeMarket, Legacy, SetCode}
 
   @secp256k1n 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141
   @secp256k1n_half div(@secp256k1n, 2)
+
+  @doc """
+  Signs `tx` with the 32-byte secp256k1 `private_key` for `config`'s chain.
+
+  A legacy transaction is signed with EIP-155 replay protection, so its `v`
+  becomes `chain_id * 2 + 35 + y_parity`. A typed transaction whose
+  `chain_id` is `nil` takes the config's; one that already has a `chain_id`
+  keeps it. Any existing signature is replaced. Signatures are low-`s`
+  (EIP-2).
+
+  Returns `{:ok, signed_tx}`, or `{:error, :invalid_private_key}` when the
+  key is zero or not below the curve order.
+  """
+  @spec sign(Transaction.t(), <<_::256>>, Config.t()) ::
+          {:ok, Transaction.t()} | {:error, :invalid_private_key}
+  def sign(tx, <<_::256>> = private_key, %Config{chain_id: chain_id}) do
+    tx = put_chain_id(tx, chain_id)
+
+    case ExSecp256k1.sign_compact(signing_hash(unsigned(tx), chain_id), private_key) do
+      {:ok, {<<r::unsigned-big-256, s::unsigned-big-256>>, y_parity}} ->
+        {:ok, put_signature(tx, chain_id, y_parity, r, s)}
+
+      {:error, _} ->
+        {:error, :invalid_private_key}
+    end
+  end
+
+  defp put_chain_id(%Legacy{} = tx, _chain_id), do: tx
+  defp put_chain_id(%{chain_id: nil} = tx, chain_id), do: %{tx | chain_id: chain_id}
+  defp put_chain_id(tx, _chain_id), do: tx
+
+  # A legacy `v` of 27 or 28 would select the pre-EIP-155 signing hash.
+  defp unsigned(%Legacy{} = tx), do: %{tx | v: nil}
+  defp unsigned(tx), do: tx
+
+  defp put_signature(%Legacy{} = tx, chain_id, y_parity, r, s),
+    do: %{tx | v: chain_id * 2 + 35 + y_parity, r: r, s: s}
+
+  defp put_signature(tx, _chain_id, y_parity, r, s), do: %{tx | y_parity: y_parity, r: r, s: s}
 
   @doc "Compute the signing hash for a transaction."
   @spec signing_hash(Transaction.t(), non_neg_integer()) :: binary()

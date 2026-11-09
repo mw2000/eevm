@@ -5,6 +5,10 @@ defmodule EEVM.Transaction do
   These structs represent signed transaction payloads as they appear on the
   network (legacy and typed transaction envelopes). They are intentionally
   separate from `EEVM.Context.Transaction`, which models execution context.
+
+  `nonce`, `value`, `data`, `access_list`, and `authorization_list` default to
+  zero or empty. Build an unsigned struct and sign it with
+  `EEVM.Transaction.Signer.sign/3`, which also fills in a missing `chain_id`.
   """
 
   @type address :: binary()
@@ -55,7 +59,7 @@ defmodule EEVM.Transaction do
             s: non_neg_integer()
           }
 
-    defstruct [:nonce, :gas_price, :gas_limit, :to, :value, :data, :v, :r, :s]
+    defstruct [:gas_price, :gas_limit, :to, :v, :r, :s, nonce: 0, value: 0, data: <<>>]
   end
 
   defmodule AccessList do
@@ -77,16 +81,16 @@ defmodule EEVM.Transaction do
 
     defstruct [
       :chain_id,
-      :nonce,
       :gas_price,
       :gas_limit,
       :to,
-      :value,
-      :data,
-      :access_list,
       :y_parity,
       :r,
-      :s
+      :s,
+      nonce: 0,
+      value: 0,
+      data: <<>>,
+      access_list: []
     ]
   end
 
@@ -110,17 +114,17 @@ defmodule EEVM.Transaction do
 
     defstruct [
       :chain_id,
-      :nonce,
       :max_priority_fee_per_gas,
       :max_fee_per_gas,
       :gas_limit,
       :to,
-      :value,
-      :data,
-      :access_list,
       :y_parity,
       :r,
-      :s
+      :s,
+      nonce: 0,
+      value: 0,
+      data: <<>>,
+      access_list: []
     ]
   end
 
@@ -146,19 +150,19 @@ defmodule EEVM.Transaction do
 
     defstruct [
       :chain_id,
-      :nonce,
       :max_priority_fee_per_gas,
       :max_fee_per_gas,
       :gas_limit,
       :to,
-      :value,
-      :data,
-      :access_list,
       :max_fee_per_blob_gas,
       :blob_versioned_hashes,
       :y_parity,
       :r,
-      :s
+      :s,
+      nonce: 0,
+      value: 0,
+      data: <<>>,
+      access_list: []
     ]
   end
 
@@ -183,18 +187,18 @@ defmodule EEVM.Transaction do
 
     defstruct [
       :chain_id,
-      :nonce,
       :max_priority_fee_per_gas,
       :max_fee_per_gas,
       :gas_limit,
       :to,
-      :value,
-      :data,
-      :access_list,
-      :authorization_list,
       :y_parity,
       :r,
-      :s
+      :s,
+      nonce: 0,
+      value: 0,
+      data: <<>>,
+      access_list: [],
+      authorization_list: []
     ]
   end
 end

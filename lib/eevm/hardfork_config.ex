@@ -2,6 +2,10 @@ defmodule EEVM.HardforkConfig do
   @moduledoc """
   Hardfork configuration controlling which EIP rules are active during execution.
 
+  Internal: callers use `EEVM.Config.new/2`, `EEVM.Config.enabled?/2`, and
+  `EEVM.Config.hardforks/0`. eevm's own code gates rules with `enabled?/2`
+  here, and new flags go in `@eip_activation`.
+
   The `spec_id` atom identifies the target hardfork, and `enabled?/2` answers
   whether a given EIP is active under that spec.
 
