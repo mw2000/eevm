@@ -30,3 +30,13 @@ test/fixtures/state_tests/ethereum-tests/GeneralStateTests/stStaticCall/static_C
 test/fixtures/state_tests/ethereum-tests/GeneralStateTests/stStaticCall/static_Return50000_2.json
 test/fixtures/state_tests/ethereum-tests/GeneralStateTests/stTimeConsuming/CALLBlake2f_MaxRounds.json
 test/fixtures/state_tests/ethereum-tests/GeneralStateTests/stTimeConsuming/static_Call50000_sha256.json
+
+# The same slow fixtures as refilled in the execution-spec-tests release
+# (test/fixtures/eest/fetch.sh).
+test/fixtures/eest/fixtures/state_tests/static/state_tests/stStaticCall/static_Call1MB1024Calldepth.json
+test/fixtures/eest/fixtures/state_tests/static/state_tests/stStaticCall/static_Call50000.json
+test/fixtures/eest/fixtures/state_tests/static/state_tests/stStaticCall/static_Call50000_ecrec.json
+test/fixtures/eest/fixtures/state_tests/static/state_tests/stStaticCall/static_Call50000_identity.json
+test/fixtures/eest/fixtures/state_tests/static/state_tests/stStaticCall/static_Call50000_identity2.json
+test/fixtures/eest/fixtures/state_tests/static/state_tests/stStaticCall/static_Call50000_rip160.json
+test/fixtures/eest/fixtures/state_tests/static/state_tests/stStaticCall/static_Return50000_2.json

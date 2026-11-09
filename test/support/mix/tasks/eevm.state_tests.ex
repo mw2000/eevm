@@ -12,6 +12,10 @@ defmodule Mix.Tasks.Eevm.StateTests do
   expectation (fork and data/gas/value index) is one case; see
   `EEVM.TestSupport.FixtureRunner` for isolation, the summary, and the
   known-failures ratchet.
+
+  To run the pinned execution-spec-tests release instead, fetch it with
+  `test/fixtures/eest/fetch.sh` and pass a glob such as
+  `'test/fixtures/eest/fixtures/state_tests/**/*.json'`.
   """
 
   use Mix.Task

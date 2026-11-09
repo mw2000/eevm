@@ -13,6 +13,10 @@ defmodule Mix.Tasks.Eevm.BlockchainTests do
   (one chain of blocks) is one case; see `EEVM.TestSupport.FixtureRunner` for
   isolation, the summary, and the known-failures ratchet.
 
+  To run the pinned execution-spec-tests release instead, fetch it with
+  `test/fixtures/eest/fetch.sh` and pass a glob such as
+  `'test/fixtures/eest/fixtures/blockchain_tests/**/*.json'`.
+
   `--stale-fixtures` defaults to `test/fixtures/blockchain_tests/stale_fixtures.txt`:
   cases of the pinned snapshot filled before a rule eevm implements, reported
   as `stale` instead of failing.

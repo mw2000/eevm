@@ -1,6 +1,7 @@
 defmodule EEVM.TestSupport.FixtureRunner do
   @moduledoc """
-  Runs official `ethereum/tests` fixtures at runtime and summarizes the results.
+  Runs official `ethereum/tests` and execution-spec-tests fixtures at runtime and
+  summarizes the results.
 
   The `mix eevm.state_tests` and `mix eevm.blockchain_tests` tasks build on this
   module. Fixtures are loaded one file at a time, and every case runs in its own process with a heap cap (counting
@@ -26,13 +27,18 @@ defmodule EEVM.TestSupport.FixtureRunner do
   the list.
   """
 
-  @fixtures_root "test/fixtures/state_tests/ethereum-tests/"
+  # Fixture IDs are relative to these checkouts: ethereum/tests and the
+  # execution-spec-tests release fetched by test/fixtures/eest/fetch.sh.
+  @fixture_roots ["test/fixtures/state_tests/ethereum-tests/", "test/fixtures/eest/fixtures/"]
 
   @suite_roots ~w(GeneralStateTests BlockchainTests state_tests blockchain_tests)
 
   # Directory segments that group other directories rather than name a category.
+  # Lowercase fork names group EIP directories in Pyspecs and execution-spec-tests.
   @grouping_dirs ~w(BlockchainTests GeneralStateTests ValidBlocks InvalidBlocks TransitionTests
-                    Pyspecs Cancun Shanghai state_tests blockchain_tests)
+                    Pyspecs Cancun Shanghai state_tests blockchain_tests static
+                    frontier homestead byzantium constantinople istanbul berlin london paris
+                    shanghai cancun prague osaka)
 
   @switches [
     known_failures: :string,
@@ -224,18 +230,19 @@ defmodule EEVM.TestSupport.FixtureRunner do
     "#{inspect(exception.__struct__)} at #{frame}: #{message}"
   end
 
-  @doc "Returns a fixture path relative to the `ethereum-tests` checkout, or to the repo."
+  @doc "Returns a fixture path relative to the `ethereum-tests` or EEST checkout, or to the repo."
   @spec relative_path(binary()) :: binary()
   def relative_path(path) do
     relative = path |> Path.relative_to_cwd() |> String.replace("\\", "/")
-    String.replace_prefix(relative, @fixtures_root, "")
+    Enum.reduce(@fixture_roots, relative, &String.replace_prefix(&2, &1, ""))
   end
 
   @doc """
   Groups a fixture file into a category: its directory from the suite root
   (`GeneralStateTests`, `BlockchainTests`, or an execution-spec-tests
   `state_tests`/`blockchain_tests`), cut after the first segment that names a
-  test suite (`stExample`, `bcEIP1559`, `Pyspecs/cancun`, `state_tests/prague`).
+  test suite (`stExample`, `bcEIP1559`, `Pyspecs/cancun/eip4844_blobs`,
+  `state_tests/prague/eip7702_set_code_tx`).
   """
   @spec category(binary()) :: binary()
   def category(file) do

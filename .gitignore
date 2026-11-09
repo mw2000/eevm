@@ -28,3 +28,6 @@ eevm_tmp-*.tar
 
 # macOS Finder metadata.
 .DS_Store
+
+# execution-spec-tests fixtures, fetched by test/fixtures/eest/fetch.sh.
+/test/fixtures/eest/fixtures/

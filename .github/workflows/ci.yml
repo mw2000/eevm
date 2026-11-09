@@ -153,6 +153,73 @@ jobs:
         name: conformance-reports
         path: '*_tests.json'
 
+  conformance-eest:
+    name: Conformance (EEST ${{ matrix.suite }} tests)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    # One job per suite: together they take about 8 minutes on 4 cores.
+    # Timeouts are several times the slowest passing case (12 s for state
+    # tests, 58 s for test_block_hashes_history_at_transition).
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - suite: state
+            timeout: 180000
+          - suite: blockchain
+            timeout: 300000
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Set up Elixir
+      uses: erlef/setup-beam@v1
+      with:
+        elixir-version: '1.18.3'
+        otp-version: '27.0'
+    - name: Restore dependencies cache
+      uses: actions/cache@v4
+      with:
+        path: deps
+        key: ${{ runner.os }}-mix-${{ hashFiles('**/mix.lock') }}
+        restore-keys: ${{ runner.os }}-mix-
+    - name: Restore build cache
+      uses: actions/cache@v4
+      with:
+        path: |
+          _build
+          priv/native
+          native/eevm_bls/target
+        key: ${{ runner.os }}-build-${{ hashFiles('**/mix.lock', 'native/**/Cargo.lock', 'native/**/Cargo.toml', 'native/**/src/**') }}
+        restore-keys: ${{ runner.os }}-build-
+    # The release tarball (257 MB) is cached by its pinned version, so only a
+    # version bump in fetch.sh downloads it again.
+    - name: Read pinned EEST version
+      id: eest
+      run: echo "version=$(sed -n 's/^EEST_VERSION="\(.*\)"$/\1/p' test/fixtures/eest/fetch.sh)" >> "$GITHUB_OUTPUT"
+    - name: Restore EEST release cache
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/eevm/eest
+        key: eest-fixtures-stable-${{ steps.eest.outputs.version }}
+    - name: Fetch EEST fixtures
+      run: test/fixtures/eest/fetch.sh
+    - name: Install dependencies
+      run: mix deps.get
+    - name: EEST ${{ matrix.suite }} tests
+      run: >-
+        mix eevm.${{ matrix.suite }}_tests
+        'test/fixtures/eest/fixtures/${{ matrix.suite }}_tests/**/*.json'
+        --known-failures test/fixtures/eest/known_failures_${{ matrix.suite }}.txt
+        --timeout ${{ matrix.timeout }}
+        --report eest_${{ matrix.suite }}_tests.json
+    - name: Upload report
+      if: ${{ !cancelled() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: eest-${{ matrix.suite }}-tests-report
+        path: eest_${{ matrix.suite }}_tests.json
+
   docs:
     name: Docs
     runs-on: ubuntu-latest

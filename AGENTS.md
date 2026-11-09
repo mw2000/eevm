@@ -108,21 +108,27 @@ commit's CI run passes.
   every boundary and fork transition.
 - Tests mirror `lib/` under `test/`, with shared builders in `test/support/`.
   Use `async: true` unless a test needs global state.
-- Official fixtures come from the pinned `ethereum/tests` submodule and run
-  through Mix tasks, not `mix test`:
+- Official fixtures run through Mix tasks, not `mix test`. The pinned
+  execution-spec-tests release (`test/fixtures/eest/fetch.sh`) is the
+  authoritative suite for current forks; the `ethereum/tests` submodule is the
+  legacy suite:
 
   ```bash
+  test/fixtures/eest/fetch.sh
+  mix eevm.state_tests 'test/fixtures/eest/fixtures/state_tests/prague/**/*.json'
   git submodule update --init --depth 1 test/fixtures/state_tests/ethereum-tests
   mix eevm.state_tests 'test/fixtures/state_tests/ethereum-tests/GeneralStateTests/stExample/*.json'
   mix eevm.blockchain_tests 'test/fixtures/state_tests/ethereum-tests/BlockchainTests/ValidBlocks/**/*.json'
   ```
 
-  `mix test` runs only the checked-in smoke fixtures. CI's Conformance job
-  fails on any failure `test/fixtures/*/known_failures.txt` doesn't cover. When
-  you fix failures, regenerate the list with the command in its header and
-  commit it with the fix. `stale_fixtures.txt` lists fixtures older than a rule
-  eevm implements. `test/fixtures/*/skip.txt` is only for fixtures that abort the VM or cannot
-  finish within the per-case timeout.
+  `mix test` runs only the checked-in smoke fixtures. CI's Conformance jobs run
+  every suite against its known-failures list
+  (`test/fixtures/eest/known_failures_*.txt`,
+  `test/fixtures/*/known_failures.txt`) and fail on any failure a list doesn't
+  cover. When you fix failures, regenerate the lists with the commands in their
+  headers and commit them with the fix. `stale_fixtures.txt` lists fixtures
+  older than a rule eevm implements. `test/fixtures/*/skip.txt` is only for
+  fixtures that abort the VM or cannot finish within the per-case timeout.
 - `README.md` is doctested from `test/eevm_test.exs`; keep its examples running.
 - Don't claim conformance the suites don't show.
 

@@ -174,35 +174,40 @@ EIP-7934, and EIP-7951) is in progress. The
 
 ## Conformance
 
-eevm is not yet conformant with the official
-[`ethereum/tests`](https://github.com/ethereum/tests) suites; many official
-fixtures still fail. Two Mix tasks run the `GeneralStateTests` and
-`BlockchainTests` fixtures from a pinned submodule and print pass, fail, and
-crash counts by fork and by test category. Each case runs in its own process
-with a heap cap and a timeout, so a runaway case counts as a crash instead of
-stopping the run. The default `mix test` run covers unit tests, spec-derived
-test vectors, and small checked-in smoke fixtures, not the official suites.
+eevm is not yet fully conformant with the official test suites; some fixtures
+still fail. Two Mix tasks run state tests and blockchain tests and print pass,
+fail, and crash counts by fork and by test category. Each case runs in its own
+process with a heap cap and a timeout, so a runaway case counts as a crash
+instead of stopping the run. The default `mix test` run covers unit tests,
+spec-derived test vectors, and small checked-in smoke fixtures, not the official
+suites.
+
+The fixtures come from two sources:
+
+- [execution-spec-tests](https://github.com/ethereum/execution-spec-tests)
+  (EEST), a pinned release fetched by `test/fixtures/eest/fetch.sh`. It is the
+  authoritative suite for current forks, including Prague and Osaka.
+- [`ethereum/tests`](https://github.com/ethereum/tests), a pinned submodule kept
+  as the legacy suite. Its Prague BlockchainTests predate the final
+  EIP-7002/EIP-7251 rule that the request contracts must have code; they are
+  listed in `test/fixtures/blockchain_tests/stale_fixtures.txt`, and the runner
+  reports them as `stale` rather than as failures or passes.
 
 ```bash
-git submodule update --init --depth 1 test/fixtures/state_tests/ethereum-tests
+test/fixtures/eest/fetch.sh
+mix eevm.state_tests 'test/fixtures/eest/fixtures/state_tests/**/*.json'
+mix eevm.blockchain_tests 'test/fixtures/eest/fixtures/blockchain_tests/prague/**/*.json'
 
+git submodule update --init --depth 1 test/fixtures/state_tests/ethereum-tests
 mix eevm.state_tests
-mix eevm.state_tests 'test/fixtures/state_tests/ethereum-tests/GeneralStateTests/stExample/*.json'
 mix eevm.blockchain_tests 'test/fixtures/state_tests/ethereum-tests/BlockchainTests/ValidBlocks/**/*.json'
 ```
 
-CI runs both suites against `test/fixtures/*/known_failures.txt` and fails only
-when a case outside those lists fails. After fixing failures, regenerate a list
-with `--write-known-failures FILE`. `test/fixtures/*/skip.txt` lists the few
-fixtures that are not run at all because they abort the VM or cannot finish
-within the per-case timeout.
-
-The pinned `ethereum/tests` snapshot filled its Prague BlockchainTests before
-the final EIP-7002/EIP-7251 rule that the request contracts must have code.
-Those cases are listed in `test/fixtures/blockchain_tests/stale_fixtures.txt`,
-and the runner reports them as `stale` rather than as failures or passes. The
-authoritative Prague suite is
-[EEST](https://github.com/ethereum/execution-spec-tests).
+CI runs every suite against its known-failures list (`test/fixtures/eest/` and
+`test/fixtures/*/known_failures.txt`) and fails only when a case outside the list
+fails. After fixing failures, regenerate a list with the command in its header.
+`test/fixtures/*/skip.txt` lists the few fixtures that are not run at all because
+they abort the VM or cannot finish within the per-case timeout.
 
 ## Performance
 
