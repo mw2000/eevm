@@ -339,6 +339,31 @@ defmodule EEVM.HandlerTest do
     end
   end
 
+  describe "execute/4 — logs" do
+    test "returns logs from nested frames in emission order" do
+      log1 = fn topic -> <<0x60, topic, 0x60, 0x00, 0x60, 0x00, 0xA1>> end
+      # CALL(gas, 0xC0DE, 0, 0, 0, 0, 0); POP
+      call = <<0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x61, 0xC0, 0xDE>>
+      code = log1.(1) <> call <> <<0x5A, 0xF1, 0x50>> <> log1.(4) <> <<0x00>>
+      child_code = log1.(2) <> log1.(3) <> <<0x00>>
+
+      db =
+        db_with_sender()
+        |> Database.put_code(@recipient, code)
+        |> Database.put_code(0xC0DE, child_code)
+
+      assert {:ok, result} = run(legacy_value_transfer(gas_limit: 100_000, value: 0), db)
+      assert result.status == :success
+
+      assert Enum.map(result.logs, &{&1.address, &1.topics}) == [
+               {@recipient, [1]},
+               {0xC0DE, [2]},
+               {0xC0DE, [3]},
+               {@recipient, [4]}
+             ]
+    end
+  end
+
   describe "execute/4 — REVERT" do
     test "marks status :reverted and emits no logs" do
       # PUSH1 0 PUSH1 0 REVERT

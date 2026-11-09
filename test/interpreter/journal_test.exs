@@ -31,7 +31,7 @@ defmodule EEVM.Interpreter.JournalTest do
       assert merged.substate.touched_addresses == MapSet.new([0xCAFE])
     end
 
-    test "appends child's logs after parent's, preserving emission order" do
+    test "puts child's logs after parent's in emission order" do
       parent_log = %{address: 0xAA, topics: [1], data: <<>>}
       child_log_1 = %{address: 0xBB, topics: [2], data: <<>>}
       child_log_2 = %{address: 0xCC, topics: [3], data: <<>>}
@@ -42,12 +42,13 @@ defmodule EEVM.Interpreter.JournalTest do
       child = %{
         parent
         | status: :stopped,
-          substate: %{parent.substate | logs: [child_log_1, child_log_2]}
+          # Logs are stored newest first.
+          substate: %{parent.substate | logs: [child_log_2, child_log_1]}
       }
 
       merged = Journal.merge_child_result(parent, child)
 
-      assert merged.substate.logs == [parent_log, child_log_1, child_log_2]
+      assert EEVM.logs(merged) == [parent_log, child_log_1, child_log_2]
     end
   end
 

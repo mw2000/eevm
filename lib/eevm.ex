@@ -84,9 +84,9 @@ defmodule EEVM do
     Stack.to_list(state.frame.stack)
   end
 
-  @doc "Returns the list of logs emitted during execution."
+  @doc "Returns the logs emitted during execution, in emission order."
   @spec logs(MachineState.t()) :: [map()]
-  def logs(%MachineState{} = state), do: state.substate.logs
+  def logs(%MachineState{} = state), do: Enum.reverse(state.substate.logs)
 
   @doc "Computes the 256-byte logs bloom filter for the executed transaction."
   @spec logs_bloom(MachineState.t()) :: Bloom.t()

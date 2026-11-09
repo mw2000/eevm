@@ -22,7 +22,7 @@ defmodule EEVM.TestSupport.StateTestRunner do
         validate_success(
           %{
             state_root: StateRoot.compute_state_root(db),
-            logs_hash: logs_hash(if(failed?, do: [], else: machine.substate.logs))
+            logs_hash: logs_hash(if(failed?, do: [], else: EEVM.logs(machine)))
           },
           expectation
         )

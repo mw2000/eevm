@@ -10,7 +10,7 @@ defmodule EEVM.Interpreter.Journal do
   merge:
 
   - `db` — the unified world database (accounts + storage)
-  - `substate.logs` — emitted log entries (parent's first, then child's)
+  - `substate.logs` — emitted log entries, newest first (child's ahead of parent's)
   - `substate.accessed_addresses` — EIP-2929 access list
   - `substate.accessed_storage_keys` — EIP-2929 access list
   - `substate.created_addresses` — EIP-6780 set of contracts created in this tx
@@ -41,8 +41,8 @@ defmodule EEVM.Interpreter.Journal do
   Merge the result of a child frame back into its parent.
 
   - On success (`status: :stopped`): the child's mutations to revertible
-    fields are promoted into the parent. Logs are *appended*, with the
-    parent's existing logs preceding the child's in emission order, and the
+    fields are promoted into the parent. Logs are kept newest first, so the
+    child's logs are prepended to the parent's in O(child) time, and the
     child's refund counter is added to the parent's.
   - On any other halt: the parent's revertible fields are kept untouched.
 
@@ -51,7 +51,7 @@ defmodule EEVM.Interpreter.Journal do
   """
   @spec merge_child_result(MachineState.t(), MachineState.t()) :: MachineState.t()
   def merge_child_result(%MachineState{} = parent, %MachineState{status: :stopped} = child) do
-    merged_substate = %{child.substate | logs: parent.substate.logs ++ child.substate.logs}
+    merged_substate = %{child.substate | logs: child.substate.logs ++ parent.substate.logs}
     merged_frame = %{parent.frame | refund: parent.frame.refund + child.frame.refund}
 
     %{parent | db: child.db, substate: merged_substate, frame: merged_frame, tracer: child.tracer}

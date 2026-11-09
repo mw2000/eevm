@@ -17,7 +17,9 @@ defmodule EEVM.Interpreter.MachineState.Substate do
     accounting.
   - `transient_storage` — EIP-1153 per-tx store keyed by `{address, slot}`,
     passed into every child frame and cleared at tx end.
-  - `logs` — emitted log entries, parent-then-child on success.
+  - `logs` — emitted log entries, newest first so LOG and frame merges
+    prepend; `EEVM.logs/1` and the transaction result reverse them into
+    emission order.
 
   All seven fields revert together when a child frame fails (see
   `EEVM.Interpreter.Journal`). Stack, memory, pc, and gas are *not*

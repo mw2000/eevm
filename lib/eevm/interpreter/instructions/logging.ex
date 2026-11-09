@@ -39,7 +39,7 @@ defmodule EEVM.Interpreter.Instructions.Logging do
             topics: topics
           }
 
-          new_substate = %{s4.substate | logs: s4.substate.logs ++ [log_entry]}
+          new_substate = %{s4.substate | logs: [log_entry | s4.substate.logs]}
 
           s5 =
             s4
