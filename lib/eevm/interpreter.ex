@@ -171,14 +171,14 @@ defmodule EEVM.Interpreter do
   #
   # The Registry maps each opcode to a `:module` (the `Instructions.*` module
   # whose `execute/2` handles it) and a `:state_mutating` flag. Inside a
-  # STATICCALL frame (`state.is_static`), state-mutating opcodes (SSTORE,
-  # TSTORE, LOG0..4, CREATE, CREATE2, SELFDESTRUCT) halt with `:reverted`
-  # before reaching the module. Unknown opcodes halt as `:invalid`.
+  # STATICCALL frame (`frame.is_static`), state-mutating opcodes (SSTORE,
+  # TSTORE, LOG0..4, CREATE, CREATE2, SELFDESTRUCT) are an exceptional halt
+  # (EIP-214) before reaching the module. Unknown opcodes halt as `:invalid`.
 
   defp execute_opcode(opcode, state) do
     case Registry.info(opcode) do
       {:ok, %{state_mutating: true}} when state.frame.is_static ->
-        {:ok, MachineState.halt(state, :reverted)}
+        {:error, :static_state_modification, state}
 
       {:ok, %{module: module}} ->
         module.execute(opcode, state)

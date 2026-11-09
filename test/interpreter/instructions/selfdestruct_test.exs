@@ -35,10 +35,11 @@ defmodule EEVM.Interpreter.Instructions.SelfdestructTest do
       assert EEVM.stack_values(result) == []
     end
 
-    test "reverts in static context" do
+    test "halts exceptionally in static context" do
       code = <<0x60, 0xBB, 0xFF>>
       result = EEVM.execute(code, is_static: true, gas: 1_000_000)
-      assert result.status == :reverted
+      assert result.status == {:error, :static_state_modification}
+      assert result.frame.gas == 0
     end
 
     test "self-destruct to self keeps balance unchanged" do

@@ -16,6 +16,7 @@ defmodule EEVM.Error do
   | `:stack_overflow` | `EEVM.Interpreter.Stack` | Attempted to push onto a full stack (1,024 elements) |
   | `:out_of_gas` | `EEVM.Interpreter.MachineState` | Gas consumed exceeds available gas |
   | `:invalid_jump_destination` | `EEVM.Interpreter.Instructions.ControlFlow` | JUMP/JUMPI target is not a JUMPDEST |
+  | `:static_state_modification` | `EEVM.Interpreter`, `EEVM.Interpreter.Instructions.System.Calls` | State-mutating opcode or value-bearing CALL inside a STATICCALL frame (EIP-214) |
   | `:return_data_out_of_bounds` | `EEVM.Interpreter.Instructions.Environment.Data` | RETURNDATACOPY reads past the end of the return data buffer |
   | `:insufficient_balance` | `EEVM.WorldState` | Transfer amount exceeds account balance |
   | `:max_call_depth` | `EEVM.Interpreter.MachineState` | Nested call depth exceeds 1,024 |
@@ -100,6 +101,7 @@ defmodule EEVM.Error do
           | :stack_overflow
           | :out_of_gas
           | :invalid_jump_destination
+          | :static_state_modification
           | :return_data_out_of_bounds
           | :insufficient_balance
           | :max_call_depth

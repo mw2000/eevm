@@ -49,10 +49,11 @@ defmodule EEVM.Interpreter.Instructions.System.Calls do
          {:ok, ret_offset, s6} <- Stack.pop(s5),
          {:ok, ret_size, s7} <- Stack.pop(s6) do
       cond do
-        state.frame.depth >= 1024 ->
-          call_failed(state, s7)
-
+        # EIP-214: a value-bearing CALL inside a static frame is an exceptional halt.
         state.frame.is_static and value > 0 ->
+          {:error, :static_state_modification, state}
+
+        state.frame.depth >= 1024 ->
           call_failed(state, s7)
 
         true ->
@@ -65,7 +66,8 @@ defmodule EEVM.Interpreter.Instructions.System.Calls do
             args_offset,
             args_size,
             ret_offset,
-            ret_size
+            ret_size,
+            state.frame.is_static
           )
       end
     else
@@ -81,28 +83,25 @@ defmodule EEVM.Interpreter.Instructions.System.Calls do
          {:ok, args_size, s5} <- Stack.pop(s4),
          {:ok, ret_offset, s6} <- Stack.pop(s5),
          {:ok, ret_size, s7} <- Stack.pop(s6) do
-      cond do
-        state.frame.depth >= 1024 ->
-          call_failed(state, s7)
-
-        state.frame.is_static and value > 0 ->
-          call_failed(state, s7)
-
-        true ->
-          execute_delegatecall(
-            state,
-            s7,
-            gas_requested,
-            address,
-            value,
-            args_offset,
-            args_size,
-            ret_offset,
-            ret_size,
-            state.frame.contract.address,
-            true,
-            true
-          )
+      # EIP-214 restricts only CALL: CALLCODE "sends" value to the caller itself,
+      # so it is allowed with value inside a static frame.
+      if state.frame.depth >= 1024 do
+        call_failed(state, s7)
+      else
+        execute_delegatecall(
+          state,
+          s7,
+          gas_requested,
+          address,
+          value,
+          args_offset,
+          args_size,
+          ret_offset,
+          ret_size,
+          state.frame.contract.address,
+          true,
+          true
+        )
       end
     else
       {:error, reason} -> {:error, reason, state}
@@ -150,7 +149,7 @@ defmodule EEVM.Interpreter.Instructions.System.Calls do
         call_failed(state, s6)
       else
         execute_call(
-          MachineState.update_frame(state, &%{&1 | is_static: true}),
+          state,
           s6,
           gas_requested,
           address,
@@ -158,7 +157,8 @@ defmodule EEVM.Interpreter.Instructions.System.Calls do
           args_offset,
           args_size,
           ret_offset,
-          ret_size
+          ret_size,
+          true
         )
       end
     else
@@ -177,7 +177,8 @@ defmodule EEVM.Interpreter.Instructions.System.Calls do
          args_offset,
          args_size,
          ret_offset,
-         ret_size
+         ret_size,
+         child_static?
        ) do
     {access_cost, state, target_code, delegated?} = access_target(state, address)
     account_exists = Database.account_exists?(state.db, address)
@@ -282,7 +283,7 @@ defmodule EEVM.Interpreter.Instructions.System.Calls do
                 accessed_addresses: state_after_touch.substate.accessed_addresses,
                 accessed_storage_keys: state_after_touch.substate.accessed_storage_keys,
                 created_addresses: state_after_touch.substate.created_addresses,
-                is_static: state_after_touch.frame.is_static,
+                is_static: child_static?,
                 depth: state_after_touch.frame.depth + 1,
                 tracer: state_after_touch.tracer
               )

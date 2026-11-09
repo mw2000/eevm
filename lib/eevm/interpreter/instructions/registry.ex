@@ -9,8 +9,8 @@ defmodule EEVM.Interpreter.Instructions.Registry do
   - `:inputs` / `:outputs` — stack arity, used by the disassembler and stack-depth checks
   - `:module` — the `EEVM.Interpreter.Instructions.*` module that implements
     the opcode; `EEVM.Interpreter` dispatches on this field
-  - `:state_mutating` (when present) — opcode mutates persistent state and must
-    halt with `:reverted` if executed inside a STATICCALL frame
+  - `:state_mutating` (when present) — opcode mutates persistent state and is an
+    exceptional halt (`{:error, :static_state_modification}`) inside a STATICCALL frame
 
   PUSH1–PUSH32, DUP1–DUP16, and SWAP1–SWAP16 are generated dynamically from their
   opcode ranges rather than stored in the static map.

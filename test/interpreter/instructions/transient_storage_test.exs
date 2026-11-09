@@ -55,10 +55,11 @@ defmodule EEVM.Interpreter.Instructions.TransientStorageTest do
       assert EEVM.stack_values(result) == [0xBB, 0xAA]
     end
 
-    test "TSTORE reverts in static context" do
+    test "TSTORE halts exceptionally in static context" do
       code = <<0x60, 0xFF, 0x60, 0x01, 0x5D, 0x00>>
       result = EEVM.execute(code, is_static: true)
-      assert result.status == :reverted
+      assert result.status == {:error, :static_state_modification}
+      assert result.frame.gas == 0
     end
 
     test "TLOAD works in static context" do

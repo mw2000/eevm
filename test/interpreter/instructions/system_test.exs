@@ -378,6 +378,62 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
       assert Database.storage_load(result.db, 0, 0) == 0
     end
 
+    test "SSTORE in a static child is an exceptional halt that consumes the forwarded gas" do
+      world_state =
+        WorldState.new(%{
+          0 => %{balance: 0},
+          0xAA => %{balance: 0, code: <<0x60, 1, 0x60, 0, 0x55, 0x00>>}
+        })
+
+      # STATICCALL(gas: GAS, to: 0xAA, in/out: 0), RETURNDATASIZE, STOP. Before forwarding the
+      # caller has 200_000 - 5 * 3 (PUSH1) - 2 (GAS) - 100 (STATICCALL) = 199_883 gas and keeps
+      # div(199_883, 64) = 3_123; RETURNDATASIZE then costs 2.
+      code = <<0x60, 0, 0x60, 0, 0x60, 0, 0x60, 0, 0x60, 0xAA, 0x5A, 0xFA, 0x3D, 0x00>>
+
+      result =
+        EEVM.execute(code,
+          gas: 200_000,
+          world_state: world_state,
+          accessed_addresses: MapSet.new([0, 0xAA])
+        )
+
+      assert result.status == :stopped
+      assert EEVM.stack_values(result) == [0, 0]
+      assert result.frame.gas == 3_121
+    end
+
+    # EIP-214 forbids only CALL with value in a static frame; CALLCODE with value is allowed.
+    test "CALL with value in a static frame halts exceptionally; CALLCODE with value succeeds" do
+      world_state = WorldState.new(%{0 => %{balance: 5}, 0xAA => %{balance: 0, code: <<0x00>>}})
+      # <op>(gas: 0xFFFF, to: 0xAA, value: 1, in/out: 0), STOP
+      call_with_value = fn op ->
+        <<0x60, 0, 0x60, 0, 0x60, 0, 0x60, 0, 0x60, 1, 0x60, 0xAA, 0x61, 0xFF, 0xFF, op, 0x00>>
+      end
+
+      call = EEVM.execute(call_with_value.(0xF1), world_state: world_state, is_static: true)
+      assert call.status == {:error, :static_state_modification}
+      assert call.frame.gas == 0
+
+      callcode = EEVM.execute(call_with_value.(0xF2), world_state: world_state, is_static: true)
+      assert callcode.status == :stopped
+      assert EEVM.stack_values(callcode) == [1]
+    end
+
+    test "does not leave the caller in static mode" do
+      world_state = WorldState.new(%{0 => %{balance: 0}, 0xAA => %{balance: 0, code: <<0x00>>}})
+
+      # STATICCALL(gas: GAS, to: 0xAA, in/out: 0), then SSTORE(0, 1) in the caller.
+      code =
+        <<0x60, 0, 0x60, 0, 0x60, 0, 0x60, 0, 0x60, 0xAA, 0x5A, 0xFA, 0x60, 1, 0x60, 0, 0x55,
+          0x00>>
+
+      result = EEVM.execute(code, world_state: world_state)
+
+      assert result.status == :stopped
+      assert EEVM.stack_values(result) == [1]
+      assert Database.storage_load(result.db, 0, 0) == 1
+    end
+
     test "does not transfer value" do
       world_state = WorldState.new(%{0 => %{balance: 9}, 1 => %{balance: 0, code: <<0x00>>}})
 
