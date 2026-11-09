@@ -17,7 +17,7 @@ defmodule EEVM.Gas.Dynamic do
   | CREATE2 | 6 × word_count(initcode_size) | EIP-1014 |
   | CREATE/CREATE2 deploy | 200 × code_size | Yellow Paper |
   | CALL value transfer | 9,000 gas | Yellow Paper |
-  | CALL new account creation | 25,000 gas | Yellow Paper |
+  | CALL, SELFDESTRUCT new account creation | 25,000 gas | Yellow Paper, EIP-150, EIP-161 |
   | CALL gas forwarding | min(requested, available - available/64); requested before Tangerine Whistle | EIP-150 |
   | CALL value stipend | 2,300 gas | Yellow Paper |
   | SSTORE | per-fork schedule, see `sstore_cost/4` | EIP-2200, EIP-2929, EIP-3529 |
@@ -106,10 +106,44 @@ defmodule EEVM.Gas.Dynamic do
   def call_value_cost(0), do: 0
   def call_value_cost(_value), do: @gas_call_value
 
-  @spec call_new_account_cost(boolean(), non_neg_integer()) :: non_neg_integer()
-  def call_new_account_cost(_exists?, 0), do: 0
-  def call_new_account_cost(true, _value), do: 0
-  def call_new_account_cost(false, _value), do: @gas_new_account
+  @doc """
+  25,000 when a CALL brings an account into existence. From Spurious Dragon
+  (EIP-161) that is a value transfer to an empty account; before, a call to
+  any account that does not exist.
+  """
+  @spec call_new_account_cost(boolean(), boolean(), non_neg_integer(), HardforkConfig.t()) ::
+          non_neg_integer()
+  def call_new_account_cost(exists?, empty?, value, hardfork) do
+    creates_account? =
+      if HardforkConfig.enabled?(hardfork, :eip_161),
+        do: value > 0 and empty?,
+        else: not exists?
+
+    if creates_account?, do: @gas_new_account, else: 0
+  end
+
+  @doc """
+  25,000 when SELFDESTRUCT brings its beneficiary into existence: from
+  Tangerine Whistle (EIP-150) when the beneficiary does not exist, and from
+  Spurious Dragon (EIP-161) only when a non-zero balance moves to an empty
+  account. Nothing before Tangerine Whistle.
+  """
+  @spec selfdestruct_new_account_cost(
+          boolean(),
+          boolean(),
+          non_neg_integer(),
+          HardforkConfig.t()
+        ) :: non_neg_integer()
+  def selfdestruct_new_account_cost(exists?, empty?, balance, hardfork) do
+    creates_account? =
+      cond do
+        HardforkConfig.enabled?(hardfork, :eip_161) -> balance > 0 and empty?
+        HardforkConfig.enabled?(hardfork, :eip_150) -> not exists?
+        true -> false
+      end
+
+    if creates_account?, do: @gas_new_account, else: 0
+  end
 
   @doc """
   Gas a CALL-family or CREATE opcode hands to its child frame. From Tangerine

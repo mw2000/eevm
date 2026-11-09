@@ -13,7 +13,7 @@ defmodule EEVM.Interpreter.Instructions.System.Termination do
   """
 
   alias EEVM.Database
-  alias EEVM.Gas.Access
+  alias EEVM.Gas.{Access, Dynamic}
   alias EEVM.Gas.Memory, as: GasMemory
   alias EEVM.HardforkConfig
   alias EEVM.Interpreter.{MachineState, Memory, Stack}
@@ -77,11 +77,16 @@ defmodule EEVM.Interpreter.Instructions.System.Termination do
       contract_address = state.frame.contract.address
       balance = Database.get_balance(state.db, contract_address)
 
-      beneficiary_exists = Database.account_exists?(state.db, beneficiary)
       {access_cost, state} = beneficiary_access_cost(state, beneficiary)
 
       dynamic_cost =
-        access_cost + if(not beneficiary_exists and balance > 0, do: 25_000, else: 0)
+        access_cost +
+          Dynamic.selfdestruct_new_account_cost(
+            Database.account_exists?(state.db, beneficiary),
+            Database.account_empty?(state.db, beneficiary),
+            balance,
+            state.env.config.hardfork
+          )
 
       case MachineState.consume_gas(
              MachineState.update_frame(state, &%{&1 | stack: s1}),

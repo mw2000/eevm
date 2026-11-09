@@ -439,6 +439,23 @@ defmodule EEVM.HardforkConfigTest do
     end
   end
 
+  describe "EIP-161 empty-account clearing hardfork guard" do
+    test "a touched empty account is deleted from Spurious Dragon on, kept before" do
+      # CALL 0x42 with no value, STOP. 0x42 exists but is empty.
+      code = <<0x60, 0, 0x60, 0, 0x60, 0, 0x60, 0, 0x60, 0, 0x60, 0x42, 0x61, 0xFF, 0xFF>>
+      code = code <> <<0xF1, 0x00>>
+      world_state = WorldState.new(%{0x42 => %{balance: 0}})
+
+      exists_after? = fn fork ->
+        result = EEVM.execute(code, gas: 100_000, hardfork: fork, world_state: world_state)
+        Database.account_exists?(result.db, 0x42)
+      end
+
+      assert exists_after?.(:tangerine_whistle)
+      refute exists_after?.(:spurious_dragon)
+    end
+  end
+
   describe "EIP-3651 warm COINBASE hardfork guard" do
     test "COINBASE starts warm from Shanghai and cold before" do
       # COINBASE, BALANCE, STOP

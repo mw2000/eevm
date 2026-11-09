@@ -193,6 +193,18 @@ defmodule EEVM.GasTest do
       assert Dynamic.exp_dynamic_cost(exponent, EEVM.HardforkConfig.new(:spurious_dragon)) == 100
     end
 
+    test "CALL new-account charge: missing target before EIP-161, value to an empty one after" do
+      homestead = EEVM.HardforkConfig.new(:homestead)
+      spurious_dragon = EEVM.HardforkConfig.new(:spurious_dragon)
+
+      # {exists?, empty?, value}
+      assert Dynamic.call_new_account_cost(false, true, 0, homestead) == 25_000
+      assert Dynamic.call_new_account_cost(true, true, 1, homestead) == 0
+      assert Dynamic.call_new_account_cost(false, true, 0, spurious_dragon) == 0
+      assert Dynamic.call_new_account_cost(true, true, 1, spurious_dragon) == 25_000
+      assert Dynamic.call_new_account_cost(true, false, 1, spurious_dragon) == 0
+    end
+
     test "CALL stipend applies only when value is non-zero" do
       assert Dynamic.call_stipend(0) == 0
       assert Dynamic.call_stipend(1) == 2300

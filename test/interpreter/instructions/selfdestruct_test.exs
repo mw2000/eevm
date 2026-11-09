@@ -86,11 +86,11 @@ defmodule EEVM.Interpreter.Instructions.SelfdestructTest do
       assert Database.get_balance(result.db, 0xCC) == 100
     end
 
-    test "no extra gas for existing beneficiary with value" do
+    test "no extra gas for a non-empty beneficiary with value" do
       world_state =
         WorldState.new(%{
           0xAA => %{balance: 100},
-          0xBB => %{balance: 0}
+          0xBB => %{balance: 1}
         })
 
       contract = Contract.new(address: 0xAA)
@@ -256,6 +256,35 @@ defmodule EEVM.Interpreter.Instructions.SelfdestructTest do
 
       assert Database.get_code(result.db, 0xAA) == <<0x60, 0xCC, 0xFF>>
       assert Database.get_balance(result.db, 0xAA) == 10
+    end
+  end
+
+  describe "SELFDESTRUCT new-account charge by hardfork" do
+    # 0xAA (balance 100) self-destructs to 0xBB, which exists but is empty
+    # (EIP-161: no code, zero nonce and balance). Gas used minus PUSH1 and the
+    # fork's SELFDESTRUCT static cost.
+    defp new_account_charge(fork) do
+      world_state = WorldState.new(%{0xAA => %{balance: 100}, 0xBB => %{balance: 0}})
+      contract = Contract.new(address: 0xAA)
+
+      result =
+        EEVM.execute(<<0x60, 0xBB, 0xFF>>,
+          world_state: world_state,
+          contract: contract,
+          gas: 100_000,
+          hardfork: fork
+        )
+
+      100_000 - result.frame.gas - 3 - Static.static_cost(0xFF, fork)
+    end
+
+    test "nothing before EIP-150; 25,000 only for a missing account until EIP-161" do
+      assert new_account_charge(:homestead) == 0
+      assert new_account_charge(:tangerine_whistle) == 0
+    end
+
+    test "from EIP-161 an existing but empty beneficiary receiving value costs 25,000" do
+      assert new_account_charge(:spurious_dragon) == 25_000
     end
   end
 end

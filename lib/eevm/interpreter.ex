@@ -188,7 +188,17 @@ defmodule EEVM.Interpreter do
 
   defp delete_selfdestructed_accounts(state), do: state
 
+  # EIP-161 (Spurious Dragon): empty accounts touched by a successful
+  # transaction are deleted.
   defp cleanup_touched_empty_accounts(%MachineState{status: :stopped} = state) do
+    if HardforkConfig.enabled?(state.env.config.hardfork, :eip_161),
+      do: delete_touched_empty_accounts(state),
+      else: state
+  end
+
+  defp cleanup_touched_empty_accounts(state), do: state
+
+  defp delete_touched_empty_accounts(state) do
     cleaned_db =
       Enum.reduce(state.substate.touched_addresses, state.db, fn address, db_acc ->
         if Database.account_empty?(db_acc, address) do
@@ -200,8 +210,6 @@ defmodule EEVM.Interpreter do
 
     %{state | db: cleaned_db}
   end
-
-  defp cleanup_touched_empty_accounts(state), do: state
 
   # Dispatch an opcode to the module its instruction-table entry names (see
   # `EEVM.Interpreter.InstructionTable`). Before the module runs, the stack

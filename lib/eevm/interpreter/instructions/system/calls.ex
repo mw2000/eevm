@@ -165,12 +165,19 @@ defmodule EEVM.Interpreter.Instructions.System.Calls do
        ) do
     {access_cost, state, target_code, delegated?} = access_target(state, address)
     depth = state.frame.depth
-    account_exists = Database.account_exists?(state.db, address)
+
+    new_account_cost =
+      Dynamic.call_new_account_cost(
+        Database.account_exists?(state.db, address),
+        Database.account_empty?(state.db, address),
+        value,
+        state.env.config.hardfork
+      )
 
     call_cost =
       access_cost +
         Dynamic.call_value_cost(value) +
-        Dynamic.call_new_account_cost(account_exists, value) +
+        new_account_cost +
         call_memory_expansion_cost(
           state.frame.memory,
           args_offset,
