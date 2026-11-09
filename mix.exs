@@ -30,6 +30,7 @@ defmodule EEVM.MixProject do
   def cli do
     [
       preferred_envs: [
+        bench: :prod,
         dialyzer: :dev,
         docs: :dev,
         "hex.publish": :dev
@@ -54,6 +55,9 @@ defmodule EEVM.MixProject do
       {:jason, "~> 1.4"},
       {:bn, "~> 0.2.2"},
       {:rustler, "~> 0.36", runtime: false},
+      # Optional so projects that depend on eevm never fetch it; :prod so `mix bench`
+      # measures the build users run.
+      {:benchee, "~> 1.3", only: [:dev, :prod], runtime: false, optional: true},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev], runtime: false},
       {:ex_doc, "~> 0.34", only: :dev, runtime: false}
@@ -62,6 +66,7 @@ defmodule EEVM.MixProject do
 
   defp aliases do
     [
+      bench: &bench/1,
       quality: [
         "format --check-formatted",
         "compile --warnings-as-errors",
@@ -72,12 +77,30 @@ defmodule EEVM.MixProject do
     ]
   end
 
+  # `mix bench` runs every bench/*_bench.exs suite; `mix bench interpreter precompiles`
+  # runs only the named ones.
+  defp bench(suites) do
+    Mix.Task.run("app.start")
+
+    files =
+      case suites do
+        [] -> Path.wildcard("bench/*_bench.exs")
+        names -> Enum.map(names, &"bench/#{&1}_bench.exs")
+      end
+
+    Enum.each(files, &Code.require_file/1)
+  end
+
   defp docs do
     [
       main: "EEVM",
       source_url: @source_url,
       source_ref: "main",
-      extras: ["README.md", "LICENSE"],
+      extras: [
+        "README.md",
+        {"bench/README.md", filename: "benchmarks", title: "Benchmarks"},
+        "LICENSE"
+      ],
       groups_for_modules: [
         Interpreter: [~r/^EEVM\.Interpreter($|\.)/],
         Instructions: [~r/^EEVM\.Interpreter\.Instructions/],

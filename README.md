@@ -179,6 +179,13 @@ EEVM_BLOCKCHAIN_TEST_GLOB='test/fixtures/state_tests/ethereum-tests/BlockchainTe
 
 Known-unsupported cases are listed in `test/fixtures/*/skip.txt`.
 
+## Performance
+
+`mix bench` runs a Benchee suite of interpreter workloads (compute loops, memory,
+Keccak, storage, calls, an ERC-20 transfer) and precompiles, and prints gas/s for each.
+[bench/README.md](bench/README.md) describes the workloads and lists baseline numbers
+and profiling results.
+
 ## Architecture
 
 eevm is layered like revm:
