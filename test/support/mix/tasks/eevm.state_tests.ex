@@ -31,7 +31,9 @@ defmodule Mix.Tasks.Eevm.StateTests do
     )
   end
 
-  defp load(path) do
+  @doc "Loads the runnable cases of one fixture file; the smoke test in `mix test` reuses it."
+  @spec load(Path.t()) :: [FixtureRunner.fixture_case()]
+  def load(path) do
     for state_test <- StateTestFixture.load_file!(path),
         StateTestCatalog.skipped?(path, state_test.name) == false,
         expectation <- StateTestFixture.expectations(state_test) do

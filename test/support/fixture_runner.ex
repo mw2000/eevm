@@ -3,8 +3,7 @@ defmodule EEVM.TestSupport.FixtureRunner do
   Runs official `ethereum/tests` fixtures at runtime and summarizes the results.
 
   The `mix eevm.state_tests` and `mix eevm.blockchain_tests` tasks build on this
-  module. Unlike the compile-time ExUnit harness, fixtures are loaded one file at
-  a time, and every case runs in its own process with a heap cap (counting
+  module. Fixtures are loaded one file at a time, and every case runs in its own process with a heap cap (counting
   off-heap binaries) and a wall-clock timeout. A runaway case is reported as a
   crash instead of taking the VM down.
 

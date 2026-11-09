@@ -41,7 +41,9 @@ defmodule Mix.Tasks.Eevm.BlockchainTests do
     )
   end
 
-  defp load(path) do
+  @doc "Loads the runnable cases of one fixture file; the smoke test in `mix test` reuses it."
+  @spec load(Path.t()) :: [FixtureRunner.fixture_case()]
+  def load(path) do
     for test <- BlockchainTestFixture.load_file!(path),
         BlockchainTestCatalog.skipped?(path, test.name) == false do
       {test.name, test.network, fn -> BlockchainTestRunner.run_case(test) end}
