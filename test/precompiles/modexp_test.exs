@@ -67,6 +67,38 @@ defmodule EEVM.Precompiles.ModExpTest do
       assert {:ok, _out, 5_610} = ModExp.execute(input, 1_000_000)
     end
 
+    test "iteration count uses the exponent's bit length, not its byte length" do
+      # exp = 0x01FFFFFF has bit length 25 → iteration_count 24; 40-byte operands → 5 words
+      base_bytes = :binary.copy(<<0x02>>, 40)
+      mod_bytes = :binary.copy(<<0x03>>, 40)
+      input = encode_modexp_bytes(base_bytes, <<0x01, 0xFF, 0xFF, 0xFF>>, mod_bytes)
+
+      assert {:ok, _out, 200} = ModExp.execute(input, 1_000_000)
+    end
+
+    test "iteration count is floored at 1 for a zero exponent" do
+      # 256-byte operands → 32 words → 32² × 1 / 3 = 341 (would be the 200 floor with 0 iterations)
+      base_bytes = :binary.copy(<<0x02>>, 256)
+      mod_bytes = :binary.copy(<<0x03>>, 256)
+      input = encode_modexp_bytes(base_bytes, <<0x00>>, mod_bytes)
+
+      assert {:ok, out, 341} = ModExp.execute(input, 1_000_000)
+      assert :binary.decode_unsigned(out) == 1
+    end
+
+    test "huge declared base length runs out of gas without allocating operands" do
+      input = <<1 <<< 64::256, 1::256, 1::256, 0x03, 0x05>>
+      assert {:error, :out_of_gas} = ModExp.execute(input, 30_000_000)
+
+      input = <<(1 <<< 256) - 1::256, 0::256, 1::256>>
+      assert {:error, :out_of_gas} = ModExp.execute(input, 30_000_000)
+    end
+
+    test "huge declared exponent length with empty base and modulus costs the minimum" do
+      input = <<0::256, (1 <<< 256) - 1::256, 0::256, 0xFF>>
+      assert {:ok, <<>>, 200} = ModExp.execute(input, 200)
+    end
+
     test "out of gas" do
       assert {:error, :out_of_gas} = ModExp.execute(<<>>, 199)
     end

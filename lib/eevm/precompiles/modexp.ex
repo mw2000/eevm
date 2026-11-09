@@ -19,6 +19,11 @@ defmodule EEVM.Precompiles.ModExp do
       0-indexed highest set bit of the exponent.
     - if `exp_length > 32`: `8 * (exp_length - 32) + highest_bit_index(exp[0..31])`
       where the highest bit index of an all-zero 32-byte prefix is treated as 0.
+    - the result is floored at `1`.
+
+  Gas is charged from the 96-byte header and at most the first 32 exponent
+  bytes before any operand is read, so oversized declared lengths fail with
+  out-of-gas instead of allocating.
 
   ### Input format
 
@@ -46,74 +51,67 @@ defmodule EEVM.Precompiles.ModExp do
           {:ok, binary(), non_neg_integer()} | {:error, :out_of_gas}
   @impl true
   def execute(input, gas_limit) do
-    {base_length, exp_length, mod_length, base_bytes, exp_bytes, mod_bytes} = parse_input(input)
-    cost = gas_cost(base_length, exp_length, mod_length, exp_bytes)
+    <<base_length::unsigned-size(256), exp_length::unsigned-size(256),
+      mod_length::unsigned-size(256)>> = slice_with_right_padding(input, 0, 96)
+
+    # Gas depends only on the header and the exponent's first 32 bytes, so
+    # charge it before touching operands whose declared lengths may be huge.
+    exp_head = exponent_head(input, base_length, exp_length)
+    cost = gas_cost(base_length, exp_length, mod_length, exp_head)
 
     if cost > gas_limit do
       {:error, :out_of_gas}
     else
-      {:ok, modexp(base_bytes, exp_bytes, mod_bytes, mod_length), cost}
+      {:ok, modexp(input, base_length, exp_length, mod_length), cost}
     end
   end
 
-  defp parse_input(input) do
-    <<base_length::unsigned-size(256), exp_length::unsigned-size(256),
-      mod_length::unsigned-size(256)>> =
-      slice_with_right_padding(input, 0, 96)
-
-    base_offset = 96
-    exp_offset = base_offset + base_length
-    mod_offset = exp_offset + exp_length
-
-    base_bytes = slice_with_right_padding(input, base_offset, base_length)
-    exp_bytes = slice_with_right_padding(input, exp_offset, exp_length)
-    mod_bytes = slice_with_right_padding(input, mod_offset, mod_length)
-
-    {base_length, exp_length, mod_length, base_bytes, exp_bytes, mod_bytes}
+  defp exponent_head(input, base_length, exp_length) do
+    input
+    |> slice_with_right_padding(96 + base_length, min(exp_length, 32))
+    |> :binary.decode_unsigned()
   end
 
-  defp gas_cost(base_length, exp_length, mod_length, exp_bytes) do
-    multiplication_complexity =
-      max(base_length, mod_length)
-      |> Kernel.+(7)
-      |> div(8)
-      |> square()
-
-    iteration_count = iteration_count(exp_length, exp_bytes)
+  defp gas_cost(base_length, exp_length, mod_length, exp_head) do
+    multiplication_complexity = square(div(max(base_length, mod_length) + 7, 8))
+    iteration_count = max(iteration_count(exp_length, exp_head), 1)
     max(@minimum_gas, div(multiplication_complexity * iteration_count, 3))
   end
 
-  defp iteration_count(exp_length, exp_bytes) when exp_length <= 32 do
-    exponent = :binary.decode_unsigned(exp_bytes)
+  defp iteration_count(exp_length, exp_head) when exp_length <= 32,
+    do: highest_bit_index(exp_head)
 
-    if exponent == 0 do
-      0
-    else
-      highest_bit_index(exponent)
-    end
-  end
-
-  defp iteration_count(exp_length, exp_bytes) do
-    first_32_bytes = binary_part(exp_bytes, 0, 32)
-    8 * (exp_length - 32) + highest_bit_index(:binary.decode_unsigned(first_32_bytes))
-  end
+  defp iteration_count(exp_length, exp_head),
+    do: 8 * (exp_length - 32) + highest_bit_index(exp_head)
 
   defp highest_bit_index(0), do: 0
-  defp highest_bit_index(value), do: bit_size(:binary.encode_unsigned(value)) - 1
 
-  defp modexp(_base_bytes, _exp_bytes, _mod_bytes, 0), do: <<>>
+  defp highest_bit_index(value) do
+    <<top_byte, _rest::binary>> = bytes = :binary.encode_unsigned(value)
+    (byte_size(bytes) - 1) * 8 + length(Integer.digits(top_byte, 2)) - 1
+  end
 
-  defp modexp(base_bytes, exp_bytes, mod_bytes, mod_length) do
-    modulus = :binary.decode_unsigned(mod_bytes)
+  # When gas was affordable and mod_length > 0, the operand lengths are
+  # bounded by the gas paid, so materializing them is safe.
+  defp modexp(_input, _base_length, _exp_length, 0), do: <<>>
+
+  defp modexp(input, base_length, exp_length, mod_length) do
+    modulus = read_operand(input, 96 + base_length + exp_length, mod_length)
 
     if modulus == 0 do
       :binary.copy(<<0>>, mod_length)
     else
-      base = :binary.decode_unsigned(base_bytes)
-      exponent = :binary.decode_unsigned(exp_bytes)
+      base = read_operand(input, 96, base_length)
+      exponent = read_operand(input, 96 + base_length, exp_length)
       result = :crypto.mod_pow(base, exponent, modulus)
       left_pad(result, mod_length)
     end
+  end
+
+  defp read_operand(input, offset, length) do
+    input
+    |> slice_with_right_padding(offset, length)
+    |> :binary.decode_unsigned()
   end
 
   defp left_pad(binary, size) do
