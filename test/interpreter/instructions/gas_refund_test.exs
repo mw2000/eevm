@@ -4,6 +4,7 @@ defmodule EEVM.Interpreter.Instructions.GasRefundTest do
   alias EEVM.Context.Contract
   alias EEVM.Context.Transaction
   alias EEVM.Gas.Static
+  alias EEVM.HardforkConfig
   alias EEVM.Interpreter
   alias EEVM.Interpreter.{MachineState, Memory, Stack}
   alias EEVM.Interpreter.MachineState.Frame
@@ -48,7 +49,7 @@ defmodule EEVM.Interpreter.Instructions.GasRefundTest do
 
   test "Prague floors final charged gas after refunds to calldata floor cost" do
     tx = Transaction.new(gas_limit: 22_000, to: 0xCAFE, data: <<0x00>>)
-    initial_execution_gas = tx.gas_limit - IntrinsicGas.calculate(tx)
+    initial_execution_gas = tx.gas_limit - IntrinsicGas.calculate(tx, HardforkConfig.new(:cancun))
 
     prague_result =
       EEVM.execute(<<0x60, 0x01, 0x50, 0x00>>,
@@ -83,7 +84,7 @@ defmodule EEVM.Interpreter.Instructions.GasRefundTest do
 
     result =
       EEVM.execute(<<0x60, 0x00, 0x60, 0x00, 0xFD>>,
-        gas: tx.gas_limit - IntrinsicGas.calculate(tx),
+        gas: tx.gas_limit - IntrinsicGas.calculate(tx, HardforkConfig.new(:prague)),
         tx: tx,
         hardfork: :prague
       )

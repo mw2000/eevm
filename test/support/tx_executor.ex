@@ -59,7 +59,7 @@ defmodule EEVM.TestSupport.TxExecutor do
          %Config{} = config,
          authorization
        ) do
-    intrinsic_gas = IntrinsicGas.calculate(tx)
+    intrinsic_gas = IntrinsicGas.calculate(tx, config.hardfork)
     execution_gas = max(tx.gas_limit - intrinsic_gas, 0)
 
     {machine, _new_address} =

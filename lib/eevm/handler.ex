@@ -65,7 +65,7 @@ defmodule EEVM.Handler do
          :ok <- Validation.validate(tx_ctx, db, block, config.hardfork),
          {:ok, db_after_upfront} <- PreExecution.charge_upfront(db, tx_ctx, block),
          {:ok, db_nonce_bumped, execution_gas} <-
-           PreExecution.prepare_execution(db_after_upfront, tx_ctx) do
+           PreExecution.prepare_execution(db_after_upfront, tx_ctx, config.hardfork) do
       {db_authorized, authorization} =
         PreExecution.apply_authorizations(db_nonce_bumped, tx_ctx, chain_id)
 

@@ -6,7 +6,7 @@ defmodule EEVM.Handler.PreExecution do
     the EIP-4844 blob gas fee, which is burned and never refunded. The
     `value` portion is *not* debited here; it is moved by `Execution` when
     the call frame is set up so the same wei is not deducted twice.
-  - **Intrinsic gas** — verify `tx.gas_limit >= IntrinsicGas.calculate(tx)`
+  - **Intrinsic gas** — verify `tx.gas_limit >= IntrinsicGas.calculate(tx, hardfork)`
     and compute the gas available to the EVM as the difference.
   - **Bump nonce** — increment the sender's nonce.
   - **Apply authorizations** (EIP-7702) — write delegation designators for
@@ -23,7 +23,7 @@ defmodule EEVM.Handler.PreExecution do
   """
 
   alias EEVM.Context.{Block, Contract, Transaction}
-  alias EEVM.{Database, Delegation, Precompiles}
+  alias EEVM.{Database, Delegation, HardforkConfig, Precompiles}
   alias EEVM.Gas.Blob
   alias EEVM.Transaction.{Authorization, IntrinsicGas, Signer}
 
@@ -69,10 +69,10 @@ defmodule EEVM.Handler.PreExecution do
   Verify intrinsic gas, bump the sender nonce, and return the gas available
   to the EVM.
   """
-  @spec prepare_execution(Database.t(), Transaction.t()) ::
+  @spec prepare_execution(Database.t(), Transaction.t(), HardforkConfig.t()) ::
           {:ok, Database.t(), non_neg_integer()} | {:error, :intrinsic_gas_too_low}
-  def prepare_execution(%Database{} = db, %Transaction{} = tx) do
-    intrinsic = IntrinsicGas.calculate(tx)
+  def prepare_execution(%Database{} = db, %Transaction{} = tx, %HardforkConfig{} = hardfork) do
+    intrinsic = IntrinsicGas.calculate(tx, hardfork)
 
     if tx.gas_limit < intrinsic do
       {:error, :intrinsic_gas_too_low}
