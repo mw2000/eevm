@@ -42,17 +42,20 @@ defmodule EEVM.Precompiles.KZGPointEvalTest do
       assert {:error, :invalid_field_element} = KZGPointEval.execute(input, @gas_cost)
     end
 
-    test "input parsing respects field offsets" do
-      commitment = :binary.copy(<<0xAB>>, 48)
-      proof = :binary.copy(<<0xCD>>, 48)
-      z = <<123_456::unsigned-big-256>>
-      y = <<654_321::unsigned-big-256>>
-      versioned_hash = compute_versioned_hash(commitment)
-
+    test "a well-formed but incorrect proof fails" do
+      # The correct proof for this commitment, z, and y, with y off by one.
       input =
-        <<versioned_hash::binary, z::binary, y::binary, commitment::binary, proof::binary>>
+        build_input(
+          y: <<0x2BF4E1F980EB94661A21AFFC4D7E6E56F214FE3E7DC4D20B98C66FFD43CABEB1::256>>
+        )
 
-      assert {:ok, _output, @gas_cost} = KZGPointEval.execute(input, @gas_cost)
+      assert {:error, :proof_verification_failed} = KZGPointEval.execute(input, @gas_cost)
+    end
+
+    test "an all-zero commitment and proof fail (compression flag not set)" do
+      zeros = :binary.copy(<<0>>, 48)
+      input = build_input(commitment: zeros, proof: zeros)
+      assert {:error, :proof_verification_failed} = KZGPointEval.execute(input, @gas_cost)
     end
 
     test "output format is two 32-byte constants" do
@@ -62,6 +65,41 @@ defmodule EEVM.Precompiles.KZGPointEvalTest do
 
       assert field_elements_per_blob == @field_elements_per_blob
       assert bls_modulus == @bls_modulus
+    end
+  end
+
+  describe "official verify_kzg_proof vectors" do
+    # c-kzg-4844's tests/verify_kzg_proof/kzg-mainnet (see
+    # test/fixtures/precompiles/README.md). `output` is true for a valid proof
+    # and false or null otherwise. Vectors whose commitment or proof is not 48
+    # bytes (or z, y not 32) cannot be expressed as a 192-byte precompile input.
+    for vector <-
+          "test/fixtures/precompiles/kzg_verify_proof_vectors.json"
+          |> File.read!()
+          |> Jason.decode!(),
+        input =
+          Map.new(vector["input"], fn {key, "0x" <> hex} ->
+            {key, Base.decode16!(hex, case: :mixed)}
+          end),
+        byte_size(input["commitment"]) == 48 and byte_size(input["proof"]) == 48 and
+          byte_size(input["z"]) == 32 and byte_size(input["y"]) == 32 do
+      @input input
+      @valid vector["output"] == true
+      test vector["name"] do
+        input =
+          build_input(
+            commitment: @input["commitment"],
+            z: @input["z"],
+            y: @input["y"],
+            proof: @input["proof"]
+          )
+
+        if @valid do
+          assert {:ok, _output, @gas_cost} = KZGPointEval.execute(input, @gas_cost)
+        else
+          assert {:error, _reason} = KZGPointEval.execute(input, @gas_cost)
+        end
+      end
     end
   end
 
@@ -76,12 +114,35 @@ defmodule EEVM.Precompiles.KZGPointEvalTest do
     build_input([])
   end
 
+  # Defaults to c-kzg-4844's verify_kzg_proof_case_correct_proof_2_2, a valid proof.
   defp build_input(overrides) do
-    commitment = Keyword.get(overrides, :commitment, :binary.copy(<<0x11>>, 48))
+    commitment =
+      Keyword.get(
+        overrides,
+        :commitment,
+        Base.decode16!(
+          "A421E229565952CFFF4EF3517100A97DA1D4FE57956FA50A442F92AF03B1BF37ADACC8AD4ED209B31287EA5BB94D9D06"
+        )
+      )
+
     versioned_hash = Keyword.get(overrides, :versioned_hash, compute_versioned_hash(commitment))
-    z = Keyword.get(overrides, :z, <<123::unsigned-big-256>>)
-    y = Keyword.get(overrides, :y, <<456::unsigned-big-256>>)
-    proof = Keyword.get(overrides, :proof, :binary.copy(<<0x22>>, 48))
+    z = Keyword.get(overrides, :z, <<2::unsigned-big-256>>)
+
+    y =
+      Keyword.get(
+        overrides,
+        :y,
+        <<0x2BF4E1F980EB94661A21AFFC4D7E6E56F214FE3E7DC4D20B98C66FFD43CABEB0::256>>
+      )
+
+    proof =
+      Keyword.get(
+        overrides,
+        :proof,
+        Base.decode16!(
+          "89012990B0CA02775BD9DF8145F6C936444B83F54DF1F5F274FB4312800A6505DD000EE8EC7B0EA6D72092A3DAF0BFFB"
+        )
+      )
 
     <<versioned_hash::binary, z::binary, y::binary, commitment::binary, proof::binary>>
   end

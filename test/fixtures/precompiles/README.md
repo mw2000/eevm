@@ -17,3 +17,7 @@ Official vectors, checked in verbatim:
   [`bn256Add.json`](https://github.com/ethereum/go-ethereum/blob/master/core/vm/testdata/precompiles/bn256Add.json)
   and
   [`bn256ScalarMul.json`](https://github.com/ethereum/go-ethereum/blob/master/core/vm/testdata/precompiles/bn256ScalarMul.json).
+- `kzg_verify_proof_vectors.json` — KZG `verify_kzg_proof` (EIP-4844 point
+  evaluation) vectors from c-kzg-4844's
+  [`tests/verify_kzg_proof/kzg-mainnet`](https://github.com/ethereum/c-kzg-4844/tree/main/tests/verify_kzg_proof/kzg-mainnet),
+  converted from one `data.yaml` per case to JSON (`name`, `input`, `output`).
