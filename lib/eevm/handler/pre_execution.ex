@@ -2,10 +2,11 @@ defmodule EEVM.Handler.PreExecution do
   @moduledoc """
   Steps 4-7 of the transaction pipeline (Yellow Paper §6):
 
-  - **Charge upfront** — debit `gas_limit * max_price` from the sender, plus
-    the EIP-4844 blob gas fee, which is burned and never refunded. The
-    `value` portion is *not* debited here; it is moved by `Execution` when
-    the call frame is set up so the same wei is not deducted twice.
+  - **Charge upfront** — check that the sender can afford the maximum fee,
+    then debit `gas_limit * effective_price` plus the EIP-4844 blob gas fee,
+    which is burned and never refunded. The `value` portion is *not* debited
+    here; it is moved by `Execution` when the call frame is set up so the
+    same wei is not deducted twice.
   - **Intrinsic gas** — verify `tx.gas_limit >= IntrinsicGas.calculate(tx, hardfork)`
     and compute the gas available to the EVM as the difference.
   - **Bump nonce** — increment the sender's nonce.
@@ -16,10 +17,8 @@ defmodule EEVM.Handler.PreExecution do
     `accessed_storage_keys` with EIP-2929 / EIP-3651 entries plus the
     transaction's access list.
 
-  Also exposes `gas_upfront/1` and `effective_gas_price/2` because both
-  `PostExecution` settlement and the upfront balance check share the same
-  fee-market formula, and `blob_gas_fee/2` for runners that settle fees
-  themselves.
+  Also exposes `effective_gas_price/2`, which `PostExecution` settlement
+  shares, and `blob_gas_fee/2` for runners that settle fees themselves.
   """
 
   alias EEVM.{BlockEnv, Database, Delegation, HardforkConfig, Precompiles, TxEnv}
@@ -44,25 +43,31 @@ defmodule EEVM.Handler.PreExecution do
         }
 
   @doc """
-  Debit the maximum gas fee from the sender after checking that the balance
-  also covers `tx.value` and that the effective gas price meets the basefee.
+  Debit `gas_limit * effective_gas_price` and the blob gas fee from the
+  sender, after checking that the effective gas price meets the basefee and
+  that the balance covers the maximum fee plus `tx.value`.
+
+  The maximum fee prices gas at `max_fee_per_gas` (EIP-1559) and blob gas at
+  `max_fee_per_blob_gas` (EIP-4844), but only the effective fee is debited,
+  so BALANCE of the sender during execution already excludes the unspent
+  fee cap (execution-specs `process_transaction`).
   """
   @spec charge_upfront(Database.t(), TxEnv.t(), BlockEnv.t()) ::
           {:ok, Database.t()} | {:error, atom()}
   def charge_upfront(%Database{} = db, %TxEnv{} = tx, %BlockEnv{} = block) do
     sender_balance = Database.get_balance(db, tx.origin)
-    gas_charge = gas_upfront(tx) + blob_gas_fee(tx, block)
+    effective_price = effective_gas_price(tx, block)
 
     cond do
-      sender_balance < gas_charge + tx.value ->
+      sender_balance < max_fee(tx) + tx.value ->
         {:error, :insufficient_balance}
 
-      effective_gas_price(tx, block) < block.base_fee ->
+      effective_price < block.base_fee ->
         {:error, :effective_gas_price_below_basefee}
 
       true ->
-        debited = Database.set_balance(db, tx.origin, sender_balance - gas_charge)
-        {:ok, debited}
+        gas_charge = tx.gas_limit * effective_price + blob_gas_fee(tx, block)
+        {:ok, Database.set_balance(db, tx.origin, sender_balance - gas_charge)}
     end
   end
 
@@ -133,13 +138,12 @@ defmodule EEVM.Handler.PreExecution do
     end
   end
 
-  @doc "Maximum gas fee debited upfront: `gas_limit` times the fee cap (or gas price)."
-  @spec gas_upfront(TxEnv.t()) :: non_neg_integer()
-  def gas_upfront(%TxEnv{type: type} = tx) when type in [:eip1559, :eip4844, :eip7702] do
-    tx.gas_limit * tx.max_fee_per_gas
+  defp max_fee(%TxEnv{type: type} = tx) when type in [:eip1559, :eip4844, :eip7702] do
+    tx.gas_limit * tx.max_fee_per_gas +
+      length(tx.blob_hashes) * Blob.gas_per_blob() * tx.max_fee_per_blob_gas
   end
 
-  def gas_upfront(%TxEnv{} = tx), do: tx.gas_limit * tx.gas_price
+  defp max_fee(%TxEnv{} = tx), do: tx.gas_limit * tx.gas_price
 
   @doc """
   EIP-4844 blob gas fee: `GAS_PER_BLOB * blob count * blob_base_fee`. Zero for

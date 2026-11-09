@@ -170,6 +170,37 @@ defmodule EEVM.HandlerTest do
       # sender pays gas_used * effective_price = 21_000 * 7 = 147_000
       assert Database.get_balance(post_db, sender_address()) == starting_balance - 147_000
     end
+
+    test "debits gas_limit * effective price, not the fee cap, before execution" do
+      starting_balance = 10_000_000
+
+      tx =
+        sign_eip1559(%FeeMarket{
+          chain_id: @chain_id,
+          nonce: 0,
+          max_priority_fee_per_gas: 2,
+          max_fee_per_gas: 10,
+          gas_limit: 100_000,
+          to: <<@recipient::unsigned-big-160>>,
+          value: 0,
+          data: <<>>,
+          access_list: [],
+          y_parity: 0,
+          r: 0,
+          s: 0
+        })
+
+      # Recipient stores the sender's balance in slot 0: ORIGIN BALANCE PUSH1 0 SSTORE STOP.
+      code = <<0x32, 0x31, 0x60, 0x00, 0x55, 0x00>>
+      db = Database.put_code(db_with_sender(balance: starting_balance), @recipient, code)
+
+      assert {:ok, %TransactionResult{status: :success, post_state_db: post_db}} =
+               run(tx, db, simple_block(base_fee: 5))
+
+      # execution-specs process_transaction debits tx.gas * effective_gas_price:
+      # 100_000 * min(10, 5 + 2) = 700_000, not 100_000 * 10 (bcEIP1559/burnVerify).
+      assert Database.storage_load(post_db, @recipient, 0) == starting_balance - 700_000
+    end
   end
 
   describe "execute/4 — GASPRICE" do

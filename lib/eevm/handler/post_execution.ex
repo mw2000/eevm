@@ -2,9 +2,9 @@ defmodule EEVM.Handler.PostExecution do
   @moduledoc """
   Steps 9-11 of the transaction pipeline:
 
-  - **Settle gas refund** — the sender was debited `gas_limit * max_price`
-    upfront. They actually owe `gas_used * effective_price`. Refund the
-    difference. On a successful tx the refund lands in the EVM-side db (which
+  - **Settle gas refund** — the sender was debited `gas_limit *
+    effective_price` upfront. They actually owe `gas_used * effective_price`.
+    Refund the difference. On a successful tx the refund lands in the EVM-side db (which
     already reflects every side effect); on revert / out-of-gas / invalid it
     lands in the post-upfront, post-nonce-bump db, which also holds any
     EIP-7702 delegations (since EVM mutations are dropped).
@@ -102,12 +102,12 @@ defmodule EEVM.Handler.PostExecution do
 
   defp settle_state(%MachineState{status: status}, db_nonce_bumped, tx, gas_used, effective_price)
        when status in [:reverted, :invalid, :out_of_gas] or is_tuple(status) do
-    refund_amount = PreExecution.gas_upfront(tx) - gas_used * effective_price
+    refund_amount = (tx.gas_limit - gas_used) * effective_price
     credit_sender(db_nonce_bumped, tx.origin, refund_amount)
   end
 
   defp settle_state(%MachineState{} = state, _db_nonce_bumped, tx, gas_used, effective_price) do
-    refund_amount = PreExecution.gas_upfront(tx) - gas_used * effective_price
+    refund_amount = (tx.gas_limit - gas_used) * effective_price
     credit_sender(state.db, tx.origin, refund_amount)
   end
 

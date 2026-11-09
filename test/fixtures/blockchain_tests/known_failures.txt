@@ -3,4 +3,3 @@
 # Regenerate after fixing failures with:
 #   mix eevm.blockchain_tests 'test/fixtures/state_tests/ethereum-tests/BlockchainTests/{ValidBlocks,InvalidBlocks,TransitionTests}/**/*.json' --timeout 180000 --write-known-failures test/fixtures/blockchain_tests/known_failures.txt
 BlockchainTests/TransitionTests/bcHomesteadToDao/
-BlockchainTests/ValidBlocks/bcEIP1559/burnVerify.json#burnVerify_Cancun
