@@ -16,3 +16,9 @@ Run a focused official subset with:
 EEVM_STATE_TEST_GLOB='test/fixtures/state_tests/ethereum-tests/GeneralStateTests/stExample/*.json' \
   mix test test/state_test_test.exs
 ```
+
+Newer forks (Osaka onward) are only filled by
+[execution-spec-tests](https://github.com/ethereum/execution-spec-tests/releases).
+Extract `fixtures/state_tests/` from a release's `fixtures_develop.tar.gz` and
+point `EEVM_STATE_TEST_GLOB` at it, e.g.
+`.../state_tests/osaka/eip7883_modexp_gas_increase/*.json`.

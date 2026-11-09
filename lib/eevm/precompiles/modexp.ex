@@ -4,7 +4,7 @@ defmodule EEVM.Precompiles.ModExp do
 
   Computes `base^exp mod modulus` over arbitrarily large integers.
 
-  ### Gas schedule (EIP-2565)
+  ### Gas schedule (EIP-2565, Berlin through Prague)
 
   `gas = max(200, floor(multiplication_complexity * iteration_count / 3))`
 
@@ -20,6 +20,20 @@ defmodule EEVM.Precompiles.ModExp do
     - if `exp_length > 32`: `8 * (exp_length - 32) + highest_bit_index(exp[0..31])`
       where the highest bit index of an all-zero 32-byte prefix is treated as 0.
     - the result is floored at `1`.
+
+  ### Gas schedule (EIP-7883, Osaka onward)
+
+  `gas = max(500, multiplication_complexity * iteration_count)`
+
+  where:
+
+  - `multiplication_complexity` is `16` when `max(base_length, mod_length) <= 32`,
+    otherwise `2 * ceil(max(base_length, mod_length) / 8)^2`.
+  - `iteration_count` is computed as above, except the per-byte multiplier for
+    exponents longer than 32 bytes is `16` instead of `8`.
+
+  `execute/2` applies EIP-2565 pricing; `EEVM.Precompiles` routes `0x05` to
+  `EEVM.Precompiles.ModExpEIP7883` once `:eip_7883` is active.
 
   Gas is charged from the 96-byte header and at most the first 32 exponent
   bytes before any operand is read, so oversized declared lengths fail with
@@ -42,22 +56,29 @@ defmodule EEVM.Precompiles.ModExp do
 
   @behaviour EEVM.Precompile
 
-  @minimum_gas 200
+  @type pricing :: :eip_2565 | :eip_7883
 
   @doc """
-  Executes the ModExp precompile.
+  Executes the ModExp precompile with EIP-2565 pricing.
   """
   @spec execute(binary(), non_neg_integer()) ::
           {:ok, binary(), non_neg_integer()} | {:error, :out_of_gas}
   @impl true
-  def execute(input, gas_limit) do
+  def execute(input, gas_limit), do: execute(input, gas_limit, :eip_2565)
+
+  @doc """
+  Executes the ModExp precompile with the given gas `pricing` rules.
+  """
+  @spec execute(binary(), non_neg_integer(), pricing()) ::
+          {:ok, binary(), non_neg_integer()} | {:error, :out_of_gas}
+  def execute(input, gas_limit, pricing) do
     <<base_length::unsigned-size(256), exp_length::unsigned-size(256),
       mod_length::unsigned-size(256)>> = slice_with_right_padding(input, 0, 96)
 
     # Gas depends only on the header and the exponent's first 32 bytes, so
     # charge it before touching operands whose declared lengths may be huge.
     exp_head = exponent_head(input, base_length, exp_length)
-    cost = gas_cost(base_length, exp_length, mod_length, exp_head)
+    cost = gas_cost(pricing, base_length, exp_length, mod_length, exp_head)
 
     if cost > gas_limit do
       {:error, :out_of_gas}
@@ -72,17 +93,27 @@ defmodule EEVM.Precompiles.ModExp do
     |> :binary.decode_unsigned()
   end
 
-  defp gas_cost(base_length, exp_length, mod_length, exp_head) do
-    multiplication_complexity = square(div(max(base_length, mod_length) + 7, 8))
-    iteration_count = max(iteration_count(exp_length, exp_head), 1)
-    max(@minimum_gas, div(multiplication_complexity * iteration_count, 3))
+  defp gas_cost(:eip_2565, base_length, exp_length, mod_length, exp_head) do
+    multiplication_complexity = square(words(max(base_length, mod_length)))
+    iteration_count = iteration_count(exp_length, exp_head, 8)
+    max(200, div(multiplication_complexity * iteration_count, 3))
   end
 
-  defp iteration_count(exp_length, exp_head) when exp_length <= 32,
-    do: highest_bit_index(exp_head)
+  defp gas_cost(:eip_7883, base_length, exp_length, mod_length, exp_head) do
+    max_length = max(base_length, mod_length)
+    multiplication_complexity = if max_length > 32, do: 2 * square(words(max_length)), else: 16
+    iteration_count = iteration_count(exp_length, exp_head, 16)
+    max(500, multiplication_complexity * iteration_count)
+  end
 
-  defp iteration_count(exp_length, exp_head),
-    do: 8 * (exp_length - 32) + highest_bit_index(exp_head)
+  defp words(length), do: div(length + 7, 8)
+
+  # `multiplier` is the per-byte weight of exponent bytes past the first 32.
+  defp iteration_count(exp_length, exp_head, _multiplier) when exp_length <= 32,
+    do: max(highest_bit_index(exp_head), 1)
+
+  defp iteration_count(exp_length, exp_head, multiplier),
+    do: max(multiplier * (exp_length - 32) + highest_bit_index(exp_head), 1)
 
   defp highest_bit_index(0), do: 0
 

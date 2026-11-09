@@ -135,6 +135,11 @@ defmodule EEVM.HardforkConfigTest do
       refute HardforkConfig.enabled?(HardforkConfig.new(:shanghai), :eip_2537)
     end
 
+    test "EIP-7883 (ModExp repricing) is enabled from Osaka onward" do
+      assert HardforkConfig.enabled?(HardforkConfig.new(:osaka), :eip_7883)
+      refute HardforkConfig.enabled?(HardforkConfig.new(:prague), :eip_7883)
+    end
+
     test "default config is Cancun" do
       assert HardforkConfig.default().spec_id == :cancun
     end

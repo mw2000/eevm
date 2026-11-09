@@ -15,7 +15,7 @@ defmodule EEVM.Precompiles do
   | 0x02 | SHA256 — SHA-256 hash | Yellow Paper |
   | 0x03 | RIPEMD160 — RIPEMD-160 hash | Yellow Paper |
   | 0x04 | IDENTITY — data copy (no-op) | Yellow Paper |
-  | 0x05 | MODEXP — big integer modular exponentiation | EIP-198 |
+  | 0x05 | MODEXP — big integer modular exponentiation | EIP-198, EIP-2565, EIP-7883 (Osaka) |
   | 0x06 | BN256 ADD — elliptic curve point addition on alt_bn128 | EIP-196 |
   | 0x07 | BN256 MUL — elliptic curve scalar multiplication on alt_bn128 | EIP-196 |
   | 0x08 | BN256 PAIRING — bilinear pairing check on alt_bn128 | EIP-197 |
@@ -47,6 +47,7 @@ defmodule EEVM.Precompiles do
   alias EEVM.Precompiles.Identity
   alias EEVM.Precompiles.KZGPointEval
   alias EEVM.Precompiles.ModExp
+  alias EEVM.Precompiles.ModExpEIP7883
   alias EEVM.Precompiles.RIPEMD160
   alias EEVM.Precompiles.SHA256
 
@@ -72,6 +73,12 @@ defmodule EEVM.Precompiles do
     0x10 => BLS12MapFpToG1,
     0x11 => BLS12MapFp2ToG2
   }
+
+  # Hardfork-gated additions/overrides, merged in order over the default registry.
+  @hardfork_registries [
+    eip_2537: @eip_2537_registry,
+    eip_7883: %{0x05 => ModExpEIP7883}
+  ]
 
   @spec precompile?(non_neg_integer()) :: boolean()
   def precompile?(address), do: precompile?(address, Config.new())
@@ -107,13 +114,9 @@ defmodule EEVM.Precompiles do
 
   @spec registry(Config.t()) :: %{optional(non_neg_integer()) => module()}
   def registry(%Config{hardfork: hardfork, precompiles: custom_precompiles}) do
-    hardfork_registry =
-      if HardforkConfig.enabled?(hardfork, :eip_2537) do
-        Map.merge(@default_registry, @eip_2537_registry)
-      else
-        @default_registry
-      end
-
-    Map.merge(hardfork_registry, custom_precompiles)
+    @hardfork_registries
+    |> Enum.filter(fn {eip, _registry} -> HardforkConfig.enabled?(hardfork, eip) end)
+    |> Enum.reduce(@default_registry, fn {_eip, registry}, acc -> Map.merge(acc, registry) end)
+    |> Map.merge(custom_precompiles)
   end
 end

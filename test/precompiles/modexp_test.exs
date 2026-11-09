@@ -4,6 +4,7 @@ defmodule EEVM.Precompiles.ModExpTest do
   import Bitwise
 
   alias EEVM.Precompiles.ModExp
+  alias EEVM.Precompiles.ModExpEIP7883
 
   describe "execute/2" do
     test "basic computation: 2^10 mod 1000 = 24" do
@@ -117,11 +118,59 @@ defmodule EEVM.Precompiles.ModExpTest do
     end
   end
 
+  describe "official EIP-2565 / EIP-7883 vectors" do
+    # Each vector carries the expected output and both gas schedules (GasOld = EIP-2565,
+    # GasNew = EIP-7883); see test/fixtures/precompiles/README.md for the source.
+    for vector <-
+          "test/fixtures/precompiles/modexp_eip7883_vectors.json"
+          |> File.read!()
+          |> Jason.decode!() do
+      @vector vector
+      test "#{vector["Name"]}" do
+        input = Base.decode16!(@vector["Input"], case: :mixed)
+        expected = Base.decode16!(@vector["Expected"], case: :mixed)
+        gas_old = @vector["GasOld"]
+        gas_new = @vector["GasNew"]
+
+        assert {:ok, ^expected, ^gas_old} = ModExp.execute(input, 100_000_000)
+        assert {:ok, ^expected, ^gas_new} = ModExpEIP7883.execute(input, 100_000_000)
+        assert {:error, :out_of_gas} = ModExpEIP7883.execute(input, gas_new - 1)
+      end
+    end
+  end
+
+  describe "EIP-7883 pricing" do
+    test "minimum cost rises from 200 to 500" do
+      assert {:ok, <<>>, 500} = ModExpEIP7883.execute(<<>>, 500)
+      assert {:error, :out_of_gas} = ModExpEIP7883.execute(<<>>, 499)
+    end
+
+    test "exponent bytes past 32 count 16 iterations each instead of 8" do
+      # 64-byte operands → 2 × 8² = 128; exp = 0x80 ‖ 32 zero bytes → 16 × 1 + 255 = 271
+      base_bytes = <<0x01, 0::size(63 * 8)>>
+      exp_bytes = <<0x80, 0::size(32 * 8)>>
+      mod_bytes = <<0x01, 0::size(63 * 8)>>
+
+      input = encode_modexp_bytes(base_bytes, exp_bytes, mod_bytes)
+      assert {:ok, _out, 34_688} = ModExpEIP7883.execute(input, 1_000_000)
+    end
+  end
+
   describe "EEVM.Precompiles dispatcher" do
     test "routes address 0x05 to ModExp" do
       input = encode_modexp(2, 10, 1000)
       assert {:ok, out, _gas} = EEVM.Precompiles.execute(0x05, input, 100_000)
       assert :binary.decode_unsigned(out) == 24
+    end
+
+    test "applies EIP-2565 pricing through Prague and EIP-7883 pricing from Osaka" do
+      input = encode_modexp(2, 10, 1000)
+
+      assert {:ok, _out, 200} =
+               EEVM.Precompiles.execute(0x05, input, 100_000, EEVM.Config.new(:prague))
+
+      assert {:ok, _out, 500} =
+               EEVM.Precompiles.execute(0x05, input, 100_000, EEVM.Config.new(:osaka))
     end
   end
 
