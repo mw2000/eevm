@@ -141,8 +141,17 @@ defmodule EEVM.Interpreter.Instructions.System.Termination do
               },
               else: substate
 
+          # Before London each account refunds once per transaction (geth
+          # `HasSelfDestructed`).
+          refund =
+            Dynamic.selfdestruct_refund(
+              MapSet.member?(substate.selfdestructed_addresses, contract_address),
+              state.env.config.hardfork
+            )
+
           {:ok,
            %{state_after_touch | db: db_after, substate: substate_after}
+           |> MachineState.add_refund(refund)
            |> clear_output()
            |> MachineState.halt(:stopped)}
 

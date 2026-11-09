@@ -5,6 +5,8 @@ defmodule EEVM.Interpreter.Instructions.SelfdestructTest do
   alias EEVM.Database
   alias EEVM.Database.InMemory
   alias EEVM.Gas.Static
+  alias EEVM.Interpreter
+  alias EEVM.Interpreter.MachineState
   alias EEVM.WorldState
 
   describe "SELFDESTRUCT (0xFF) - EIP-6780 post-Cancun" do
@@ -125,8 +127,9 @@ defmodule EEVM.Interpreter.Instructions.SelfdestructTest do
 
       assert run.([]).frame.gas == 100_000 - 3 - 5000 - 2_600
       assert run.(accessed_addresses: MapSet.new([0xAA, 0xBB])).frame.gas == 100_000 - 3 - 5000
-      # Before Berlin there is no access-list surcharge.
-      assert run.(hardfork: :istanbul).frame.gas == 100_000 - 3 - 5000
+      # Before Berlin there is no access-list surcharge. Before London the
+      # 24,000 SELFDESTRUCT refund applies, capped at half the gas used.
+      assert run.(hardfork: :istanbul).frame.gas == 100_000 - 5003 + div(5003, 2)
     end
 
     test "contract code/nonce/storage preserved (post-Cancun, not created this tx)" do
@@ -259,23 +262,25 @@ defmodule EEVM.Interpreter.Instructions.SelfdestructTest do
     end
   end
 
+  # Runs `PUSH1 0xBB; SELFDESTRUCT` as 0xAA (balance 100) and returns the
+  # final frame before the transaction settles its refund.
+  defp selfdestruct_frame(fork, accounts) do
+    MachineState.new(<<0x60, 0xBB, 0xFF>>,
+      world_state: WorldState.new(accounts),
+      contract: Contract.new(address: 0xAA),
+      gas: 100_000,
+      hardfork: fork
+    )
+    |> Interpreter.run_loop()
+    |> Map.fetch!(:frame)
+  end
+
   describe "SELFDESTRUCT new-account charge by hardfork" do
-    # 0xAA (balance 100) self-destructs to 0xBB, which exists but is empty
-    # (EIP-161: no code, zero nonce and balance). Gas used minus PUSH1 and the
-    # fork's SELFDESTRUCT static cost.
+    # 0xBB exists but is empty (EIP-161: no code, zero nonce and balance).
+    # Gas used minus PUSH1 and the fork's SELFDESTRUCT static cost.
     defp new_account_charge(fork) do
-      world_state = WorldState.new(%{0xAA => %{balance: 100}, 0xBB => %{balance: 0}})
-      contract = Contract.new(address: 0xAA)
-
-      result =
-        EEVM.execute(<<0x60, 0xBB, 0xFF>>,
-          world_state: world_state,
-          contract: contract,
-          gas: 100_000,
-          hardfork: fork
-        )
-
-      100_000 - result.frame.gas - 3 - Static.static_cost(0xFF, fork)
+      frame = selfdestruct_frame(fork, %{0xAA => %{balance: 100}, 0xBB => %{balance: 0}})
+      100_000 - frame.gas - 3 - Static.static_cost(0xFF, fork)
     end
 
     test "nothing before EIP-150; 25,000 only for a missing account until EIP-161" do
@@ -285,6 +290,33 @@ defmodule EEVM.Interpreter.Instructions.SelfdestructTest do
 
     test "from EIP-161 an existing but empty beneficiary receiving value costs 25,000" do
       assert new_account_charge(:spurious_dragon) == 25_000
+    end
+  end
+
+  describe "SELFDESTRUCT refund by hardfork" do
+    test "refunds 24,000 before London" do
+      assert selfdestruct_frame(:frontier, %{0xAA => %{balance: 100}}).refund == 24_000
+      assert selfdestruct_frame(:berlin, %{0xAA => %{balance: 100}}).refund == 24_000
+    end
+
+    test "refunds once per account per transaction" do
+      # 0xAA self-destructs in two calls; it is deleted only at the end, so
+      # its code runs both times, but only the first SELFDESTRUCT refunds.
+      accounts = %{0xAA => %{balance: 100, code: <<0x60, 0xBB, 0xFF>>}}
+
+      refund =
+        MachineState.new(call(0xAA) <> call(0xAA) <> <<0x00>>,
+          world_state: WorldState.new(accounts),
+          hardfork: :berlin
+        )
+        |> Interpreter.run_loop()
+        |> then(& &1.frame.refund)
+
+      assert refund == 24_000
+    end
+
+    test "refunds nothing from London (EIP-3529)" do
+      assert selfdestruct_frame(:london, %{0xAA => %{balance: 100}}).refund == 0
     end
   end
 end

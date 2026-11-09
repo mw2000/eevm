@@ -69,6 +69,8 @@ defmodule EEVM.Gas.Dynamic do
   @cold_sload_cost 2_100
   # EIP-3529: reduced refund for clearing a slot
   @eip_3529_sstore_clears_schedule 4_800
+  # SELFDESTRUCT: refund for destroying an account, removed by EIP-3529
+  @selfdestruct_refund 24_000
 
   @spec exp_dynamic_cost(non_neg_integer(), HardforkConfig.t()) :: non_neg_integer()
   def exp_dynamic_cost(0, _hardfork), do: 0
@@ -143,6 +145,18 @@ defmodule EEVM.Gas.Dynamic do
       end
 
     if creates_account?, do: @gas_new_account, else: 0
+  end
+
+  @doc """
+  Refund for a SELFDESTRUCT: 24,000 before London when the account has not
+  already been destroyed in this transaction (`destroyed?`), 0 from London
+  (EIP-3529).
+  """
+  @spec selfdestruct_refund(boolean(), HardforkConfig.t()) :: non_neg_integer()
+  def selfdestruct_refund(destroyed?, hardfork) do
+    if destroyed? or HardforkConfig.enabled?(hardfork, :eip_3529),
+      do: 0,
+      else: @selfdestruct_refund
   end
 
   @doc """
