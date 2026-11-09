@@ -1,0 +1,119 @@
+#!/usr/bin/env bash
+# Prepares an Amp orb (Debian 12) for eevm: Erlang/OTP and Elixir matching CI
+# (.github/workflows/ci.yml), Rust for the Rustler NIF in native/eevm_bls,
+# then fetches and compiles Mix dependencies. Idempotent; safe to rerun.
+set -euo pipefail
+
+OTP_VERSION="27.0"
+ELIXIR_VERSION="1.18.3"
+OTP_MAJOR="${OTP_VERSION%%.*}"
+
+# Hex's prebuilt OTP for Ubuntu 22.04 (glibc 2.35) runs on Debian 12 (glibc 2.36).
+OTP_URL="https://builds.hex.pm/builds/otp/amd64/ubuntu-22.04/OTP-${OTP_VERSION}.tar.gz"
+ELIXIR_URL="https://builds.hex.pm/builds/elixir/v${ELIXIR_VERSION}-otp-${OTP_MAJOR}.zip"
+
+OTP_DIR="/opt/erlang/${OTP_VERSION}"
+ELIXIR_DIR="/opt/elixir/${ELIXIR_VERSION}"
+BIN_DIR="/usr/local/bin"
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$repo_root"
+
+step() {
+  local name="$1"
+  shift
+  local start=$SECONDS
+  echo "==> ${name}"
+  "$@"
+  echo "<== ${name} ($((SECONDS - start))s)"
+}
+
+install_apt_packages() {
+  # build-essential: C compiler for blst; libncurses/libssl: OTP runtime libs.
+  local packages=(build-essential unzip curl ca-certificates libncurses6 libssl3)
+  local missing=()
+  for pkg in "${packages[@]}"; do
+    dpkg-query -W -f='${Status}' "$pkg" 2>/dev/null | grep -q "install ok installed" || missing+=("$pkg")
+  done
+  if ((${#missing[@]})); then
+    sudo apt-get update -qq
+    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "${missing[@]}"
+  else
+    echo "apt packages already installed"
+  fi
+}
+
+install_otp() {
+  if [[ ! -x "${OTP_DIR}/bin/erl" ]]; then
+    local tmp
+    tmp="$(mktemp -d)"
+    curl -fsSL "$OTP_URL" | tar -xz -C "$tmp" --strip-components=1
+    sudo mkdir -p "$(dirname "$OTP_DIR")"
+    sudo rm -rf "$OTP_DIR"
+    sudo mv "$tmp" "$OTP_DIR"
+    sudo "${OTP_DIR}/Install" -minimal "$OTP_DIR" >/dev/null
+  else
+    echo "OTP ${OTP_VERSION} already installed"
+  fi
+  for bin in erl erlc escript dialyzer typer ct_run epmd run_erl to_erl; do
+    sudo ln -sfn "${OTP_DIR}/bin/${bin}" "${BIN_DIR}/${bin}"
+  done
+}
+
+install_elixir() {
+  if [[ ! -x "${ELIXIR_DIR}/bin/elixir" ]]; then
+    local tmp
+    tmp="$(mktemp -d)"
+    curl -fsSL -o "${tmp}/elixir.zip" "$ELIXIR_URL"
+    sudo mkdir -p "$ELIXIR_DIR"
+    sudo unzip -q -o "${tmp}/elixir.zip" -d "$ELIXIR_DIR"
+    rm -rf "$tmp"
+  else
+    echo "Elixir ${ELIXIR_VERSION} already installed"
+  fi
+  for bin in elixir elixirc iex mix; do
+    sudo ln -sfn "${ELIXIR_DIR}/bin/${bin}" "${BIN_DIR}/${bin}"
+  done
+}
+
+install_rust() {
+  # Rustler compiles native/eevm_bls from source during `mix compile`.
+  if [[ ! -x "${HOME}/.cargo/bin/rustup" ]]; then
+    curl -fsSL https://sh.rustup.rs | sh -s -- -y --no-modify-path --profile minimal --default-toolchain stable
+  else
+    echo "rustup already installed"
+  fi
+  for bin in rustup cargo rustc; do
+    sudo ln -sfn "${HOME}/.cargo/bin/${bin}" "${BIN_DIR}/${bin}"
+  done
+}
+
+install_hex_rebar() {
+  mix local.hex --force --if-missing
+  mix local.rebar --force --if-missing
+}
+
+fetch_deps() {
+  mix deps.get
+}
+
+compile_project() {
+  MIX_ENV=dev mix compile
+  MIX_ENV=test mix compile
+}
+
+build_plt() {
+  # Dialyzer PLTs take minutes to build from scratch; build them once here.
+  MIX_ENV=dev mix dialyzer --plt
+}
+
+step "apt packages" install_apt_packages
+step "Erlang/OTP ${OTP_VERSION}" install_otp
+step "Elixir ${ELIXIR_VERSION}" install_elixir
+step "Rust" install_rust
+step "Hex and rebar" install_hex_rebar
+step "mix deps.get" fetch_deps
+step "mix compile (dev, test)" compile_project
+step "Dialyzer PLT" build_plt
+
+echo "eevm orb setup complete: $(elixir --short-version 2>/dev/null || true) on OTP $(erl -noshell -eval 'io:put_chars(erlang:system_info(otp_release)), halt().')"
