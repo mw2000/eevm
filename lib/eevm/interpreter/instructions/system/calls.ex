@@ -36,6 +36,7 @@ defmodule EEVM.Interpreter.Instructions.System.Calls do
 
   # Warm access is already charged as the static cost of every call opcode.
   @warm_access_cost 100
+  @max_call_depth 1024
 
   @doc "Execute CALL (0xF1), CALLCODE (0xF2), DELEGATECALL (0xF4), or STATICCALL (0xFA)."
   @spec execute(non_neg_integer(), MachineState.t()) ::
@@ -48,27 +49,22 @@ defmodule EEVM.Interpreter.Instructions.System.Calls do
          {:ok, args_size, s5} <- Stack.pop(s4),
          {:ok, ret_offset, s6} <- Stack.pop(s5),
          {:ok, ret_size, s7} <- Stack.pop(s6) do
-      cond do
-        # EIP-214: a value-bearing CALL inside a static frame is an exceptional halt.
-        state.frame.is_static and value > 0 ->
-          {:error, :static_state_modification, state}
-
-        state.frame.depth >= 1024 ->
-          call_failed(state, s7)
-
-        true ->
-          execute_call(
-            state,
-            s7,
-            gas_requested,
-            address,
-            value,
-            args_offset,
-            args_size,
-            ret_offset,
-            ret_size,
-            state.frame.is_static
-          )
+      # EIP-214: a value-bearing CALL inside a static frame is an exceptional halt.
+      if state.frame.is_static and value > 0 do
+        {:error, :static_state_modification, state}
+      else
+        execute_call(
+          state,
+          s7,
+          gas_requested,
+          address,
+          value,
+          args_offset,
+          args_size,
+          ret_offset,
+          ret_size,
+          state.frame.is_static
+        )
       end
     else
       {:error, reason} -> {:error, reason, state}
@@ -85,24 +81,20 @@ defmodule EEVM.Interpreter.Instructions.System.Calls do
          {:ok, ret_size, s7} <- Stack.pop(s6) do
       # EIP-214 restricts only CALL: CALLCODE "sends" value to the caller itself,
       # so it is allowed with value inside a static frame.
-      if state.frame.depth >= 1024 do
-        call_failed(state, s7)
-      else
-        execute_delegatecall(
-          state,
-          s7,
-          gas_requested,
-          address,
-          value,
-          args_offset,
-          args_size,
-          ret_offset,
-          ret_size,
-          state.frame.contract.address,
-          true,
-          true
-        )
-      end
+      execute_delegatecall(
+        state,
+        s7,
+        gas_requested,
+        address,
+        value,
+        args_offset,
+        args_size,
+        ret_offset,
+        ret_size,
+        state.frame.contract.address,
+        true,
+        true
+      )
     else
       {:error, reason} -> {:error, reason, state}
     end
@@ -115,24 +107,20 @@ defmodule EEVM.Interpreter.Instructions.System.Calls do
          {:ok, args_size, s4} <- Stack.pop(s3),
          {:ok, ret_offset, s5} <- Stack.pop(s4),
          {:ok, ret_size, s6} <- Stack.pop(s5) do
-      if state.frame.depth >= 1024 do
-        call_failed(state, s6)
-      else
-        execute_delegatecall(
-          state,
-          s6,
-          gas_requested,
-          address,
-          state.frame.contract.callvalue,
-          args_offset,
-          args_size,
-          ret_offset,
-          ret_size,
-          state.frame.contract.caller,
-          false,
-          false
-        )
-      end
+      execute_delegatecall(
+        state,
+        s6,
+        gas_requested,
+        address,
+        state.frame.contract.callvalue,
+        args_offset,
+        args_size,
+        ret_offset,
+        ret_size,
+        state.frame.contract.caller,
+        false,
+        false
+      )
     else
       {:error, reason} -> {:error, reason, state}
     end
@@ -145,22 +133,18 @@ defmodule EEVM.Interpreter.Instructions.System.Calls do
          {:ok, args_size, s4} <- Stack.pop(s3),
          {:ok, ret_offset, s5} <- Stack.pop(s4),
          {:ok, ret_size, s6} <- Stack.pop(s5) do
-      if state.frame.depth >= 1024 do
-        call_failed(state, s6)
-      else
-        execute_call(
-          state,
-          s6,
-          gas_requested,
-          address,
-          0,
-          args_offset,
-          args_size,
-          ret_offset,
-          ret_size,
-          true
-        )
-      end
+      execute_call(
+        state,
+        s6,
+        gas_requested,
+        address,
+        0,
+        args_offset,
+        args_size,
+        ret_offset,
+        ret_size,
+        true
+      )
     else
       {:error, reason} -> {:error, reason, state}
     end
@@ -181,6 +165,7 @@ defmodule EEVM.Interpreter.Instructions.System.Calls do
          child_static?
        ) do
     {access_cost, state, target_code, delegated?} = access_target(state, address)
+    depth = state.frame.depth
     account_exists = Database.account_exists?(state.db, address)
 
     call_cost =
@@ -216,6 +201,14 @@ defmodule EEVM.Interpreter.Instructions.System.Calls do
              MachineState.update_frame(state_after_cost, &%{&1 | memory: memory_after_read}),
              forwarded_gas
            ) do
+        # The depth limit is checked only after access, memory, and value costs
+        # are charged; the forwarded gas comes back unused.
+        {:ok, _state_after_forward} when depth >= @max_call_depth ->
+          call_failed(
+            MachineState.update_frame(state_after_cost, &%{&1 | memory: memory_after_read}),
+            stack
+          )
+
         {:ok, state_after_forward} ->
           if not delegated? and Precompiles.precompile?(address, state_after_forward.env.config) and
                target_code == <<>> do
@@ -353,6 +346,7 @@ defmodule EEVM.Interpreter.Instructions.System.Calls do
          add_stipend?
        ) do
     {access_cost, state, target_code, delegated?} = access_target(state, address)
+    depth = state.frame.depth
 
     call_cost =
       access_cost +
@@ -379,6 +373,14 @@ defmodule EEVM.Interpreter.Instructions.System.Calls do
              MachineState.update_frame(state_after_cost, &%{&1 | memory: memory_after_read}),
              forwarded_gas
            ) do
+        # The depth limit is checked only after access, memory, and value costs
+        # are charged; the forwarded gas comes back unused.
+        {:ok, _state_after_forward} when depth >= @max_call_depth ->
+          call_failed(
+            MachineState.update_frame(state_after_cost, &%{&1 | memory: memory_after_read}),
+            stack
+          )
+
         {:ok, state_after_forward} ->
           child_gas =
             forwarded_gas + if(add_stipend?, do: Dynamic.call_stipend(callvalue), else: 0)
@@ -550,7 +552,7 @@ defmodule EEVM.Interpreter.Instructions.System.Calls do
 
     {:ok,
      state
-     |> MachineState.update_frame(&%{&1 | stack: stack_after_call})
+     |> MachineState.update_frame(&%{&1 | stack: stack_after_call, return_data: <<>>})
      |> MachineState.advance_pc()}
   end
 end

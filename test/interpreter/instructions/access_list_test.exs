@@ -70,6 +70,28 @@ defmodule EEVM.Interpreter.Instructions.AccessListTest do
       end
     end
 
+    test "CALL-family opcodes at the depth limit still charge cold access and memory" do
+      world_state = WorldState.new(%{0x42 => %{code: <<0x00>>}})
+
+      for opcode <- [0xF1, 0xF2, 0xF4, 0xFA] do
+        value = if opcode in [0xF1, 0xF2], do: <<0x60, 0x00>>, else: <<>>
+        # retSize=32 retOffset argsSize argsOffset [value] address gas, then CALL*
+        call =
+          <<0x60, 0x20, 0x60, 0x00, 0x60, 0x00, 0x60, 0x00>> <>
+            value <> <<0x60, 0x42, 0x61, 0xFF, 0xFF, opcode, 0x00>>
+
+        pushes = if opcode in [0xF1, 0xF2], do: 7, else: 6
+
+        result = EEVM.execute(call, world_state: world_state, gas: 100_000, depth: 1024)
+
+        assert result.frame.stack.elements == [0]
+        assert MapSet.member?(result.substate.accessed_addresses, 0x42)
+        # Cold access (2,600) and one word of memory (3) are charged; the
+        # forwarded gas comes back because no frame is entered.
+        assert result.frame.gas == 100_000 - pushes * 3 - 2_600 - 3
+      end
+    end
+
     test "precompile addresses are pre-warmed" do
       world_state = WorldState.new(%{0x01 => %{balance: 0}})
       code = <<0x60, 0x01, 0x31, 0x50, 0x00>>
