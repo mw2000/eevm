@@ -1,12 +1,14 @@
 defmodule EEVM.SystemContracts.BlockHashesTest do
   use ExUnit.Case, async: true
 
-  alias EEVM.Context.{Block, Contract, Transaction}
+  alias EEVM.BlockEnv
+  alias EEVM.Context.Contract
   alias EEVM.Database
   alias EEVM.Database.InMemory
   alias EEVM.HardforkConfig
   alias EEVM.Interpreter.MachineState
   alias EEVM.SystemContracts.BlockHashes
+  alias EEVM.TxEnv
 
   @window 8191
 
@@ -43,7 +45,7 @@ defmodule EEVM.SystemContracts.BlockHashesTest do
   describe "commit/3" do
     test "stores the parent hash at slot (block.number - 1) mod 8191" do
       db = BlockHashes.install(InMemory.new())
-      block = %Block{number: 1_000_001}
+      block = %BlockEnv{number: 1_000_001}
       hash = 0xDEADBEEFCAFEBABE0000000000000000000000000000000000000000FACEFEED
 
       {:ok, db} = BlockHashes.commit(db, block, <<hash::256>>)
@@ -56,7 +58,7 @@ defmodule EEVM.SystemContracts.BlockHashesTest do
       db = BlockHashes.install(InMemory.new())
       hash = 0xFEED0001
 
-      {:ok, db} = BlockHashes.commit(db, %Block{number: 1_000_001}, <<hash::256>>)
+      {:ok, db} = BlockHashes.commit(db, %BlockEnv{number: 1_000_001}, <<hash::256>>)
 
       assert BlockHashes.lookup(db, 1_000_000) == {:ok, hash}
     end
@@ -70,8 +72,8 @@ defmodule EEVM.SystemContracts.BlockHashesTest do
       db = BlockHashes.install(InMemory.new())
 
       # parent block 1_000 then parent block 1_000 + 8191 — same ring slot.
-      {:ok, db} = BlockHashes.commit(db, %Block{number: 1_001}, <<0xAAAA::256>>)
-      {:ok, db} = BlockHashes.commit(db, %Block{number: 1_001 + @window}, <<0xBBBB::256>>)
+      {:ok, db} = BlockHashes.commit(db, %BlockEnv{number: 1_001}, <<0xAAAA::256>>)
+      {:ok, db} = BlockHashes.commit(db, %BlockEnv{number: 1_001 + @window}, <<0xBBBB::256>>)
 
       assert BlockHashes.lookup(db, 1_000) == {:ok, 0xBBBB}
       assert BlockHashes.lookup(db, 1_000 + @window) == {:ok, 0xBBBB}
@@ -85,7 +87,7 @@ defmodule EEVM.SystemContracts.BlockHashesTest do
       hash = 0x1111111111111111111111111111111111111111111111111111111111111111
 
       db = BlockHashes.install(InMemory.new())
-      {:ok, db} = BlockHashes.commit(db, %Block{number: block_number}, <<hash::256>>)
+      {:ok, db} = BlockHashes.commit(db, %BlockEnv{number: block_number}, <<hash::256>>)
 
       final_state = call_contract(db, block_number, target_block)
 
@@ -118,8 +120,8 @@ defmodule EEVM.SystemContracts.BlockHashesTest do
     BlockHashes.deployed_bytecode()
     |> MachineState.new(
       db: db,
-      block: %Block{number: block_number},
-      tx: %Transaction{origin: 0xCAFE},
+      block: %BlockEnv{number: block_number},
+      tx: %TxEnv{origin: 0xCAFE},
       contract: %Contract{
         address: BlockHashes.address(),
         caller: 0xCAFE,

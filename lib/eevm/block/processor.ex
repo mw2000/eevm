@@ -18,7 +18,7 @@ defmodule EEVM.Block.Processor do
 
   Callers inject the executor and any per-block hooks:
 
-  - `:tx_executor` — `(tx, %Context.Block{}, %Database{}) ->
+  - `:tx_executor` — `(tx, %EEVM.BlockEnv{}, %Database{}) ->
     {:ok, tx_result} | {:error, reason}`. Each call receives the *current*
     database after all prior transactions and system calls have been
     applied. The returned `tx_result` is a map with keys `:status`,
@@ -26,7 +26,7 @@ defmodule EEVM.Block.Processor do
     `:legacy`) that selects the EIP-2718 receipt encoding and an optional
     `:state_root` that the receipt carries in place of its status (before
     Byzantium, EIP-658).
-  - `:system_calls` — list of hooks, each `(%Database{}, %Context.Block{})
+  - `:system_calls` — list of hooks, each `(%Database{}, %EEVM.BlockEnv{})
     -> %Database{}`. Executed in order, strictly before any transaction.
     The default is `[]`.
   - `:tx_encoder` — `(tx) -> binary` used to compute the
@@ -40,9 +40,9 @@ defmodule EEVM.Block.Processor do
     Applied as flat balance credits after the transaction fold and before
     the state root is computed, so the returned `state_root` already
     reflects them. Defaults to `[]`.
-  - `:block_context` — the `EEVM.Context.Block` handed to system calls and
+  - `:block_context` — the `EEVM.BlockEnv` handed to system calls and
     the executor. Defaults to one derived from the header's fields.
-  - `:requests` — `(%Database{}, %Context.Block{}, [%Receipt{}]) ->
+  - `:requests` — `(%Database{}, %EEVM.BlockEnv{}, [%Receipt{}]) ->
     {:ok, requests, %Database{}} | {:error, reason}`, run after the
     withdrawals to collect the block's EIP-7685 requests (see
     `EEVM.Block.Requests.collect/5`). Its database is the one the
@@ -50,7 +50,7 @@ defmodule EEVM.Block.Processor do
   """
 
   alias EEVM.Block.{Bloom, Header, Receipt, Result, Withdrawal}
-  alias EEVM.Context.Block, as: BlockCtx
+  alias EEVM.BlockEnv
   alias EEVM.Database
   alias EEVM.MPT.Trie
   alias EEVM.StateRoot
@@ -67,14 +67,14 @@ defmodule EEVM.Block.Processor do
           optional(:state_root) => binary()
         }
 
-  @type tx_executor :: (term(), BlockCtx.t(), Database.t() ->
+  @type tx_executor :: (term(), BlockEnv.t(), Database.t() ->
                           {:ok, tx_result()} | {:error, term()})
 
-  @type system_call :: (Database.t(), BlockCtx.t() -> Database.t())
+  @type system_call :: (Database.t(), BlockEnv.t() -> Database.t())
 
   @type tx_encoder :: (term() -> binary())
 
-  @type requests_hook :: (Database.t(), BlockCtx.t(), [Receipt.t()] ->
+  @type requests_hook :: (Database.t(), BlockEnv.t(), [Receipt.t()] ->
                             {:ok, [binary()], Database.t()} | {:error, atom()})
 
   @type process_opts :: [
@@ -83,7 +83,7 @@ defmodule EEVM.Block.Processor do
           tx_encoder: tx_encoder(),
           rewards: [{non_neg_integer(), non_neg_integer()}],
           withdrawals: [Withdrawal.t()],
-          block_context: BlockCtx.t(),
+          block_context: BlockEnv.t(),
           requests: requests_hook()
         ]
 
@@ -146,7 +146,7 @@ defmodule EEVM.Block.Processor do
   # Phase 2 — system calls (EIP-4788 / EIP-2935 etc. inject here)
   # ---------------------------------------------------------------------------
 
-  @spec apply_system_calls(Database.t(), BlockCtx.t(), [system_call()]) :: Database.t()
+  @spec apply_system_calls(Database.t(), BlockEnv.t(), [system_call()]) :: Database.t()
   defp apply_system_calls(db, block_ctx, system_calls) do
     Enum.reduce(system_calls, db, fn hook, db_acc -> hook.(db_acc, block_ctx) end)
   end
@@ -155,7 +155,7 @@ defmodule EEVM.Block.Processor do
   # Phase 3 — transaction fold with cumulative gas tracking
   # ---------------------------------------------------------------------------
 
-  @spec execute_transactions([term()], BlockCtx.t(), Database.t(), tx_executor(), Header.t()) ::
+  @spec execute_transactions([term()], BlockEnv.t(), Database.t(), tx_executor(), Header.t()) ::
           {:ok, [Receipt.t()], Database.t(), non_neg_integer()}
           | {:error, {:tx_failed, non_neg_integer(), term()}}
   defp execute_transactions(transactions, block_ctx, db, tx_executor, %Header{} = header) do
@@ -293,15 +293,15 @@ defmodule EEVM.Block.Processor do
     end
   end
 
-  @spec to_block_ctx(Header.t()) :: BlockCtx.t()
+  @spec to_block_ctx(Header.t()) :: BlockEnv.t()
   defp to_block_ctx(%Header{} = header) do
-    %BlockCtx{
+    %BlockEnv{
       number: header.number,
       timestamp: header.timestamp,
       coinbase: header.coinbase,
-      gaslimit: header.gas_limit,
-      prevrandao: header.prev_randao,
-      basefee: header.base_fee_per_gas || 0,
+      gas_limit: header.gas_limit,
+      prev_randao: header.prev_randao,
+      base_fee: header.base_fee_per_gas || 0,
       parent_beacon_block_root: header.parent_beacon_block_root || 0
     }
   end

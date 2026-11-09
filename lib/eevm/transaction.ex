@@ -4,7 +4,7 @@ defmodule EEVM.Transaction do
 
   These structs represent signed transaction payloads as they appear on the
   network (legacy and typed transaction envelopes). They are intentionally
-  separate from `EEVM.Context.Transaction`, which models execution context.
+  separate from `EEVM.TxEnv`, which models execution context.
 
   `nonce`, `value`, `data`, `access_list`, and `authorization_list` default to
   zero or empty. Build an unsigned struct and sign it with

@@ -28,11 +28,13 @@ defmodule EEVM.SystemContracts.BeaconRoots do
     when the timestamp slot matches, `:not_found` otherwise).
   """
 
-  alias EEVM.Context.{Block, Contract, Transaction}
+  alias EEVM.BlockEnv
+  alias EEVM.Context.Contract
   alias EEVM.Database
   alias EEVM.HardforkConfig
   alias EEVM.Interpreter
   alias EEVM.Interpreter.MachineState
+  alias EEVM.TxEnv
 
   @address 0x000F3DF6D732807EF1319FB7B8BB8522D0BEAC02
   @system_address 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFE
@@ -92,9 +94,9 @@ defmodule EEVM.SystemContracts.BeaconRoots do
   should never happen with the canonical bytecode, but we surface it rather
   than swallow it).
   """
-  @spec commit(Database.t(), Block.t(), non_neg_integer()) ::
+  @spec commit(Database.t(), BlockEnv.t(), non_neg_integer()) ::
           {:ok, Database.t()} | {:error, atom(), Database.t()}
-  def commit(%Database{} = db, %Block{} = block, beacon_root)
+  def commit(%Database{} = db, %BlockEnv{} = block, beacon_root)
       when is_integer(beacon_root) and beacon_root >= 0 do
     calldata = <<beacon_root::unsigned-big-256>>
 
@@ -103,7 +105,7 @@ defmodule EEVM.SystemContracts.BeaconRoots do
       |> MachineState.new(
         db: db,
         block: block,
-        tx: %Transaction{origin: @system_address},
+        tx: %TxEnv{origin: @system_address},
         contract: %Contract{
           address: @address,
           caller: @system_address,

@@ -21,8 +21,9 @@ defmodule EEVM.Interpreter.MachineState do
   per-call mutable, env is per-call immutable, substate is transaction-scoped.
   """
 
+  alias EEVM.BlockEnv
   alias EEVM.Config
-  alias EEVM.Context.{Block, Contract, Transaction}
+  alias EEVM.Context.Contract
   alias EEVM.Database
   alias EEVM.Database.InMemory, as: InMemoryDB
   alias EEVM.HardforkConfig
@@ -30,6 +31,7 @@ defmodule EEVM.Interpreter.MachineState do
   alias EEVM.Interpreter.{Memory, Stack}
   alias EEVM.Precompiles
   alias EEVM.Tracer
+  alias EEVM.TxEnv
 
   @type status :: :running | :stopped | :reverted | :invalid | :out_of_gas | {:error, atom()}
 
@@ -79,8 +81,8 @@ defmodule EEVM.Interpreter.MachineState do
   @spec new(binary(), keyword()) :: t()
   def new(code, opts \\ []) do
     contract = Keyword.get(opts, :contract, Contract.new())
-    tx = Keyword.get(opts, :tx, Transaction.new())
-    block = Keyword.get(opts, :block, Block.new())
+    tx = Keyword.get(opts, :tx, TxEnv.new())
+    block = Keyword.get(opts, :block, BlockEnv.new())
     config = Keyword.get(opts, :config, Config.new(Keyword.get(opts, :hardfork, :cancun)))
 
     substate =

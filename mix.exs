@@ -110,7 +110,8 @@ defmodule EEVM.MixProject do
           EEVM,
           EEVM.Config,
           EEVM.Error,
-          ~r/^EEVM\.Context\./
+          EEVM.BlockEnv,
+          EEVM.TxEnv
         ],
         Transactions: [
           EEVM.Handler,
@@ -137,6 +138,7 @@ defmodule EEVM.MixProject do
           EEVM.Block.Bloom,
           ~r/^EEVM\.SystemContracts\./
         ],
+        Deprecated: [EEVM.Context.Block, EEVM.Context.Transaction],
         Internals: [~r/^EEVM\./]
       ]
     ]

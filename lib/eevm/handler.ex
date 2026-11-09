@@ -16,8 +16,7 @@ defmodule EEVM.Handler do
   phase independently testable.
   """
 
-  alias EEVM.{Config, Database, TransactionResult}
-  alias EEVM.Context.Block
+  alias EEVM.{BlockEnv, Config, Database, TransactionResult}
   alias EEVM.Handler.{Execution, PostExecution, PreExecution, Validation}
 
   @type wire_tx :: Validation.wire_tx()
@@ -51,9 +50,9 @@ defmodule EEVM.Handler do
   - `{:error, reason}` when decoding, sender recovery, validation, or upfront
     balance charging fail. The database is returned unchanged in that case.
   """
-  @spec execute(wire_tx(), Block.t(), Database.t(), opts()) ::
+  @spec execute(wire_tx(), BlockEnv.t(), Database.t(), opts()) ::
           {:ok, TransactionResult.t()} | {:error, atom()}
-  def execute(tx_or_bytes, %Block{} = block, %Database{} = db, opts \\ []) do
+  def execute(tx_or_bytes, %BlockEnv{} = block, %Database{} = db, opts \\ []) do
     config = Validation.resolve_config(opts)
     chain_id = config.chain_id
 
@@ -62,7 +61,7 @@ defmodule EEVM.Handler do
          {:ok, tx_ctx} <- Validation.build_tx_context(wire_tx, sender_bytes),
          :ok <- Validation.validate(tx_ctx, db, block, config.hardfork),
          # GASPRICE (0x3A) reads the price per gas the sender pays (EIP-1559).
-         tx_ctx = %{tx_ctx | gasprice: PreExecution.effective_gas_price(tx_ctx, block)},
+         tx_ctx = %{tx_ctx | gas_price: PreExecution.effective_gas_price(tx_ctx, block)},
          {:ok, db_after_upfront} <- PreExecution.charge_upfront(db, tx_ctx, block),
          {:ok, db_nonce_bumped, execution_gas} <-
            PreExecution.prepare_execution(db_after_upfront, tx_ctx, config.hardfork) do

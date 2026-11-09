@@ -9,12 +9,11 @@ defmodule EEVM.Handler.Validation do
   3. **Validate** intrinsic gas, nonce, balance, EOA sender, EIP-1559 fee
      constraints, blob/initcode size rules.
 
-  Outputs `{:ok, %EEVM.Context.Transaction{}}` ready for the next phase, or
+  Outputs `{:ok, %EEVM.TxEnv{}}` ready for the next phase, or
   `{:error, reason}` for any failure.
   """
 
-  alias EEVM.{Config, Database, HardforkConfig}
-  alias EEVM.Context.{Block, Transaction}
+  alias EEVM.{BlockEnv, Config, Database, HardforkConfig, TxEnv}
 
   alias EEVM.Transaction.{
     AccessList,
@@ -67,22 +66,22 @@ defmodule EEVM.Handler.Validation do
   defdelegate recover_sender(tx, chain_id), to: Signer
 
   @doc "Validate the transaction against state; see `EEVM.Transaction.Validator.validate/4`."
-  @spec validate(Transaction.t(), Database.t(), Block.t(), HardforkConfig.t()) ::
+  @spec validate(TxEnv.t(), Database.t(), BlockEnv.t(), HardforkConfig.t()) ::
           :ok | {:error, atom()}
   defdelegate validate(tx_ctx, db, block, hardfork), to: Validator
 
-  @doc "Build the `EEVM.Context.Transaction` the EVM sees from a decoded transaction."
-  @spec build_tx_context(decoded_tx(), binary()) :: {:ok, Transaction.t()}
+  @doc "Build the `EEVM.TxEnv` the EVM sees from a decoded transaction."
+  @spec build_tx_context(decoded_tx(), binary()) :: {:ok, TxEnv.t()}
   def build_tx_context(%Legacy{} = tx, sender_bytes) do
     {:ok,
-     Transaction.new(
+     TxEnv.new(
        origin: decode_address(sender_bytes),
        nonce: tx.nonce,
        gas_limit: tx.gas_limit,
        to: optional_address(tx.to),
        value: tx.value,
        data: tx.data,
-       gasprice: tx.gas_price,
+       gas_price: tx.gas_price,
        max_fee_per_gas: tx.gas_price,
        max_priority_fee_per_gas: tx.gas_price,
        access_list: [],
@@ -94,14 +93,14 @@ defmodule EEVM.Handler.Validation do
 
   def build_tx_context(%AccessList{} = tx, sender_bytes) do
     {:ok,
-     Transaction.new(
+     TxEnv.new(
        origin: decode_address(sender_bytes),
        nonce: tx.nonce,
        gas_limit: tx.gas_limit,
        to: optional_address(tx.to),
        value: tx.value,
        data: tx.data,
-       gasprice: tx.gas_price,
+       gas_price: tx.gas_price,
        max_fee_per_gas: tx.gas_price,
        max_priority_fee_per_gas: tx.gas_price,
        access_list: decode_access_list(tx.access_list),
@@ -113,14 +112,14 @@ defmodule EEVM.Handler.Validation do
 
   def build_tx_context(%FeeMarket{} = tx, sender_bytes) do
     {:ok,
-     Transaction.new(
+     TxEnv.new(
        origin: decode_address(sender_bytes),
        nonce: tx.nonce,
        gas_limit: tx.gas_limit,
        to: optional_address(tx.to),
        value: tx.value,
        data: tx.data,
-       gasprice: 0,
+       gas_price: 0,
        max_fee_per_gas: tx.max_fee_per_gas,
        max_priority_fee_per_gas: tx.max_priority_fee_per_gas,
        access_list: decode_access_list(tx.access_list),
@@ -132,14 +131,14 @@ defmodule EEVM.Handler.Validation do
 
   def build_tx_context(%Blob{} = tx, sender_bytes) do
     {:ok,
-     Transaction.new(
+     TxEnv.new(
        origin: decode_address(sender_bytes),
        nonce: tx.nonce,
        gas_limit: tx.gas_limit,
        to: optional_address(tx.to),
        value: tx.value,
        data: tx.data,
-       gasprice: 0,
+       gas_price: 0,
        max_fee_per_gas: tx.max_fee_per_gas,
        max_priority_fee_per_gas: tx.max_priority_fee_per_gas,
        access_list: decode_access_list(tx.access_list),
@@ -151,14 +150,14 @@ defmodule EEVM.Handler.Validation do
 
   def build_tx_context(%SetCode{} = tx, sender_bytes) do
     {:ok,
-     Transaction.new(
+     TxEnv.new(
        origin: decode_address(sender_bytes),
        nonce: tx.nonce,
        gas_limit: tx.gas_limit,
        to: optional_address(tx.to),
        value: tx.value,
        data: tx.data,
-       gasprice: 0,
+       gas_price: 0,
        max_fee_per_gas: tx.max_fee_per_gas,
        max_priority_fee_per_gas: tx.max_priority_fee_per_gas,
        access_list: decode_access_list(tx.access_list),

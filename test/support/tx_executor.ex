@@ -1,7 +1,7 @@
 defmodule EEVM.TestSupport.TxExecutor do
   @moduledoc """
   Transaction-execution pipeline for the StateTest runner, which builds
-  unsigned `EEVM.Context.Transaction`s from a fixture's secret key and so
+  unsigned `EEVM.TxEnv`s from a fixture's secret key and so
   can't go through `EEVM.Handler`.
 
   Performs the steps a real client folds into block processing:
@@ -10,8 +10,7 @@ defmodule EEVM.TestSupport.TxExecutor do
   debit, coinbase credit).
   """
 
-  alias EEVM.{Config, Database}
-  alias EEVM.Context.{Block, Transaction}
+  alias EEVM.{BlockEnv, Config, Database, TxEnv}
   alias EEVM.Handler.{Execution, PreExecution}
   alias EEVM.Interpreter.MachineState
   alias EEVM.Transaction.{IntrinsicGas, Validator}
@@ -23,16 +22,16 @@ defmodule EEVM.TestSupport.TxExecutor do
           failed?: boolean()
         }
 
-  @spec execute(Transaction.t(), Database.t(), Block.t(), Config.t()) ::
+  @spec execute(TxEnv.t(), Database.t(), BlockEnv.t(), Config.t()) ::
           {:ok, result()} | {:error, term()}
-  def execute(%Transaction{} = tx, %Database{} = db, %Block{} = block, %Config{} = config) do
+  def execute(%TxEnv{} = tx, %Database{} = db, %BlockEnv{} = block, %Config{} = config) do
     with :ok <- validate(tx, db, block, config),
          {:ok, db_after_blob_fee} <-
            debit_balance(db, tx.origin, PreExecution.blob_gas_fee(tx, block)) do
       db_after_nonce = Database.increment_nonce(db_after_blob_fee, tx.origin)
 
       {db_authorized, authorization} =
-        PreExecution.apply_authorizations(db_after_nonce, tx, block.chain_id)
+        PreExecution.apply_authorizations(db_after_nonce, tx, config.chain_id)
 
       machine = run_interpreter(tx, db_authorized, block, config, authorization)
       failed? = failed?(machine.status)
@@ -45,7 +44,7 @@ defmodule EEVM.TestSupport.TxExecutor do
     end
   end
 
-  defp validate(%Transaction{} = tx, %Database{} = db, %Block{} = block, %Config{} = config) do
+  defp validate(%TxEnv{} = tx, %Database{} = db, %BlockEnv{} = block, %Config{} = config) do
     case Validator.validate(tx, db, block, config.hardfork) do
       :ok -> :ok
       {:error, reason} -> {:error, {:validation, reason}}
@@ -53,9 +52,9 @@ defmodule EEVM.TestSupport.TxExecutor do
   end
 
   defp run_interpreter(
-         %Transaction{} = tx,
+         %TxEnv{} = tx,
          %Database{} = db,
-         %Block{} = block,
+         %BlockEnv{} = block,
          %Config{} = config,
          authorization
        ) do
@@ -68,7 +67,7 @@ defmodule EEVM.TestSupport.TxExecutor do
     machine
   end
 
-  defp apply_fees(db, %Transaction{} = tx, %Block{} = block, gas_used) do
+  defp apply_fees(db, %TxEnv{} = tx, %BlockEnv{} = block, gas_used) do
     sender_fee = gas_used * effective_gas_price(tx, block)
     miner_reward = gas_used * miner_reward_per_gas(tx, block)
 
@@ -77,20 +76,20 @@ defmodule EEVM.TestSupport.TxExecutor do
     end
   end
 
-  defp effective_gas_price(%Transaction{type: type} = tx, %Block{} = block)
+  defp effective_gas_price(%TxEnv{type: type} = tx, %BlockEnv{} = block)
        when type in [:eip1559, :eip4844, :eip7702] do
-    min(tx.max_fee_per_gas, block.basefee + tx.max_priority_fee_per_gas)
+    min(tx.max_fee_per_gas, block.base_fee + tx.max_priority_fee_per_gas)
   end
 
-  defp effective_gas_price(%Transaction{} = tx, _block), do: tx.gasprice
+  defp effective_gas_price(%TxEnv{} = tx, _block), do: tx.gas_price
 
-  defp miner_reward_per_gas(%Transaction{type: type} = tx, %Block{} = block)
+  defp miner_reward_per_gas(%TxEnv{type: type} = tx, %BlockEnv{} = block)
        when type in [:eip1559, :eip4844, :eip7702] do
-    max(effective_gas_price(tx, block) - block.basefee, 0)
+    max(effective_gas_price(tx, block) - block.base_fee, 0)
   end
 
-  defp miner_reward_per_gas(%Transaction{} = tx, %Block{} = block) do
-    max(tx.gasprice - block.basefee, 0)
+  defp miner_reward_per_gas(%TxEnv{} = tx, %BlockEnv{} = block) do
+    max(tx.gas_price - block.base_fee, 0)
   end
 
   defp failed?(status) when status in [:reverted, :invalid, :out_of_gas], do: true

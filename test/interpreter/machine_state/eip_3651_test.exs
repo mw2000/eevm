@@ -1,14 +1,16 @@
 defmodule EEVM.Interpreter.MachineState.EIP3651Test do
   use ExUnit.Case, async: true
 
+  alias EEVM.BlockEnv
   alias EEVM.Config
-  alias EEVM.Context.{Block, Contract, Transaction}
+  alias EEVM.Context.Contract
   alias EEVM.Database.InMemory
   alias EEVM.Interpreter.MachineState
+  alias EEVM.TxEnv
 
   describe "EIP-3651 coinbase pre-warming" do
     test "new machine state pre-warms non-zero coinbase" do
-      block = Block.new(coinbase: 0xBEEF)
+      block = BlockEnv.new(coinbase: 0xBEEF)
 
       state = MachineState.new(<<0x00>>, block: block)
 
@@ -16,7 +18,7 @@ defmodule EEVM.Interpreter.MachineState.EIP3651Test do
     end
 
     test "new machine state pre-warms zero coinbase by default" do
-      block = Block.new()
+      block = BlockEnv.new()
 
       state = MachineState.new(<<0x00>>, block: block)
 
@@ -25,7 +27,7 @@ defmodule EEVM.Interpreter.MachineState.EIP3651Test do
 
     test "existing pre-warmed addresses remain present" do
       contract = Contract.new(address: 0xAA, caller: 0xBB)
-      tx = Transaction.new(origin: 0xCC)
+      tx = TxEnv.new(origin: 0xCC)
 
       state = MachineState.new(<<0x00>>, contract: contract, tx: tx)
 
@@ -37,7 +39,7 @@ defmodule EEVM.Interpreter.MachineState.EIP3651Test do
 
     test "BALANCE access to COINBASE is charged at warm rate (100 gas)" do
       initial_gas = 10_000
-      block = Block.new(coinbase: 0xBEEF)
+      block = BlockEnv.new(coinbase: 0xBEEF)
       world_state = InMemory.new(accounts: %{0xBEEF => %{balance: 123}})
       code = <<0x41, 0x31, 0x00>>
 

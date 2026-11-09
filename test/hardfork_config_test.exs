@@ -1,7 +1,8 @@
 defmodule EEVM.HardforkConfigTest do
   use ExUnit.Case, async: true
 
-  alias EEVM.Context.{Block, Contract}
+  alias EEVM.BlockEnv
+  alias EEVM.Context.Contract
   alias EEVM.Database
   alias EEVM.Database.InMemory
   alias EEVM.HardforkConfig
@@ -496,7 +497,7 @@ defmodule EEVM.HardforkConfigTest do
     test "COINBASE starts warm from Shanghai and cold before" do
       # COINBASE, BALANCE, STOP
       code = <<0x41, 0x31, 0x00>>
-      block = Block.new(coinbase: 0xC0FFEE)
+      block = BlockEnv.new(coinbase: 0xC0FFEE)
 
       gas_used = fn fork ->
         100_000 - EEVM.Interpreter.run(code, gas: 100_000, block: block, hardfork: fork).frame.gas

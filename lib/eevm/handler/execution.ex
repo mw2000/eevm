@@ -21,8 +21,8 @@ defmodule EEVM.Handler.Execution do
   designator runs the delegate's code instead, with the delegate pre-warmed.
   """
 
-  alias EEVM.{Config, Database, Delegation, HardforkConfig, Precompiles}
-  alias EEVM.Context.{Block, Contract, Transaction}
+  alias EEVM.{BlockEnv, Config, Database, Delegation, HardforkConfig, Precompiles, TxEnv}
+  alias EEVM.Context.Contract
   alias EEVM.Handler.PreExecution
   alias EEVM.Interpreter
   alias EEVM.Interpreter.Instructions.System.Creation
@@ -46,16 +46,16 @@ defmodule EEVM.Handler.Execution do
   for a message call or a failed deployment.
   """
   @spec run_top_level(
-          Transaction.t(),
+          TxEnv.t(),
           Database.t(),
-          Block.t(),
+          BlockEnv.t(),
           Config.t(),
           non_neg_integer(),
           PreExecution.authorization_outcome()
         ) :: {MachineState.t(), non_neg_integer() | nil}
   def run_top_level(tx, db, block, config, execution_gas, authorization \\ @no_authorizations)
 
-  def run_top_level(%Transaction{to: to} = tx, db, block, config, execution_gas, authorization)
+  def run_top_level(%TxEnv{to: to} = tx, db, block, config, execution_gas, authorization)
       when is_integer(to) do
     db_after_value = transfer_value(db, tx.origin, to, tx.value)
     {code, delegate} = resolve_code(db_after_value, to, config)
@@ -103,7 +103,7 @@ defmodule EEVM.Handler.Execution do
     {apply_precompile_result(final_state, precompile_result), nil}
   end
 
-  def run_top_level(%Transaction{to: nil} = tx, db, block, config, execution_gas, _authorization) do
+  def run_top_level(%TxEnv{to: nil} = tx, db, block, config, execution_gas, _authorization) do
     creator = tx.origin
     pre_nonce = max(Database.get_nonce(db, creator) - 1, 0)
     new_address = derive_create_address(creator, pre_nonce)

@@ -17,11 +17,12 @@ defmodule EEVM.Handler.PostExecution do
   """
 
   alias EEVM.Block.Bloom
-  alias EEVM.Context.{Block, Transaction}
+  alias EEVM.BlockEnv
   alias EEVM.Database
   alias EEVM.Handler.{PreExecution, Validation}
   alias EEVM.Interpreter.MachineState
   alias EEVM.TransactionResult
+  alias EEVM.TxEnv
 
   @doc """
   Settle gas, credit the coinbase, and build the `EEVM.TransactionResult`.
@@ -33,18 +34,18 @@ defmodule EEVM.Handler.PostExecution do
   @spec finalize(
           MachineState.t(),
           non_neg_integer() | nil,
-          Transaction.t(),
+          TxEnv.t(),
           binary(),
           Database.t(),
-          Block.t()
+          BlockEnv.t()
         ) :: {:ok, TransactionResult.t()}
   def finalize(
         %MachineState{} = final_state,
         contract_address,
-        %Transaction{} = tx,
+        %TxEnv{} = tx,
         sender_bytes,
         %Database{} = db_nonce_bumped,
-        %Block{} = block
+        %BlockEnv{} = block
       ) do
     gas_used = tx.gas_limit - final_state.frame.gas
     effective_price = PreExecution.effective_gas_price(tx, block)
@@ -91,10 +92,10 @@ defmodule EEVM.Handler.PostExecution do
     credit_sender(state.db, tx.origin, refund_amount)
   end
 
-  defp credit_coinbase(%Database{} = db, %Block{}, _tx, 0, _price), do: db
+  defp credit_coinbase(%Database{} = db, %BlockEnv{}, _tx, 0, _price), do: db
 
-  defp credit_coinbase(%Database{} = db, %Block{} = block, %Transaction{} = tx, gas_used, _price) do
-    priority_per_gas = max(PreExecution.effective_gas_price(tx, block) - block.basefee, 0)
+  defp credit_coinbase(%Database{} = db, %BlockEnv{} = block, %TxEnv{} = tx, gas_used, _price) do
+    priority_per_gas = max(PreExecution.effective_gas_price(tx, block) - block.base_fee, 0)
     reward = priority_per_gas * gas_used
 
     if reward == 0 do

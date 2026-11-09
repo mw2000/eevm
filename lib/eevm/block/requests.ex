@@ -19,9 +19,8 @@ defmodule EEVM.Block.Requests do
   """
 
   alias EEVM.Block.Receipt
-  alias EEVM.{Config, Database, HardforkConfig, Interpreter}
-  alias EEVM.Context.Block, as: BlockContext
-  alias EEVM.Context.{Contract, Transaction}
+  alias EEVM.{BlockEnv, Config, Database, HardforkConfig, Interpreter, TxEnv}
+  alias EEVM.Context.Contract
   alias EEVM.Interpreter.MachineState
 
   @typedoc "A type byte followed by the request payload."
@@ -77,11 +76,11 @@ defmodule EEVM.Block.Requests do
   (`:system_contract_empty`), or its call fails
   (`:system_contract_call_failed`). Each makes the block invalid.
   """
-  @spec collect(Database.t(), BlockContext.t(), [Receipt.t()], Config.t(), non_neg_integer()) ::
+  @spec collect(Database.t(), BlockEnv.t(), [Receipt.t()], Config.t(), non_neg_integer()) ::
           {:ok, [request()], Database.t()} | {:error, error()}
   def collect(
         %Database{} = db,
-        %BlockContext{} = block,
+        %BlockEnv{} = block,
         receipts,
         %Config{} = config,
         deposit_contract
@@ -151,7 +150,7 @@ defmodule EEVM.Block.Requests do
             db: db,
             block: block,
             config: config,
-            tx: %Transaction{origin: @system_address, gasprice: block.basefee},
+            tx: %TxEnv{origin: @system_address, gas_price: block.base_fee},
             contract: %Contract{address: address, caller: @system_address},
             gas: @system_call_gas,
             accessed_addresses: MapSet.new()

@@ -53,8 +53,8 @@ defmodule EEVM do
       full `EEVM.Config`
     - `:db` — the `EEVM.Database` to run against (default: an empty
       `EEVM.Database.InMemory`)
-    - `:block` and `:tx` — the `EEVM.Context.Block` and
-      `EEVM.Context.Transaction` the code sees
+    - `:block` and `:tx` — the `EEVM.BlockEnv` and
+      `EEVM.TxEnv` the code sees
     - `:contract` — the `EEVM.Context.Contract` being executed: its address,
       caller, call value, and calldata
 

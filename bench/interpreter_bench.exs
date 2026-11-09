@@ -11,7 +11,8 @@ alias EEVM.Bench.Asm
 
 # Fixed seed: random inputs are the same on every run.
 :rand.seed(:exsss, {1, 2, 3})
-alias EEVM.Context.{Block, Contract}
+alias EEVM.BlockEnv
+alias EEVM.Context.Contract
 alias EEVM.Database.InMemory
 alias EEVM.Handler
 alias EEVM.Transaction.{Legacy, Signer}
@@ -284,7 +285,7 @@ unsigned_transfer = %Legacy{
   unsigned_transfer |> Signer.signing_hash(1) |> ExSecp256k1.sign_compact(private_key)
 
 transfer_tx = %{unsigned_transfer | v: 37 + recovery_id, r: r, s: s}
-block = Block.new(gaslimit: 30_000_000, basefee: 0, coinbase: 0xC0F0)
+block = BlockEnv.new(gas_limit: 30_000_000, base_fee: 0, coinbase: 0xC0F0)
 
 # --- Jobs ------------------------------------------------------------------------------
 

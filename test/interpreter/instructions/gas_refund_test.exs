@@ -1,11 +1,11 @@
 defmodule EEVM.Interpreter.Instructions.GasRefundTest do
   use ExUnit.Case, async: true
 
-  alias EEVM.Context.Transaction
   alias EEVM.Gas.Static
   alias EEVM.HardforkConfig
   alias EEVM.Interpreter.MachineState
   alias EEVM.Transaction.IntrinsicGas
+  alias EEVM.TxEnv
 
   test "refund counter defaults to 0" do
     result = EEVM.Interpreter.run(<<0x00>>)
@@ -45,7 +45,7 @@ defmodule EEVM.Interpreter.Instructions.GasRefundTest do
   end
 
   test "Prague floors final charged gas after refunds to calldata floor cost" do
-    tx = Transaction.new(gas_limit: 22_000, to: 0xCAFE, data: <<0x00>>)
+    tx = TxEnv.new(gas_limit: 22_000, to: 0xCAFE, data: <<0x00>>)
     initial_execution_gas = tx.gas_limit - IntrinsicGas.calculate(tx, HardforkConfig.new(:cancun))
 
     prague_result =
@@ -77,7 +77,7 @@ defmodule EEVM.Interpreter.Instructions.GasRefundTest do
   test "Prague charges the calldata floor even when execution reverts" do
     # 100 non-zero bytes: intrinsic 21_000 + 100 * 16 = 22_600; EIP-7623 floor
     # 21_000 + 10 * (100 * 4 tokens) = 25_000.
-    tx = Transaction.new(gas_limit: 30_000, to: 0xCAFE, data: :binary.copy(<<0xFF>>, 100))
+    tx = TxEnv.new(gas_limit: 30_000, to: 0xCAFE, data: :binary.copy(<<0xFF>>, 100))
 
     result =
       EEVM.Interpreter.run(<<0x60, 0x00, 0x60, 0x00, 0xFD>>,

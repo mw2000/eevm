@@ -1,10 +1,11 @@
 defmodule EEVM.Transaction.ValidatorTest do
   use ExUnit.Case, async: true
 
-  alias EEVM.Context.{Block, Transaction}
+  alias EEVM.BlockEnv
   alias EEVM.Database.InMemory
   alias EEVM.HardforkConfig
   alias EEVM.Transaction.Validator
+  alias EEVM.TxEnv
 
   @origin 0xA11CE
 
@@ -40,13 +41,13 @@ defmodule EEVM.Transaction.ValidatorTest do
 
     test "returns gas limit exceeds block" do
       tx = valid_tx(gas_limit: 30_000)
-      block = valid_block(gaslimit: 29_999)
+      block = valid_block(gas_limit: 29_999)
 
       assert {:error, :gas_limit_exceeds_block} = Validator.validate(tx, db_for_sender(), block)
     end
 
     test "Osaka caps transaction gas limit at 2^24 (EIP-7825)" do
-      block = valid_block(gaslimit: 60_000_000)
+      block = valid_block(gas_limit: 60_000_000)
       db = db_for_sender(balance: 100_000_000)
       osaka = HardforkConfig.new(:osaka)
 
@@ -57,7 +58,7 @@ defmodule EEVM.Transaction.ValidatorTest do
     end
 
     test "pre-Osaka transactions above 2^24 gas are bounded only by the block" do
-      block = valid_block(gaslimit: 60_000_000)
+      block = valid_block(gas_limit: 60_000_000)
       db = db_for_sender(balance: 100_000_000)
       tx = valid_tx(gas_limit: 16_777_217)
 
@@ -98,30 +99,30 @@ defmodule EEVM.Transaction.ValidatorTest do
       tx =
         valid_tx(
           type: :eip1559,
-          gasprice: 0,
+          gas_price: 0,
           max_priority_fee_per_gas: 101,
           max_fee_per_gas: 100
         )
 
       assert {:error, :priority_fee_above_max_fee} =
-               Validator.validate(tx, db_for_sender(), valid_block(basefee: 10))
+               Validator.validate(tx, db_for_sender(), valid_block(base_fee: 10))
     end
 
     test "returns max fee below base fee for eip1559" do
       tx =
         valid_tx(
           type: :eip1559,
-          gasprice: 0,
+          gas_price: 0,
           max_priority_fee_per_gas: 10,
           max_fee_per_gas: 20
         )
 
       assert {:error, :max_fee_below_basefee} =
-               Validator.validate(tx, db_for_sender(), valid_block(basefee: 21))
+               Validator.validate(tx, db_for_sender(), valid_block(base_fee: 21))
     end
 
     test "returns insufficient balance" do
-      tx = valid_tx(gas_limit: 30_000, gasprice: 5, value: 100)
+      tx = valid_tx(gas_limit: 30_000, gas_price: 5, value: 100)
       db = db_for_sender(balance: 100_000)
 
       assert {:error, :insufficient_balance} = Validator.validate(tx, db, valid_block())
@@ -193,7 +194,7 @@ defmodule EEVM.Transaction.ValidatorTest do
           type: :eip4844,
           to: nil,
           gas_limit: 60_000,
-          gasprice: 0,
+          gas_price: 0,
           max_fee_per_gas: 100,
           max_priority_fee_per_gas: 2,
           blob_hashes: [0x1234],
@@ -201,14 +202,18 @@ defmodule EEVM.Transaction.ValidatorTest do
         )
 
       assert {:error, :blob_tx_no_creation} =
-               Validator.validate(tx, db_for_sender(balance: 10_000_000), valid_block(basefee: 1))
+               Validator.validate(
+                 tx,
+                 db_for_sender(balance: 10_000_000),
+                 valid_block(base_fee: 1)
+               )
     end
 
     test "returns no blob data for eip4844 tx without blobs" do
       tx =
         valid_tx(
           type: :eip4844,
-          gasprice: 0,
+          gas_price: 0,
           max_fee_per_gas: 100,
           max_priority_fee_per_gas: 2,
           blob_hashes: [],
@@ -216,14 +221,18 @@ defmodule EEVM.Transaction.ValidatorTest do
         )
 
       assert {:error, :no_blob_data} =
-               Validator.validate(tx, db_for_sender(balance: 10_000_000), valid_block(basefee: 1))
+               Validator.validate(
+                 tx,
+                 db_for_sender(balance: 10_000_000),
+                 valid_block(base_fee: 1)
+               )
     end
 
     test "returns blob fee too low for eip4844 tx" do
       tx =
         valid_tx(
           type: :eip4844,
-          gasprice: 0,
+          gas_price: 0,
           max_fee_per_gas: 100,
           max_priority_fee_per_gas: 2,
           blob_hashes: [0x1234],
@@ -234,7 +243,7 @@ defmodule EEVM.Transaction.ValidatorTest do
                Validator.validate(
                  tx,
                  db_for_sender(balance: 10_000_000),
-                 valid_block(basefee: 1, blob_base_fee: 10)
+                 valid_block(base_fee: 1, blob_base_fee: 10)
                )
     end
 
@@ -245,7 +254,7 @@ defmodule EEVM.Transaction.ValidatorTest do
                Validator.validate(
                  tx,
                  db_for_sender(balance: 10_000_000),
-                 valid_block(gaslimit: 1_000_000)
+                 valid_block(gas_limit: 1_000_000)
                )
     end
   end
@@ -256,7 +265,7 @@ defmodule EEVM.Transaction.ValidatorTest do
   end
 
   defp valid_tx(overrides \\ []) do
-    Transaction.new(
+    TxEnv.new(
       [
         origin: @origin,
         nonce: 0,
@@ -264,7 +273,7 @@ defmodule EEVM.Transaction.ValidatorTest do
         to: 0xB0B,
         value: 0,
         data: <<>>,
-        gasprice: 1,
+        gas_price: 1,
         max_fee_per_gas: 0,
         max_priority_fee_per_gas: 0,
         access_list: [],
@@ -284,6 +293,6 @@ defmodule EEVM.Transaction.ValidatorTest do
   end
 
   defp valid_block(overrides \\ []) do
-    Block.new([gaslimit: 1_000_000, basefee: 0, blob_base_fee: 0] ++ overrides)
+    BlockEnv.new([gas_limit: 1_000_000, base_fee: 0, blob_base_fee: 0] ++ overrides)
   end
 end

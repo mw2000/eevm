@@ -24,11 +24,13 @@ defmodule EEVM.SystemContracts.BlockHashes do
     genuinely-stored zero only if the caller knows the slot was written).
   """
 
-  alias EEVM.Context.{Block, Contract, Transaction}
+  alias EEVM.BlockEnv
+  alias EEVM.Context.Contract
   alias EEVM.Database
   alias EEVM.HardforkConfig
   alias EEVM.Interpreter
   alias EEVM.Interpreter.MachineState
+  alias EEVM.TxEnv
 
   @address 0x0000F90827F1C53A10CB7A02335B175320002935
   @system_address 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFE
@@ -89,16 +91,16 @@ defmodule EEVM.SystemContracts.BlockHashes do
   should never happen with the canonical bytecode, but we surface it rather
   than swallow it).
   """
-  @spec commit(Database.t(), Block.t(), <<_::256>>) ::
+  @spec commit(Database.t(), BlockEnv.t(), <<_::256>>) ::
           {:ok, Database.t()} | {:error, atom(), Database.t()}
-  def commit(%Database{} = db, %Block{} = block, parent_block_hash)
+  def commit(%Database{} = db, %BlockEnv{} = block, parent_block_hash)
       when is_binary(parent_block_hash) and byte_size(parent_block_hash) == 32 do
     final_state =
       @deployed_code
       |> MachineState.new(
         db: db,
         block: block,
-        tx: %Transaction{origin: @system_address},
+        tx: %TxEnv{origin: @system_address},
         contract: %Contract{
           address: @address,
           caller: @system_address,

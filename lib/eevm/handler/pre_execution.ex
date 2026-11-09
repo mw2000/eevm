@@ -22,8 +22,8 @@ defmodule EEVM.Handler.PreExecution do
   themselves.
   """
 
-  alias EEVM.Context.{Block, Contract, Transaction}
-  alias EEVM.{Database, Delegation, HardforkConfig, Precompiles}
+  alias EEVM.{BlockEnv, Database, Delegation, HardforkConfig, Precompiles, TxEnv}
+  alias EEVM.Context.Contract
   alias EEVM.Gas.Blob
   alias EEVM.HardforkConfig
   alias EEVM.Transaction.{Authorization, IntrinsicGas, Signer}
@@ -47,9 +47,9 @@ defmodule EEVM.Handler.PreExecution do
   Debit the maximum gas fee from the sender after checking that the balance
   also covers `tx.value` and that the effective gas price meets the basefee.
   """
-  @spec charge_upfront(Database.t(), Transaction.t(), Block.t()) ::
+  @spec charge_upfront(Database.t(), TxEnv.t(), BlockEnv.t()) ::
           {:ok, Database.t()} | {:error, atom()}
-  def charge_upfront(%Database{} = db, %Transaction{} = tx, %Block{} = block) do
+  def charge_upfront(%Database{} = db, %TxEnv{} = tx, %BlockEnv{} = block) do
     sender_balance = Database.get_balance(db, tx.origin)
     gas_charge = gas_upfront(tx) + blob_gas_fee(tx, block)
 
@@ -57,7 +57,7 @@ defmodule EEVM.Handler.PreExecution do
       sender_balance < gas_charge + tx.value ->
         {:error, :insufficient_balance}
 
-      effective_gas_price(tx, block) < block.basefee ->
+      effective_gas_price(tx, block) < block.base_fee ->
         {:error, :effective_gas_price_below_basefee}
 
       true ->
@@ -70,9 +70,9 @@ defmodule EEVM.Handler.PreExecution do
   Verify intrinsic gas, bump the sender nonce, and return the gas available
   to the EVM.
   """
-  @spec prepare_execution(Database.t(), Transaction.t(), HardforkConfig.t()) ::
+  @spec prepare_execution(Database.t(), TxEnv.t(), HardforkConfig.t()) ::
           {:ok, Database.t(), non_neg_integer()} | {:error, :intrinsic_gas_too_low}
-  def prepare_execution(%Database{} = db, %Transaction{} = tx, %HardforkConfig{} = hardfork) do
+  def prepare_execution(%Database{} = db, %TxEnv{} = tx, %HardforkConfig{} = hardfork) do
     intrinsic = IntrinsicGas.calculate(tx, hardfork)
 
     if tx.gas_limit < intrinsic do
@@ -96,9 +96,9 @@ defmodule EEVM.Handler.PreExecution do
   nonce is incremented. Tuples apply in order, so a later tuple from the
   same authority sees the earlier one's nonce bump.
   """
-  @spec apply_authorizations(Database.t(), Transaction.t(), non_neg_integer()) ::
+  @spec apply_authorizations(Database.t(), TxEnv.t(), non_neg_integer()) ::
           {Database.t(), authorization_outcome()}
-  def apply_authorizations(%Database{} = db, %Transaction{} = tx, chain_id) do
+  def apply_authorizations(%Database{} = db, %TxEnv{} = tx, chain_id) do
     Enum.reduce(
       tx.authorization_list,
       {db, %{authorities: MapSet.new(), refund: 0}},
@@ -137,12 +137,12 @@ defmodule EEVM.Handler.PreExecution do
   defp wire(auth), do: %{auth | address: <<auth.address::unsigned-big-160>>}
 
   @doc "Maximum gas fee debited upfront: `gas_limit` times the fee cap (or gas price)."
-  @spec gas_upfront(Transaction.t()) :: non_neg_integer()
-  def gas_upfront(%Transaction{type: type} = tx) when type in [:eip1559, :eip4844, :eip7702] do
+  @spec gas_upfront(TxEnv.t()) :: non_neg_integer()
+  def gas_upfront(%TxEnv{type: type} = tx) when type in [:eip1559, :eip4844, :eip7702] do
     tx.gas_limit * tx.max_fee_per_gas
   end
 
-  def gas_upfront(%Transaction{} = tx), do: tx.gas_limit * tx.gasprice
+  def gas_upfront(%TxEnv{} = tx), do: tx.gas_limit * tx.gas_price
 
   @doc """
   EIP-4844 blob gas fee: `GAS_PER_BLOB * blob count * blob_base_fee`. Zero for
@@ -150,12 +150,12 @@ defmodule EEVM.Handler.PreExecution do
 
   ## Example
 
-      iex> tx = EEVM.Context.Transaction.new(type: :eip4844, blob_hashes: [1, 2])
-      iex> EEVM.Handler.PreExecution.blob_gas_fee(tx, EEVM.Context.Block.new(blob_base_fee: 3))
+      iex> tx = EEVM.TxEnv.new(type: :eip4844, blob_hashes: [1, 2])
+      iex> EEVM.Handler.PreExecution.blob_gas_fee(tx, EEVM.BlockEnv.new(blob_base_fee: 3))
       786_432
   """
-  @spec blob_gas_fee(Transaction.t(), Block.t()) :: non_neg_integer()
-  def blob_gas_fee(%Transaction{blob_hashes: hashes}, %Block{blob_base_fee: blob_base_fee}) do
+  @spec blob_gas_fee(TxEnv.t(), BlockEnv.t()) :: non_neg_integer()
+  def blob_gas_fee(%TxEnv{blob_hashes: hashes}, %BlockEnv{blob_base_fee: blob_base_fee}) do
     length(hashes) * Blob.gas_per_blob() * blob_base_fee
   end
 
@@ -163,20 +163,20 @@ defmodule EEVM.Handler.PreExecution do
   Price per gas the sender pays: `min(max_fee, basefee + priority_fee)` for
   EIP-1559-style transactions (EIP-1559), or the legacy gas price.
   """
-  @spec effective_gas_price(Transaction.t(), Block.t()) :: non_neg_integer()
-  def effective_gas_price(%Transaction{type: type} = tx, %Block{} = block)
+  @spec effective_gas_price(TxEnv.t(), BlockEnv.t()) :: non_neg_integer()
+  def effective_gas_price(%TxEnv{type: type} = tx, %BlockEnv{} = block)
       when type in [:eip1559, :eip4844, :eip7702] do
-    min(tx.max_fee_per_gas, block.basefee + tx.max_priority_fee_per_gas)
+    min(tx.max_fee_per_gas, block.base_fee + tx.max_priority_fee_per_gas)
   end
 
-  def effective_gas_price(%Transaction{} = tx, %Block{}), do: tx.gasprice
+  def effective_gas_price(%TxEnv{} = tx, %BlockEnv{}), do: tx.gas_price
 
   @doc """
   Addresses warm at transaction start (EIP-2929, EIP-2930, EIP-3651): the
   callee, caller, origin, precompiles, access-list entries, and from Shanghai
   the coinbase.
   """
-  @spec initial_accessed_addresses(Transaction.t(), EEVM.Config.t(), Contract.t(), Block.t()) ::
+  @spec initial_accessed_addresses(TxEnv.t(), EEVM.Config.t(), Contract.t(), BlockEnv.t()) ::
           MapSet.t(non_neg_integer())
   def initial_accessed_addresses(tx, config, contract_ctx, block) do
     base =
@@ -200,7 +200,7 @@ defmodule EEVM.Handler.PreExecution do
   end
 
   @doc "Storage keys warm at transaction start: every access-list slot (EIP-2930)."
-  @spec initial_accessed_storage_keys(Transaction.t()) ::
+  @spec initial_accessed_storage_keys(TxEnv.t()) ::
           MapSet.t({non_neg_integer(), non_neg_integer()})
   def initial_accessed_storage_keys(tx) do
     Enum.reduce(tx.access_list, MapSet.new(), fn {address, slots}, acc ->

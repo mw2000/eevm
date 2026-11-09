@@ -6,8 +6,7 @@ defmodule EEVM.Transaction.Validator do
   state and block context, returning `:ok` or the first `{:error, reason}`.
   """
 
-  alias EEVM.Context.{Block, Transaction}
-  alias EEVM.{Database, Delegation}
+  alias EEVM.{BlockEnv, Database, Delegation, TxEnv}
   alias EEVM.Error
   alias EEVM.HardforkConfig
   alias EEVM.Transaction.IntrinsicGas
@@ -21,9 +20,9 @@ defmodule EEVM.Transaction.Validator do
   @max_uint256 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF
 
   @doc "Validate under the default hardfork; see `validate/4`."
-  @spec validate(Transaction.t(), Database.t(), Block.t()) ::
+  @spec validate(TxEnv.t(), Database.t(), BlockEnv.t()) ::
           :ok | {:error, Error.transaction_validation_error()}
-  def validate(%Transaction{} = tx, %Database{} = db, %Block{} = block) do
+  def validate(%TxEnv{} = tx, %Database{} = db, %BlockEnv{} = block) do
     validate(tx, db, block, HardforkConfig.default())
   end
 
@@ -31,12 +30,12 @@ defmodule EEVM.Transaction.Validator do
   Run the pre-execution checks in order and return the first failure.
   Error reasons are listed in `EEVM.Error`.
   """
-  @spec validate(Transaction.t(), Database.t(), Block.t(), HardforkConfig.t()) ::
+  @spec validate(TxEnv.t(), Database.t(), BlockEnv.t(), HardforkConfig.t()) ::
           :ok | {:error, Error.transaction_validation_error()}
   def validate(
-        %Transaction{} = tx,
+        %TxEnv{} = tx,
         %Database{} = db,
-        %Block{} = block,
+        %BlockEnv{} = block,
         %HardforkConfig{} = hardfork
       ) do
     with :ok <- validate_tx_type(tx, hardfork),
@@ -57,7 +56,7 @@ defmodule EEVM.Transaction.Validator do
   # introduced it.
   @tx_type_eips %{eip2930: :eip_2930, eip1559: :eip_1559, eip4844: :eip_4844, eip7702: :eip_7702}
 
-  defp validate_tx_type(%Transaction{type: type}, %HardforkConfig{} = hardfork) do
+  defp validate_tx_type(%TxEnv{type: type}, %HardforkConfig{} = hardfork) do
     case @tx_type_eips do
       %{^type => eip} ->
         if HardforkConfig.enabled?(hardfork, eip), do: :ok, else: {:error, :tx_type_not_supported}
@@ -67,7 +66,7 @@ defmodule EEVM.Transaction.Validator do
     end
   end
 
-  defp validate_set_code_tx(%Transaction{type: :eip7702} = tx) do
+  defp validate_set_code_tx(%TxEnv{type: :eip7702} = tx) do
     cond do
       tx.to == nil -> {:error, :set_code_tx_no_creation}
       tx.authorization_list == [] -> {:error, :empty_authorization_list}
@@ -76,7 +75,7 @@ defmodule EEVM.Transaction.Validator do
     end
   end
 
-  defp validate_set_code_tx(%Transaction{}), do: :ok
+  defp validate_set_code_tx(%TxEnv{}), do: :ok
 
   # Field widths from the EIP-7702 RLP schema; a value that does not fit
   # makes the whole transaction undecodable rather than skipping the tuple.
@@ -85,25 +84,25 @@ defmodule EEVM.Transaction.Validator do
       auth.y_parity <= @max_uint8 and auth.r <= @max_uint256 and auth.s <= @max_uint256
   end
 
-  defp validate_intrinsic_gas(%Transaction{} = tx, %HardforkConfig{} = hardfork) do
+  defp validate_intrinsic_gas(%TxEnv{} = tx, %HardforkConfig{} = hardfork) do
     if tx.gas_limit >= IntrinsicGas.minimum_gas_limit(tx, hardfork),
       do: :ok,
       else: {:error, :intrinsic_gas_too_low}
   end
 
-  defp validate_gas_limit_cap(%Transaction{} = tx, %HardforkConfig{} = hardfork) do
+  defp validate_gas_limit_cap(%TxEnv{} = tx, %HardforkConfig{} = hardfork) do
     if tx.gas_limit > @max_tx_gas_limit and HardforkConfig.enabled?(hardfork, :eip_7825),
       do: {:error, :gas_limit_exceeds_cap},
       else: :ok
   end
 
-  defp validate_gas_limit_vs_block(%Transaction{} = tx, %Block{} = block) do
-    if tx.gas_limit <= block.gaslimit,
+  defp validate_gas_limit_vs_block(%TxEnv{} = tx, %BlockEnv{} = block) do
+    if tx.gas_limit <= block.gas_limit,
       do: :ok,
       else: {:error, :gas_limit_exceeds_block}
   end
 
-  defp validate_nonce(%Transaction{} = tx, %Database{} = db) do
+  defp validate_nonce(%TxEnv{} = tx, %Database{} = db) do
     account_nonce = Database.get_nonce(db, tx.origin)
 
     cond do
@@ -115,13 +114,13 @@ defmodule EEVM.Transaction.Validator do
     end
   end
 
-  defp validate_eip1559_fees(%Transaction{type: type} = tx, %Block{} = block)
+  defp validate_eip1559_fees(%TxEnv{type: type} = tx, %BlockEnv{} = block)
        when type in [:eip1559, :eip4844, :eip7702] do
     cond do
       tx.max_fee_per_gas < tx.max_priority_fee_per_gas ->
         {:error, :priority_fee_above_max_fee}
 
-      tx.max_fee_per_gas < block.basefee ->
+      tx.max_fee_per_gas < block.base_fee ->
         {:error, :max_fee_below_basefee}
 
       true ->
@@ -129,9 +128,9 @@ defmodule EEVM.Transaction.Validator do
     end
   end
 
-  defp validate_eip1559_fees(%Transaction{}, %Block{}), do: :ok
+  defp validate_eip1559_fees(%TxEnv{}, %BlockEnv{}), do: :ok
 
-  defp validate_balance(%Transaction{} = tx, %Database{} = db) do
+  defp validate_balance(%TxEnv{} = tx, %Database{} = db) do
     sender_balance = Database.get_balance(db, tx.origin)
     required_balance = max_gas_cost(tx) + tx.value
 
@@ -141,7 +140,7 @@ defmodule EEVM.Transaction.Validator do
   end
 
   # EIP-3607, relaxed by EIP-7702: an EOA that delegated its code may still send.
-  defp validate_sender_is_eoa(%Transaction{} = tx, %Database{} = db) do
+  defp validate_sender_is_eoa(%TxEnv{} = tx, %Database{} = db) do
     code = Database.get_code(db, tx.origin)
 
     if code == <<>> or Delegation.designator?(code),
@@ -149,7 +148,7 @@ defmodule EEVM.Transaction.Validator do
       else: {:error, :sender_not_eoa}
   end
 
-  defp validate_blob_tx(%Transaction{type: :eip4844} = tx, %Block{} = block) do
+  defp validate_blob_tx(%TxEnv{type: :eip4844} = tx, %BlockEnv{} = block) do
     cond do
       tx.to == nil ->
         {:error, :blob_tx_no_creation}
@@ -165,27 +164,27 @@ defmodule EEVM.Transaction.Validator do
     end
   end
 
-  defp validate_blob_tx(%Transaction{}, %Block{}), do: :ok
+  defp validate_blob_tx(%TxEnv{}, %BlockEnv{}), do: :ok
 
-  defp validate_initcode_size(%Transaction{to: nil, data: data}) do
+  defp validate_initcode_size(%TxEnv{to: nil, data: data}) do
     if byte_size(data) <= @max_initcode_size,
       do: :ok,
       else: {:error, :initcode_too_large}
   end
 
-  defp validate_initcode_size(%Transaction{}), do: :ok
+  defp validate_initcode_size(%TxEnv{}), do: :ok
 
-  defp max_gas_cost(%Transaction{type: type} = tx) when type in [:eip1559, :eip4844, :eip7702] do
+  defp max_gas_cost(%TxEnv{type: type} = tx) when type in [:eip1559, :eip4844, :eip7702] do
     tx.gas_limit * tx.max_fee_per_gas + blob_gas_cost(tx)
   end
 
-  defp max_gas_cost(%Transaction{} = tx) do
-    tx.gas_limit * tx.gasprice
+  defp max_gas_cost(%TxEnv{} = tx) do
+    tx.gas_limit * tx.gas_price
   end
 
-  defp blob_gas_cost(%Transaction{type: :eip4844} = tx) do
+  defp blob_gas_cost(%TxEnv{type: :eip4844} = tx) do
     length(tx.blob_hashes) * @blob_gas_per_blob * tx.max_fee_per_blob_gas
   end
 
-  defp blob_gas_cost(%Transaction{}), do: 0
+  defp blob_gas_cost(%TxEnv{}), do: 0
 end

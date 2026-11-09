@@ -77,7 +77,7 @@ validation, including reverted ones, and `{:error, reason}` otherwise.
 
 ```elixir
 alias EEVM.{Config, Database}
-alias EEVM.Context.Block
+alias EEVM.BlockEnv
 alias EEVM.Database.InMemory
 alias EEVM.Transaction.{FeeMarket, Signer}
 
@@ -87,7 +87,7 @@ private_key = <<0x46::256>>
 recipient = 0xB0B
 
 db = InMemory.new(accounts: %{sender => %{balance: 10 ** 18, nonce: 0, code: <<>>}})
-block = Block.new(number: 1, gaslimit: 30_000_000, basefee: 7, coinbase: 0xC0FFEE)
+block = BlockEnv.new(number: 1, gas_limit: 30_000_000, base_fee: 7, coinbase: 0xC0FFEE)
 config = Config.new(:cancun, chain_id: 1)
 
 {:ok, tx} =

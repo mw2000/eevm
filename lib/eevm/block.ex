@@ -43,8 +43,7 @@ defmodule EEVM.Block do
   """
 
   alias EEVM.Block.{Header, HeaderValidator, Processor, Requests, Result, Withdrawal}
-  alias EEVM.{Config, Database, HardforkConfig, StateRoot, TransactionResult}
-  alias EEVM.Context.Block, as: BlockContext
+  alias EEVM.{BlockEnv, Config, Database, HardforkConfig, StateRoot, TransactionResult}
   alias EEVM.Gas.Blob, as: BlobGas
   alias EEVM.Handler
   alias EEVM.Handler.Validation
@@ -290,20 +289,10 @@ defmodule EEVM.Block do
   end
 
   defp block_context(%Header{} = header, %Config{} = config, opts) do
-    %BlockContext{
-      number: header.number,
-      timestamp: header.timestamp,
-      coinbase: header.coinbase,
-      gaslimit: header.gas_limit,
-      # Opcode 0x44 is DIFFICULTY before Paris and PREVRANDAO from it (EIP-4399).
-      prevrandao:
-        if(enabled?(config.hardfork, :eip_4399), do: header.prev_randao, else: header.difficulty),
-      basefee: header.base_fee_per_gas || 0,
-      blob_base_fee: blob_base_fee(header, config.hardfork),
-      chain_id: config.chain_id,
-      hashes: Keyword.get(opts, :block_hashes, %{}),
-      parent_beacon_block_root: header.parent_beacon_block_root || 0
-    }
+    BlockEnv.from_header(header,
+      config: config,
+      block_hashes: Keyword.get(opts, :block_hashes, %{})
+    )
   end
 
   # Before Byzantium a receipt commits to the state after its transaction
@@ -342,11 +331,6 @@ defmodule EEVM.Block do
       true -> @frontier_block_reward
     end
   end
-
-  defp blob_base_fee(%Header{excess_blob_gas: nil}, _hardfork), do: 0
-
-  defp blob_base_fee(%Header{excess_blob_gas: excess}, hardfork),
-    do: BlobGas.base_fee_per_blob_gas(excess, hardfork)
 
   # EIP-4788 then EIP-2935, both before any transaction.
   defp system_calls(%Header{} = header, hardfork) do

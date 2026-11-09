@@ -17,7 +17,7 @@ defmodule EEVM.Context.Contract do
 
   - `caller` (CALLER/msg.sender) = who directly called this contract.
     Changes with each nested CALL.
-  - `origin` (ORIGIN/tx.origin, in `EEVM.Context.Transaction`) = the EOA that
+  - `origin` (ORIGIN/tx.origin, in `EEVM.TxEnv`) = the EOA that
     signed the transaction. Never changes.
 
   Example: EOA -> Contract A -> Contract B; in B, `caller = A`, `origin = EOA`.

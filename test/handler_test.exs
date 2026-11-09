@@ -1,8 +1,7 @@
 defmodule EEVM.HandlerTest do
   use ExUnit.Case, async: true
 
-  alias EEVM.{Config, Database, Delegation, Handler, TransactionResult}
-  alias EEVM.Context.Block
+  alias EEVM.{BlockEnv, Config, Database, Delegation, Handler, TransactionResult}
   alias EEVM.Database.InMemory
   alias EEVM.Transaction.{Authorization, Blob, Envelope, FeeMarket, Legacy, SetCode, Signer}
 
@@ -145,7 +144,7 @@ defmodule EEVM.HandlerTest do
         })
 
       db = db_with_sender(balance: starting_balance)
-      block = simple_block(basefee: 5)
+      block = simple_block(base_fee: 5)
 
       assert {:ok, %TransactionResult{post_state_db: post_db, gas_used: 21_000}} =
                run(tx, db, block)
@@ -180,9 +179,9 @@ defmodule EEVM.HandlerTest do
       db = Database.put_code(db_with_sender(), @recipient, <<0x3A, 0x60, 0x00, 0x55, 0x00>>)
 
       assert {:ok, %TransactionResult{status: :success, post_state_db: post_db}} =
-               run(tx, db, simple_block(basefee: 5))
+               run(tx, db, simple_block(base_fee: 5))
 
-      # EIP-1559: min(max_fee 10, basefee 5 + tip 2) = 7.
+      # EIP-1559: min(max_fee 10, base_fee 5 + tip 2) = 7.
       assert Database.storage_load(post_db, @recipient, 0) == 7
     end
   end
@@ -197,7 +196,7 @@ defmodule EEVM.HandlerTest do
     @max_upfront 1_258_576
 
     test "burns blob gas at the block's blob base fee; coinbase gets only the tip" do
-      block = simple_block(basefee: 5, blob_base_fee: 3)
+      block = simple_block(base_fee: 5, blob_base_fee: 3)
 
       assert {:ok, %TransactionResult{post_state_db: post_db, gas_used: 21_000}} =
                run(blob_tx(), db_with_sender(balance: @max_upfront), block)
@@ -210,7 +209,7 @@ defmodule EEVM.HandlerTest do
     end
 
     test "requires the balance to cover blob gas at max_fee_per_blob_gas" do
-      block = simple_block(basefee: 5, blob_base_fee: 3)
+      block = simple_block(base_fee: 5, blob_base_fee: 3)
 
       assert {:error, :insufficient_balance} =
                run(blob_tx(), db_with_sender(balance: @max_upfront - 1), block)
@@ -652,8 +651,8 @@ defmodule EEVM.HandlerTest do
   end
 
   defp simple_block(overrides \\ []) do
-    Block.new(
-      [gaslimit: 30_000_000, basefee: 0, blob_base_fee: 0, coinbase: @coinbase] ++ overrides
+    BlockEnv.new(
+      [gas_limit: 30_000_000, base_fee: 0, blob_base_fee: 0, coinbase: @coinbase] ++ overrides
     )
   end
 end

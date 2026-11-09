@@ -5,8 +5,8 @@ defmodule EEVM.Interpreter.MachineState.Env do
   Bundles the fields that are set when a frame is constructed and
   never mutate during its lifetime:
 
-  - `tx` — the originating transaction context (origin, gasprice, blob hashes…)
-  - `block` — the block context (number, timestamp, coinbase, basefee…)
+  - `tx` — the transaction environment, `EEVM.TxEnv` (origin, gas price, blob hashes…)
+  - `block` — the block environment, `EEVM.BlockEnv` (number, timestamp, coinbase, base fee…)
   - `config` — the active hardfork config (which EIPs are enabled, registered
     precompiles)
   - `instruction_table` — the hardfork's opcode dispatch table
@@ -19,13 +19,14 @@ defmodule EEVM.Interpreter.MachineState.Env do
   evolve.
   """
 
+  alias EEVM.BlockEnv
   alias EEVM.Config
-  alias EEVM.Context.{Block, Transaction}
   alias EEVM.Interpreter.InstructionTable
+  alias EEVM.TxEnv
 
   @type t :: %__MODULE__{
-          tx: Transaction.t(),
-          block: Block.t(),
+          tx: TxEnv.t(),
+          block: BlockEnv.t(),
           config: Config.t(),
           instruction_table: InstructionTable.t()
         }
@@ -38,8 +39,8 @@ defmodule EEVM.Interpreter.MachineState.Env do
     config = Keyword.get(opts, :config, Config.new())
 
     %__MODULE__{
-      tx: Keyword.get(opts, :tx, Transaction.new()),
-      block: Keyword.get(opts, :block, Block.new()),
+      tx: Keyword.get(opts, :tx, TxEnv.new()),
+      block: Keyword.get(opts, :block, BlockEnv.new()),
       config: config,
       instruction_table: InstructionTable.for_spec(config.hardfork.spec_id)
     }

@@ -1,12 +1,14 @@
 defmodule EEVM.SystemContracts.BeaconRootsTest do
   use ExUnit.Case, async: true
 
-  alias EEVM.Context.{Block, Contract, Transaction}
+  alias EEVM.BlockEnv
+  alias EEVM.Context.Contract
   alias EEVM.Database
   alias EEVM.Database.InMemory
   alias EEVM.HardforkConfig
   alias EEVM.Interpreter.MachineState
   alias EEVM.SystemContracts.BeaconRoots
+  alias EEVM.TxEnv
 
   @history 8191
 
@@ -43,7 +45,7 @@ defmodule EEVM.SystemContracts.BeaconRootsTest do
   describe "commit/3" do
     test "stores timestamp and root in the ring-buffer slots" do
       db = BeaconRoots.install(InMemory.new())
-      block = %Block{timestamp: 1_700_000_000}
+      block = %BlockEnv{timestamp: 1_700_000_000}
       root = 0xDEADBEEFCAFEBABE0000000000000000000000000000000000000000FACEFEED
 
       {:ok, db} = BeaconRoots.commit(db, block, root)
@@ -55,7 +57,7 @@ defmodule EEVM.SystemContracts.BeaconRootsTest do
 
     test "lookup/2 round-trips a committed root" do
       db = BeaconRoots.install(InMemory.new())
-      block = %Block{timestamp: 1_700_000_000}
+      block = %BlockEnv{timestamp: 1_700_000_000}
       root = 0xFEED0001
 
       {:ok, db} = BeaconRoots.commit(db, block, root)
@@ -71,8 +73,8 @@ defmodule EEVM.SystemContracts.BeaconRootsTest do
     test "ring buffer overwrites when timestamps collide mod 8191" do
       db = BeaconRoots.install(InMemory.new())
 
-      {:ok, db} = BeaconRoots.commit(db, %Block{timestamp: 1_000}, 0xAAAA)
-      {:ok, db} = BeaconRoots.commit(db, %Block{timestamp: 1_000 + @history}, 0xBBBB)
+      {:ok, db} = BeaconRoots.commit(db, %BlockEnv{timestamp: 1_000}, 0xAAAA)
+      {:ok, db} = BeaconRoots.commit(db, %BlockEnv{timestamp: 1_000 + @history}, 0xBBBB)
 
       # The older timestamp now fails the verify check — ring slot belongs to the newer one.
       assert BeaconRoots.lookup(db, 1_000) == :not_found
@@ -88,7 +90,7 @@ defmodule EEVM.SystemContracts.BeaconRootsTest do
         0x1111111111111111111111111111111111111111111111111111111111111111
 
       db = BeaconRoots.install(InMemory.new())
-      {:ok, db} = BeaconRoots.commit(db, %Block{timestamp: timestamp}, root)
+      {:ok, db} = BeaconRoots.commit(db, %BlockEnv{timestamp: timestamp}, root)
 
       # Execute the contract directly as a user would via CALL: non-system caller,
       # 32-byte timestamp calldata. The bytecode must MSTORE+RETURN the root.
@@ -96,8 +98,8 @@ defmodule EEVM.SystemContracts.BeaconRootsTest do
         BeaconRoots.deployed_bytecode()
         |> MachineState.new(
           db: db,
-          block: %Block{timestamp: timestamp},
-          tx: %Transaction{origin: 0xCAFE},
+          block: %BlockEnv{timestamp: timestamp},
+          tx: %TxEnv{origin: 0xCAFE},
           contract: %Contract{
             address: BeaconRoots.address(),
             caller: 0xCAFE,
