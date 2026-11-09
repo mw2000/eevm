@@ -75,14 +75,17 @@ which an in-memory database doesn't pay. Compare the compute scenarios with othe
 | ripemd160 1 KiB (0x03) | 4,440 | 210,151 | 933 |
 | identity 1 KiB (0x04) | 111 | 2,347,937 | 261 |
 | modexp 2048-bit (0x05) | 698,368 | 145 | 101 |
-| bn256 pairing, 2 pairs (0x08) | 113,000 | 0.41 | 0.05 |
+| bn256 pairing, 2 pairs (0x08), before #181 | 113,000 | 0.41 | 0.05 |
+| bn256 pairing, 2 pairs (0x08) | 113,000 | 119 | 13.5 |
 | blake2f 12 rounds (0x09) | 12 | 54,868 | 0.66 |
 | blake2f 1M rounds (0x09) | 1,000,000 | 2.40 | 2.40 |
 | bls12-381 pairing, 1 pair (0x0F) | 70,300 | 557 | 39.2 |
 
-The BN256 pairing and BLAKE2F rows were measured later, after
+The BN256 pairing and BLAKE2F rows were measured later, on the same kind of orb: after
 [#169](https://github.com/mw2000/eevm/issues/169) and
-[#171](https://github.com/mw2000/eevm/issues/171) were fixed, on the same kind of orb.
+[#171](https://github.com/mw2000/eevm/issues/171) were fixed, and before and after
+[#181](https://github.com/mw2000/eevm/issues/181) replaced the `bn` library's pairing
+with `EEVM.Precompiles.BN256.Pairing`.
 
 ### Hot spots
 

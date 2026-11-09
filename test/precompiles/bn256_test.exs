@@ -178,17 +178,11 @@ defmodule EEVM.Precompiles.BN256Test do
   end
 
   describe "ecPairing (0x08) official EIP-197 vectors" do
-    # geth's bn256Pairing.json (see test/fixtures/precompiles/README.md). Each pair
-    # costs about a second in the pure-Elixir pairing, so only the vectors with at
-    # most two pairs run here, covering both results; the 3- and 10-pair vectors
-    # are exercised by the stZeroKnowledge state tests.
-    @vectors_run ~w(empty_data one_point jeff1 jeff6 two_point_match_2)
-
+    # geth's bn256Pairing.json (see test/fixtures/precompiles/README.md).
     for vector <-
           "test/fixtures/precompiles/bn256_pairing_eip197_vectors.json"
           |> File.read!()
-          |> Jason.decode!(),
-        vector["Name"] in @vectors_run do
+          |> Jason.decode!() do
       @vector vector
       test @vector["Name"] do
         input = Base.decode16!(@vector["Input"], case: :mixed)
