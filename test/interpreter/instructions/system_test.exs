@@ -272,6 +272,23 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
   end
 
   describe "CALL (0xF1)" do
+    test "a zero-size argument region costs no memory expansion, whatever its offset" do
+      world_state = WorldState.new(%{0 => %{balance: 10}, 1 => %{balance: 0, code: <<0x00>>}})
+
+      # CALL(gas 0xFFFF, to 1, value 0, argsOffset, argsSize 0, retOffset 0, retSize 0)
+      gas_left = fn <<args_offset::24>> ->
+        code =
+          <<0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x62, args_offset::24, 0x60, 0x00, 0x60, 0x01,
+            0x61, 0xFF, 0xFF, 0xF1, 0x00>>
+
+        result = EEVM.execute(code, world_state: world_state)
+        assert EEVM.stack_values(result) == [1]
+        result.frame.gas
+      end
+
+      assert gas_left.(<<0x010000::24>>) == gas_left.(<<0::24>>)
+    end
+
     test "calls external code and pushes success flag" do
       child_code = <<0x60, 0x2A, 0x60, 0x00, 0x53, 0x60, 0x01, 0x60, 0x00, 0xF3>>
 

@@ -556,18 +556,13 @@ defmodule EEVM.Interpreter.Instructions.System.Calls do
   end
 
   defp call_memory_expansion_cost(memory, args_offset, args_size, ret_offset, ret_size) do
-    current_size = Memory.size(memory)
-
-    args_end = args_offset + args_size
-    ret_end = ret_offset + ret_size
-    needed = max(args_end, ret_end)
-
-    if needed == 0 do
-      0
-    else
-      GasMemory.memory_expansion_cost(current_size, 0, needed)
-    end
+    needed = max(region_end(args_offset, args_size), region_end(ret_offset, ret_size))
+    GasMemory.memory_expansion_cost(Memory.size(memory), 0, needed)
   end
+
+  # A zero-size region touches no memory, whatever its offset.
+  defp region_end(_offset, 0), do: 0
+  defp region_end(offset, size), do: offset + size
 
   # Only min(size, byte_size(return_data)) bytes are written; the rest of the
   # output area keeps its contents (execution-specs `generic_call`,
