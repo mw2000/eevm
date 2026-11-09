@@ -1,22 +1,7 @@
 # Cases known to fail. CI fails on any failing case not covered here.
 # Each line is a directory (dir/), a fixture file, a test (file#name), or a case.
 # Regenerate after fixing failures with:
-#   mix eevm.blockchain_tests 'test/fixtures/state_tests/ethereum-tests/BlockchainTests/{ValidBlocks,InvalidBlocks,TransitionTests}/**/*.json' --write-known-failures test/fixtures/blockchain_tests/known_failures.txt --report /tmp/bt_stale2.json
-BlockchainTests/InvalidBlocks/bcEIP1559/baseFee.json#baseFee_Cancun
-BlockchainTests/InvalidBlocks/bcEIP1559/feeCap.json#feeCap_Cancun
-BlockchainTests/InvalidBlocks/bcEIP1559/transFail.json#transFail_Cancun
-BlockchainTests/InvalidBlocks/bcMultiChainTest/UncleFromSideChain.json#UncleFromSideChain_Cancun
-BlockchainTests/TransitionTests/bcArrowGlacierToParis/
-BlockchainTests/TransitionTests/bcBerlinToLondon/
-BlockchainTests/TransitionTests/bcByzantiumToConstantinopleFix/
-BlockchainTests/TransitionTests/bcEIP158ToByzantium/
-BlockchainTests/TransitionTests/bcFrontierToHomestead/
+#   mix eevm.blockchain_tests 'test/fixtures/state_tests/ethereum-tests/BlockchainTests/{ValidBlocks,InvalidBlocks,TransitionTests}/**/*.json' --timeout 180000 --write-known-failures test/fixtures/blockchain_tests/known_failures.txt
+BlockchainTests/TransitionTests/bcArrowGlacierToParis/powToPosBlockRejection.json
 BlockchainTests/TransitionTests/bcHomesteadToDao/
-BlockchainTests/TransitionTests/bcHomesteadToEIP150/
 BlockchainTests/ValidBlocks/bcEIP1559/burnVerify.json#burnVerify_Cancun
-BlockchainTests/ValidBlocks/bcEIP1559/highDemand.json#highDemand_Cancun
-BlockchainTests/ValidBlocks/bcEIP1559/intrinsic.json#intrinsic_Cancun
-BlockchainTests/ValidBlocks/bcEIP1559/intrinsicTip.json#intrinsicTip_Cancun
-BlockchainTests/ValidBlocks/bcEIP1559/lowDemand.json#lowDemand_Cancun
-BlockchainTests/ValidBlocks/bcEIP1559/medDemand.json#medDemand_Cancun
-BlockchainTests/ValidBlocks/bcEIP1559/tips.json#tips_Cancun
