@@ -547,6 +547,8 @@ defmodule EEVM.Interpreter.Instructions.System.Calls do
     end)
   end
 
+  # A call that fails before running (depth limit, insufficient balance)
+  # empties the return data buffer, as geth's `interpreter.returnData = ret` does.
   defp call_failed(state, stack) do
     {:ok, stack_after_call} = Stack.push(stack, 0)
 

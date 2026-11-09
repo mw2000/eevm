@@ -9,6 +9,11 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
   alias EEVM.Interpreter.Memory
   alias EEVM.WorldState
 
+  # MSTORE8 0xAB at 0, then CALL the identity precompile (0x04) with that byte as
+  # input, no value, and no output area, and POP: leaves 1 byte in the return data buffer.
+  @identity_call <<0x60, 0xAB, 0x60, 0x00, 0x53, 0x60, 0x00, 0x60, 0x00, 0x60, 0x01, 0x60, 0x00,
+                   0x60, 0x00, 0x60, 0x04, 0x61, 0xFF, 0xFF, 0xF1, 0x50>>
+
   describe "Executor - Return & Halt" do
     test "RETURN returns data from memory" do
       code = <<0x60, 0xAB, 0x60, 0, 0x53, 0x60, 1, 0x60, 0, 0xF3>>
@@ -127,6 +132,42 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
       assert EEVM.stack_values(result) == [32, 0]
       assert result.frame.gas == 1_000_000 - 12 - 32_000 - 3 - 6 - 2 - 2
       assert Database.get_nonce(result.db, 0) == 0
+    end
+
+    test "STOP after a sub-call in initcode deploys empty code" do
+      init_code = @identity_call <> <<0x00>>
+      code = build_create_program(init_code, :create, 0x00)
+
+      result = EEVM.execute(code, world_state: WorldState.new(%{0 => %{balance: 10}}))
+      [created_address] = EEVM.stack_values(result)
+
+      assert created_address != 0
+      assert Database.get_code(result.db, created_address) == <<>>
+    end
+
+    # EIP-211: after CREATE the buffer holds the init frame's output only if it reverted.
+    for {outcome, init_code, expected_size} <- [
+          {"returns", <<0x60, 0xAA, 0x60, 0x00, 0x53, 0x60, 0x01, 0x60, 0x00, 0xF3>>, 0},
+          {"reverts", <<0x60, 0xAA, 0x60, 0x00, 0x53, 0x60, 0x01, 0x60, 0x00, 0xFD>>, 1}
+        ] do
+      test "RETURNDATASIZE after CREATE whose initcode #{outcome} 1 byte is #{expected_size}" do
+        code = build_create_program(unquote(init_code), :create, 0x00)
+        # Replace the trailing STOP with RETURNDATASIZE, STOP.
+        code = binary_part(code, 0, byte_size(code) - 1) <> <<0x3D, 0x00>>
+
+        result = EEVM.execute(code, world_state: WorldState.new(%{0 => %{balance: 10}}))
+
+        assert [unquote(expected_size), _address] = EEVM.stack_values(result)
+      end
+    end
+
+    test "a failed CREATE clears the return data of an earlier call" do
+      create = build_create_program(<<0x00>>, :create, 0x09)
+      code = @identity_call <> binary_part(create, 0, byte_size(create) - 1) <> <<0x3D, 0x00>>
+
+      result = EEVM.execute(code, world_state: WorldState.new(%{0 => %{balance: 1}}))
+
+      assert EEVM.stack_values(result) == [0, 0]
     end
 
     test "CREATE fails and pushes zero when balance is insufficient" do
@@ -327,6 +368,40 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
 
       assert EEVM.stack_values(result) == [0]
       assert result.frame.gas == 199_880 - 6
+    end
+
+    # A frame that ends without RETURN or REVERT has empty output, even if its
+    # last sub-call returned data.
+    for {ending, tail} <- [
+          {"STOP", <<0x00>>},
+          {"running past the end of its code", <<>>},
+          {"SELFDESTRUCT", <<0x60, 0xBB, 0xFF>>},
+          {"INVALID", <<0xFE>>}
+        ] do
+      test "callee ending with #{ending} after its own call returns no data" do
+        world_state = WorldState.new(%{0xAA => %{code: @identity_call <> unquote(tail)}})
+
+        # CALL 0xAA with no value or data, POP, RETURNDATASIZE, STOP
+        code =
+          <<0x60, 0, 0x60, 0, 0x60, 0, 0x60, 0, 0x60, 0, 0x60, 0xAA, 0x61, 0xFF, 0xFF, 0xF1, 0x50,
+            0x3D, 0x00>>
+
+        result = EEVM.execute(code, world_state: world_state)
+
+        assert EEVM.stack_values(result) == [0]
+      end
+    end
+
+    test "a CALL that fails on balance clears the return data of an earlier call" do
+      # CALL 0xAA with value 5 from an empty account, POP, RETURNDATASIZE, STOP
+      code =
+        @identity_call <>
+          <<0x60, 0, 0x60, 0, 0x60, 0, 0x60, 0, 0x60, 0x05, 0x60, 0xAA, 0x61, 0xFF, 0xFF, 0xF1,
+            0x50, 0x3D, 0x00>>
+
+      result = EEVM.execute(code, world_state: WorldState.new(%{0 => %{balance: 0}}))
+
+      assert EEVM.stack_values(result) == [0]
     end
   end
 

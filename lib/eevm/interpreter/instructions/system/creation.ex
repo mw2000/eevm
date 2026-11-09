@@ -253,7 +253,7 @@ defmodule EEVM.Interpreter.Instructions.System.Creation do
                              | stack: stack_after_create,
                                memory: memory_after_read,
                                gas: reserve_gas + child_result.frame.gas - deposit_cost,
-                               return_data: child_result.frame.return_data
+                               return_data: <<>>
                            }
                          )
                          |> Map.put(:db, db_after_deploy)
@@ -264,10 +264,9 @@ defmodule EEVM.Interpreter.Instructions.System.Creation do
                     end
                   end
                 else
-                  create_failed(
-                    post_child_fail_state,
-                    stack
-                  )
+                  # EIP-211: only a reverted init frame exposes its output; an
+                  # exceptional halt has already cleared it.
+                  create_failed(post_child_fail_state, stack, child_result.frame.return_data)
                 end
             end
 
@@ -352,12 +351,14 @@ defmodule EEVM.Interpreter.Instructions.System.Creation do
     byte_size(runtime_code) > 0 and :binary.first(runtime_code) == 0xEF
   end
 
-  defp create_failed(state, stack) do
+  # EIP-211: after a CREATE the return data buffer holds the init frame's
+  # output only when it reverted; every other outcome leaves it empty.
+  defp create_failed(state, stack, return_data \\ <<>>) do
     {:ok, stack_after_create} = Stack.push(stack, 0)
 
     {:ok,
      state
-     |> MachineState.update_frame(&%{&1 | stack: stack_after_create})
+     |> MachineState.update_frame(&%{&1 | stack: stack_after_create, return_data: return_data})
      |> MachineState.advance_pc()}
   end
 end
