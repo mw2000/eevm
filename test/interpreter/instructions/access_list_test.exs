@@ -92,6 +92,23 @@ defmodule EEVM.Interpreter.Instructions.AccessListTest do
       end
     end
 
+    test "CALL-family opcodes pay only their flat static price before Berlin" do
+      for opcode <- [0xF1, 0xF2, 0xF4, 0xFA] do
+        value = if opcode in [0xF1, 0xF2], do: <<0x60, 0x00>>, else: <<>>
+
+        call =
+          <<0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x00>> <>
+            value <> <<0x60, 0x42, 0x60, 0x00, opcode, 0x50>>
+
+        pushes = if opcode in [0xF1, 0xF2], do: 7, else: 6
+
+        result = EEVM.execute(call <> call <> <<0x00>>, gas: 100_000, hardfork: :istanbul)
+
+        # EIP-150 price, no warm/cold distinction.
+        assert result.frame.gas == 100_000 - 2 * (pushes * 3 + 2) - 700 - 700
+      end
+    end
+
     test "precompile addresses are pre-warmed" do
       world_state = WorldState.new(%{0x01 => %{balance: 0}})
       code = <<0x60, 0x01, 0x31, 0x50, 0x00>>

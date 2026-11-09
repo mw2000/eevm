@@ -12,7 +12,9 @@ defmodule EEVM.Gas.Access do
   | Access Type | Cold Cost | Warm Cost |
   |-------------|-----------|-----------|
   | Account (BALANCE, EXTCODESIZE, etc.) | 2,600 | 100 |
+  | Account (CALL family, on top of its static 100) | +2,500 | +0 |
   | Storage slot (SLOAD) | 2,100 | 100 |
+  | Storage slot (SSTORE, on top of its schedule) | +2,100 | +0 |
 
   This module tracks which addresses and storage keys have been accessed and returns
   the appropriate cost. The state's `accessed_addresses` and `accessed_storage_keys`
@@ -37,59 +39,72 @@ defmodule EEVM.Gas.Access do
   # EIP-2929: first access to a storage slot
   @cold_sload_cost 2100
 
+  @doc """
+  Access cost of an account-reading opcode (BALANCE, EXTCODESIZE,
+  EXTCODECOPY, EXTCODEHASH), whose static cost is 0 from Berlin on:
+  2,600 cold, 100 warm. Marks `address` warm.
+  """
   @spec address_access_cost(MachineState.t(), non_neg_integer()) ::
           {non_neg_integer(), MachineState.t()}
-  def address_access_cost(state, address) do
-    if HardforkConfig.enabled?(state.env.config.hardfork, :eip_2929) do
-      sub = state.substate
-
-      if MapSet.member?(sub.accessed_addresses, address) do
-        {@warm_storage_read_cost, state}
-      else
-        new_sub = %{sub | accessed_addresses: MapSet.put(sub.accessed_addresses, address)}
-        {@cold_account_access_cost, %{state | substate: new_sub}}
-      end
-    else
-      # Pre-Berlin the opcode's flat static cost (Gas.Static.static_cost/2) is the
-      # whole access price.
-      {0, state}
-    end
-  end
+  def address_access_cost(state, address),
+    do: account_cost(state, address, @warm_storage_read_cost, @cold_account_access_cost)
 
   @doc """
   Extra access cost of a CALL-family target. Their static cost already
-  includes the warm price (100), so from Berlin a cold target adds 2,500.
-  Marks `address` warm.
+  includes the warm price (100), so a cold target adds 2,500. Marks
+  `address` warm.
   """
   @spec call_access_cost(MachineState.t(), non_neg_integer()) ::
           {non_neg_integer(), MachineState.t()}
-  def call_access_cost(state, address) do
-    case address_access_cost(state, address) do
-      {@cold_account_access_cost, state} ->
-        {@cold_account_access_cost - @warm_storage_read_cost, state}
+  def call_access_cost(state, address),
+    do: account_cost(state, address, 0, @cold_account_access_cost - @warm_storage_read_cost)
 
-      {_warm_or_pre_berlin, state} ->
+  @doc """
+  Access cost of SLOAD: 2,100 cold, 100 warm. Marks the slot warm.
+  """
+  @spec storage_access_cost(MachineState.t(), non_neg_integer(), non_neg_integer()) ::
+          {non_neg_integer(), MachineState.t()}
+  def storage_access_cost(state, address, slot),
+    do: slot_cost(state, {address, slot}, @warm_storage_read_cost, @cold_sload_cost)
+
+  @doc """
+  Extra access cost of SSTORE: 2,100 when the slot is cold, nothing when
+  warm (the SSTORE schedule prices warm writes). Marks the slot warm.
+  """
+  @spec sstore_access_cost(MachineState.t(), non_neg_integer(), non_neg_integer()) ::
+          {non_neg_integer(), MachineState.t()}
+  def sstore_access_cost(state, address, slot),
+    do: slot_cost(state, {address, slot}, 0, @cold_sload_cost)
+
+  defp account_cost(state, address, warm_cost, cold_cost) do
+    sub = state.substate
+
+    cond do
+      not HardforkConfig.enabled?(state.env.config.hardfork, :eip_2929) ->
         {0, state}
+
+      MapSet.member?(sub.accessed_addresses, address) ->
+        {warm_cost, state}
+
+      true ->
+        new_sub = %{sub | accessed_addresses: MapSet.put(sub.accessed_addresses, address)}
+        {cold_cost, %{state | substate: new_sub}}
     end
   end
 
-  @spec storage_access_cost(MachineState.t(), non_neg_integer(), non_neg_integer()) ::
-          {non_neg_integer(), MachineState.t()}
-  def storage_access_cost(state, address, slot) do
-    if HardforkConfig.enabled?(state.env.config.hardfork, :eip_2929) do
-      key = {address, slot}
-      sub = state.substate
+  defp slot_cost(state, key, warm_cost, cold_cost) do
+    sub = state.substate
 
-      if MapSet.member?(sub.accessed_storage_keys, key) do
-        {@warm_storage_read_cost, state}
-      else
+    cond do
+      not HardforkConfig.enabled?(state.env.config.hardfork, :eip_2929) ->
+        {0, state}
+
+      MapSet.member?(sub.accessed_storage_keys, key) ->
+        {warm_cost, state}
+
+      true ->
         new_sub = %{sub | accessed_storage_keys: MapSet.put(sub.accessed_storage_keys, key)}
-        {@cold_sload_cost, %{state | substate: new_sub}}
-      end
-    else
-      # Pre-Berlin SLOAD's flat static cost (Gas.Static.static_cost/2) is the
-      # whole access price.
-      {0, state}
+        {cold_cost, %{state | substate: new_sub}}
     end
   end
 

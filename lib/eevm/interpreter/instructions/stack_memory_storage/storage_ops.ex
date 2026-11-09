@@ -25,8 +25,6 @@ defmodule EEVM.Interpreter.Instructions.StackMemoryStorage.StorageOps do
   alias EEVM.Gas.{Access, Dynamic}
   alias EEVM.Interpreter.{MachineState, Stack}
 
-  @cold_sload_cost 2100
-
   @spec execute(non_neg_integer(), MachineState.t()) ::
           {:ok, MachineState.t()} | {:error, atom(), MachineState.t()}
   def execute(0x54, state) do
@@ -68,29 +66,15 @@ defmodule EEVM.Interpreter.Instructions.StackMemoryStorage.StorageOps do
          {:ok, value, s2} <- Stack.pop(s1) do
       state_after_stack = MachineState.update_frame(state, &%{&1 | stack: s2})
       contract_address = state_after_stack.frame.contract.address
-      access_key = {contract_address, key}
-      is_warm = MapSet.member?(state_after_stack.substate.accessed_storage_keys, access_key)
 
-      state_after_access =
-        if is_warm do
-          state_after_stack
-        else
-          sub = state_after_stack.substate
+      {access_cost, state_after_access} =
+        Access.sstore_access_cost(state_after_stack, contract_address, key)
 
-          new_sub = %{
-            sub
-            | accessed_storage_keys: MapSet.put(sub.accessed_storage_keys, access_key)
-          }
-
-          %{state_after_stack | substate: new_sub}
-        end
-
-      cold_cost = if is_warm, do: 0, else: @cold_sload_cost
       {original_value, state_with_original} = get_original_value(state_after_access, key)
       current_value = Database.storage_load(state_with_original.db, contract_address, key)
 
       {sstore_gas, refund_delta} = Dynamic.sstore_cost(original_value, current_value, value)
-      total_cost = cold_cost + sstore_gas
+      total_cost = access_cost + sstore_gas
 
       case MachineState.consume_gas(state_with_original, total_cost) do
         {:ok, state_after_gas} ->
