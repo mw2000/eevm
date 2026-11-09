@@ -232,7 +232,10 @@ defmodule EEVM.Interpreter.Instructions.System.Calls do
             case Precompiles.execute(address, calldata, child_gas, state_after_forward.env.config) do
               {:ok, output, gas_used} ->
                 remaining_gas = child_gas - gas_used
-                memory_result = write_return_data(memory_after_read, ret_offset, ret_size, output)
+
+                memory_result =
+                  Memory.write_output(memory_after_read, ret_offset, ret_size, output)
+
                 {:ok, stack_after_call} = Stack.push(state_after_forward.frame.stack, 1)
                 # The call succeeded, so its value transfer stands.
                 state_after_touch =
@@ -255,7 +258,7 @@ defmodule EEVM.Interpreter.Instructions.System.Calls do
                  |> MachineState.advance_pc()}
 
               {:error, _reason} ->
-                memory_result = write_return_data(memory_after_read, ret_offset, ret_size, <<>>)
+                memory_result = Memory.write_output(memory_after_read, ret_offset, ret_size, <<>>)
                 {:ok, stack_after_call} = Stack.push(state_after_forward.frame.stack, 0)
 
                 {:ok,
@@ -308,7 +311,7 @@ defmodule EEVM.Interpreter.Instructions.System.Calls do
             merged = Journal.merge_child_result(state_after_forward, child_result)
 
             memory_result =
-              write_return_data(
+              Memory.write_output(
                 memory_after_read,
                 ret_offset,
                 ret_size,
@@ -426,7 +429,10 @@ defmodule EEVM.Interpreter.Instructions.System.Calls do
             case Precompiles.execute(address, calldata, child_gas, state_after_forward.env.config) do
               {:ok, output, gas_used} ->
                 remaining_gas = child_gas - gas_used
-                memory_result = write_return_data(memory_after_read, ret_offset, ret_size, output)
+
+                memory_result =
+                  Memory.write_output(memory_after_read, ret_offset, ret_size, output)
+
                 {:ok, stack_after_call} = Stack.push(state_after_forward.frame.stack, 1)
                 state_after_touch = MachineState.touch_address(state_after_forward, address)
 
@@ -444,7 +450,7 @@ defmodule EEVM.Interpreter.Instructions.System.Calls do
                  |> MachineState.advance_pc()}
 
               {:error, _reason} ->
-                memory_result = write_return_data(memory_after_read, ret_offset, ret_size, <<>>)
+                memory_result = Memory.write_output(memory_after_read, ret_offset, ret_size, <<>>)
                 {:ok, stack_after_call} = Stack.push(state_after_forward.frame.stack, 0)
 
                 {:ok,
@@ -495,7 +501,7 @@ defmodule EEVM.Interpreter.Instructions.System.Calls do
             merged = Journal.merge_child_result(state_after_forward, child_result)
 
             memory_result =
-              write_return_data(
+              Memory.write_output(
                 memory_after_read,
                 ret_offset,
                 ret_size,
@@ -563,22 +569,6 @@ defmodule EEVM.Interpreter.Instructions.System.Calls do
   # A zero-size region touches no memory, whatever its offset.
   defp region_end(_offset, 0), do: 0
   defp region_end(offset, size), do: offset + size
-
-  # Only min(size, byte_size(return_data)) bytes are written; the rest of the
-  # output area keeps its contents (execution-specs `generic_call`,
-  # `actual_output_size`). Memory still expands over the whole area, which the
-  # CALL already paid for.
-  defp write_return_data(memory, _offset, 0, _return_data), do: memory
-
-  defp write_return_data(memory, offset, size, return_data) do
-    {_, expanded} = Memory.read_bytes(memory, offset, size)
-
-    return_data
-    |> binary_part(0, min(size, byte_size(return_data)))
-    |> :binary.bin_to_list()
-    |> Enum.with_index()
-    |> Enum.reduce(expanded, fn {byte, i}, mem -> Memory.store_byte(mem, offset + i, byte) end)
-  end
 
   # A call that fails before running (depth limit, insufficient balance)
   # empties the return data buffer, as geth's `interpreter.returnData = ret` does.

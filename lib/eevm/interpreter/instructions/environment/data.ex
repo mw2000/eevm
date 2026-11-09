@@ -42,25 +42,14 @@ defmodule EEVM.Interpreter.Instructions.Environment.Data do
                dynamic_cost
              ) do
           {:ok, state_after_gas} ->
-            calldata = state_after_gas.frame.contract.calldata
-            cd_size = byte_size(calldata)
-
-            bytes =
-              for i <- 0..(length - 1), into: <<>> do
-                if data_offset + i < cd_size do
-                  <<:binary.at(calldata, data_offset + i)>>
-                else
-                  <<0>>
-                end
-              end
-
             new_memory =
-              bytes
-              |> :binary.bin_to_list()
-              |> Enum.with_index()
-              |> Enum.reduce(state_after_gas.frame.memory, fn {byte, i}, mem ->
-                Memory.store_byte(mem, dest_offset + i, byte)
-              end)
+              Memory.write_slice(
+                state_after_gas.frame.memory,
+                dest_offset,
+                state_after_gas.frame.contract.calldata,
+                data_offset,
+                length
+              )
 
             {:ok,
              state_after_gas
@@ -92,15 +81,14 @@ defmodule EEVM.Interpreter.Instructions.Environment.Data do
                dynamic_cost
              ) do
           {:ok, state_after_gas} ->
-            bytes = MachineState.read_code(state_after_gas, code_offset, length)
-
             new_memory =
-              bytes
-              |> :binary.bin_to_list()
-              |> Enum.with_index()
-              |> Enum.reduce(state_after_gas.frame.memory, fn {byte, i}, mem ->
-                Memory.store_byte(mem, dest_offset + i, byte)
-              end)
+              Memory.write_slice(
+                state_after_gas.frame.memory,
+                dest_offset,
+                state_after_gas.frame.code,
+                code_offset,
+                length
+              )
 
             {:ok,
              state_after_gas
@@ -144,15 +132,14 @@ defmodule EEVM.Interpreter.Instructions.Environment.Data do
                  dynamic_cost
                ) do
             {:ok, s4} ->
-              bytes = binary_part(s4.frame.return_data, data_offset, length)
-
               new_memory =
-                bytes
-                |> :binary.bin_to_list()
-                |> Enum.with_index()
-                |> Enum.reduce(s4.frame.memory, fn {byte, i}, mem ->
-                  Memory.store_byte(mem, dest_offset + i, byte)
-                end)
+                Memory.write_slice(
+                  s4.frame.memory,
+                  dest_offset,
+                  s4.frame.return_data,
+                  data_offset,
+                  length
+                )
 
               {:ok,
                s4

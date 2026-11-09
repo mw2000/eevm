@@ -99,15 +99,14 @@ defmodule EEVM.Interpreter.Instructions.Environment.External do
 
             case MachineState.consume_gas(state_after_access_gas, dynamic_cost) do
               {:ok, state_after_gas} ->
-                bytes = read_external_code(state_after_gas.db, addr, code_offset, length)
-
                 new_memory =
-                  bytes
-                  |> :binary.bin_to_list()
-                  |> Enum.with_index()
-                  |> Enum.reduce(state_after_gas.frame.memory, fn {byte, i}, mem ->
-                    Memory.store_byte(mem, dest_offset + i, byte)
-                  end)
+                  Memory.write_slice(
+                    state_after_gas.frame.memory,
+                    dest_offset,
+                    Database.get_code(state_after_gas.db, addr),
+                    code_offset,
+                    length
+                  )
 
                 {:ok,
                  state_after_gas
@@ -175,20 +174,6 @@ defmodule EEVM.Interpreter.Instructions.Environment.External do
       Database.get_balance(state.db, address)
     else
       Contract.balance(state.frame.contract, address)
-    end
-  end
-
-  defp read_external_code(db, address, offset, length) do
-    code = Database.get_code(db, address)
-    code_size = byte_size(code)
-
-    if offset >= code_size do
-      <<0::size(length * 8)>>
-    else
-      available = min(length, code_size - offset)
-      chunk = binary_part(code, offset, available)
-      padding_size = (length - available) * 8
-      <<chunk::binary, 0::size(padding_size)>>
     end
   end
 end

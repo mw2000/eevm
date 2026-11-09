@@ -2,15 +2,23 @@ defmodule EEVM.Interpreter.Memory do
   @moduledoc """
   EVM memory — a byte-addressable, dynamically expanding linear memory.
 
-  Memory expands in 32-byte chunks. Reads or writes beyond the current size
-  auto-expand and are zero-filled. Gas cost increases quadratically with
+  Memory expands in 32-byte words. Reads or writes beyond the current size
+  expand it, and new bytes read as zero. Gas cost increases quadratically with
   memory size (see `EEVM.Gas.Memory`).
+
+  The contents are stored as 4 KiB binary chunks in a map keyed by chunk index.
+  Chunks that were never written are absent and read as zeros, so expansion
+  only bumps `size`. A write rebuilds just the chunks it touches, and reads
+  slice whole ranges out of the chunks. In `bench/` this beat both a map of
+  single bytes (the previous layout) and one flat binary, which must copy the
+  whole buffer on every write and falls far behind once memory grows past a
+  few KiB.
   """
 
-  @type t :: %__MODULE__{
-          data: %{non_neg_integer() => byte()},
-          size: non_neg_integer()
-        }
+  @chunk_size 4096
+  @zero_chunk <<0::size(@chunk_size * 8)>>
+
+  @type t :: %__MODULE__{data: %{non_neg_integer() => binary()}, size: non_neg_integer()}
 
   defstruct data: %{}, size: 0
 
@@ -19,42 +27,20 @@ defmodule EEVM.Interpreter.Memory do
   def new, do: %__MODULE__{}
 
   @doc """
-  Stores a 256-bit (32-byte) word at the given byte offset.
+  Stores a 256-bit (32-byte) word at the given byte offset, big-endian.
 
-  This is the MSTORE operation. The value is stored big-endian,
-  which is the EVM's byte ordering convention.
+  This is the MSTORE operation.
   """
   @spec store(t(), non_neg_integer(), non_neg_integer()) :: t()
-  def store(memory, offset, value) do
-    # Convert the 256-bit integer to a 32-byte big-endian binary
-    bytes = <<value::unsigned-big-integer-size(256)>>
-
-    # Write each byte individually into our map
-    data =
-      bytes
-      |> :binary.bin_to_list()
-      |> Enum.with_index()
-      |> Enum.reduce(memory.data, fn {byte, i}, acc ->
-        Map.put(acc, offset + i, byte)
-      end)
-
-    # Expand memory size if needed (rounds up to 32-byte words)
-    new_size = expand_size(memory.size, offset + 32)
-    %__MODULE__{data: data, size: new_size}
-  end
+  def store(memory, offset, value), do: write(memory, offset, <<value::unsigned-big-256>>)
 
   @doc """
-  Stores a single byte at the given offset.
+  Stores the low byte of `value` at the given offset.
 
   This is the MSTORE8 operation.
   """
   @spec store_byte(t(), non_neg_integer(), non_neg_integer()) :: t()
-  def store_byte(memory, offset, value) do
-    byte = Bitwise.band(value, 0xFF)
-    data = Map.put(memory.data, offset, byte)
-    new_size = expand_size(memory.size, offset + 1)
-    %__MODULE__{data: data, size: new_size}
-  end
+  def store_byte(memory, offset, value), do: write(memory, offset, <<value::8>>)
 
   @doc """
   Loads a 256-bit (32-byte) word from the given byte offset.
@@ -62,70 +48,112 @@ defmodule EEVM.Interpreter.Memory do
   This is the MLOAD operation. Unwritten bytes read as zero.
   """
   @spec load(t(), non_neg_integer()) :: {non_neg_integer(), t()}
-  def load(%__MODULE__{} = memory, offset) do
-    # Read 32 bytes, defaulting unset bytes to 0
-    bytes =
-      for i <- offset..(offset + 31) do
-        Map.get(memory.data, i, 0)
-      end
-
-    # Convert the 32 bytes back to a 256-bit integer (big-endian)
-    <<value::unsigned-big-integer-size(256)>> = :binary.list_to_bin(bytes)
-
-    new_size = expand_size(memory.size, offset + 32)
-    {value, %__MODULE__{memory | size: new_size}}
+  def load(memory, offset) do
+    {<<value::unsigned-big-256>>, memory} = read_bytes(memory, offset, 32)
+    {value, memory}
   end
 
   @doc """
-  Reads a range of bytes from memory as a binary.
+  Reads a range of bytes from memory as a binary, expanding memory to cover it.
 
-  Used by RETURN, REVERT, and LOG operations.
+  Used by RETURN, REVERT, LOG, KECCAK256, CREATE, and the CALL family.
   """
   @spec read_bytes(t(), non_neg_integer(), non_neg_integer()) :: {binary(), t()}
-  def read_bytes(%__MODULE__{} = memory, offset, length) when length > 0 do
-    bytes =
-      for i <- offset..(offset + length - 1) do
-        Map.get(memory.data, i, 0)
-      end
+  def read_bytes(memory, _offset, 0), do: {<<>>, memory}
 
-    new_size = expand_size(memory.size, offset + length)
-    {:binary.list_to_bin(bytes), %__MODULE__{memory | size: new_size}}
+  def read_bytes(memory, offset, length) do
+    memory = expand(memory, offset + length)
+    {IO.iodata_to_binary(read_chunks(memory.data, offset, length)), memory}
   end
 
-  def read_bytes(memory, _offset, 0), do: {<<>>, memory}
+  @doc """
+  Writes `length` bytes of `source`, starting at `source_offset`, to memory at
+  `offset`. Bytes past the end of `source` are written as zero.
+
+  These are the semantics of CALLDATACOPY, CODECOPY, EXTCODECOPY, and
+  RETURNDATACOPY.
+  """
+  @spec write_slice(t(), non_neg_integer(), binary(), non_neg_integer(), non_neg_integer()) ::
+          t()
+  def write_slice(memory, _offset, _source, _source_offset, 0), do: memory
+
+  def write_slice(memory, offset, source, source_offset, length) do
+    available = min(length, max(byte_size(source) - source_offset, 0))
+    slice = if available > 0, do: binary_part(source, source_offset, available), else: <<>>
+    write(memory, offset, <<slice::binary, 0::size((length - available) * 8)>>)
+  end
+
+  @doc """
+  Copies a call's `output` into the caller's output area, `size` bytes at `offset`.
+
+  Only `min(size, byte_size(output))` bytes are written; the rest of the area keeps
+  its contents, though memory still expands over all of it, which the CALL already
+  paid for (execution-specs `generic_call`, `actual_output_size`).
+  """
+  @spec write_output(t(), non_neg_integer(), non_neg_integer(), binary()) :: t()
+  def write_output(memory, _offset, 0, _output), do: memory
+
+  def write_output(memory, offset, size, output) do
+    memory
+    |> expand(offset + size)
+    |> write(offset, binary_part(output, 0, min(size, byte_size(output))))
+  end
 
   @doc """
   Copies `length` bytes from `src` to `dst` within memory (memmove semantics).
 
-  This is the MCOPY operation (EIP-5656). Handles overlapping regions correctly
-  by reading all source bytes before writing — similar to C's `memmove`.
+  This is the MCOPY operation (EIP-5656). Overlapping regions are handled
+  correctly because the source is read before anything is written.
   """
   @spec copy(t(), non_neg_integer(), non_neg_integer(), non_neg_integer()) :: t()
   def copy(memory, _dst, _src, 0), do: memory
 
-  def copy(%__MODULE__{} = memory, dst, src, length) do
-    {bytes, memory_after_read} = read_bytes(memory, src, length)
-
-    bytes
-    |> :binary.bin_to_list()
-    |> Enum.with_index()
-    |> Enum.reduce(memory_after_read, fn {byte, i}, acc ->
-      store_byte(acc, dst + i, byte)
-    end)
+  def copy(memory, dst, src, length) do
+    {bytes, memory} = read_bytes(memory, src, length)
+    write(memory, dst, bytes)
   end
 
   @doc "Returns the current memory size in bytes (always a multiple of 32)."
   @spec size(t()) :: non_neg_integer()
   def size(%__MODULE__{size: size}), do: size
 
-  # --- Private Helpers ---
-
-  # Expands memory size to cover `needed` bytes, rounding up to 32-byte words.
-  # `div/2` and `rem/2` are kernel functions for integer division and remainder.
-  defp expand_size(current, needed) when needed > current do
-    words = div(needed + 31, 32)
-    words * 32
+  defp write(memory, offset, bytes) do
+    memory = expand(memory, offset + byte_size(bytes))
+    %{memory | data: write_chunks(memory.data, offset, bytes)}
   end
 
-  defp expand_size(current, _needed), do: current
+  # Splices `bytes` into the chunk holding `offset`, then continues with the
+  # rest in the next chunk.
+  defp write_chunks(data, _offset, <<>>), do: data
+
+  defp write_chunks(data, offset, bytes) do
+    {index, within, n} = chunk_span(offset, byte_size(bytes))
+    <<head::binary-size(n), rest::binary>> = bytes
+    <<before::binary-size(within), _::binary-size(n), after_::binary>> = chunk(data, index)
+    data = Map.put(data, index, <<before::binary, head::binary, after_::binary>>)
+    write_chunks(data, offset + n, rest)
+  end
+
+  defp read_chunks(_data, _offset, 0), do: []
+
+  defp read_chunks(data, offset, length) do
+    {index, within, n} = chunk_span(offset, length)
+    [binary_part(chunk(data, index), within, n) | read_chunks(data, offset + n, length - n)]
+  end
+
+  # The chunk index for `offset`, the position within that chunk, and how many
+  # of `length` bytes fit before the chunk ends.
+  defp chunk_span(offset, length) do
+    within = rem(offset, @chunk_size)
+    {div(offset, @chunk_size), within, min(length, @chunk_size - within)}
+  end
+
+  defp chunk(data, index), do: Map.get(data, index, @zero_chunk)
+
+  # Grows memory to cover `needed` bytes, rounded up to a whole 32-byte word.
+  defp expand(%__MODULE__{size: size} = memory, needed) when needed > size do
+    %{memory | size: div(needed + 31, 32) * 32}
+  end
+
+  defp expand(memory, _needed), do: memory
 end

@@ -84,6 +84,25 @@ mstore_mload =
     :stop
   ])
 
+# MSTORE(i * 1024, i) for i = 1024..1: 1,024 word writes spread over 1 MiB of memory.
+sparse_mstore =
+  Asm.assemble([
+    1024,
+    {:label, :loop},
+    :dup1,
+    :dup1,
+    10,
+    :shl,
+    :mstore,
+    1,
+    :swap1,
+    :sub,
+    :dup1,
+    {:ref, :loop},
+    :jumpi,
+    :stop
+  ])
+
 # CALLDATACOPY 32 KiB of calldata into memory, MCOPY it to the next 32 KiB, RETURN 64 KiB.
 copy_size = 32 * 1024
 copy_calldata = :rand.bytes(copy_size)
@@ -296,6 +315,7 @@ jobs = %{
   "compute: arithmetic loop (50k)" => fn -> execute.(arith_loop, []) end,
   "compute: jump loop (100k)" => fn -> execute.(jump_loop, []) end,
   "memory: MSTORE/MLOAD 32 KiB" => fn -> execute.(mstore_mload, []) end,
+  "memory: 1k MSTOREs over 1 MiB" => fn -> execute.(sparse_mstore, []) end,
   "memory: CALLDATACOPY+MCOPY+RETURN 32 KiB" => fn ->
     execute.(copy_and_return, contract: Contract.new(address: contract, calldata: copy_calldata))
   end,

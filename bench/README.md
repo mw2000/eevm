@@ -25,6 +25,7 @@ small assembler in `bench/support/asm.exs`.
 | compute: arithmetic loop (50k) | ADD/MUL/AND on a stack accumulator with DUP/SWAP/POP and a JUMPI loop |
 | compute: jump loop (100k) | The smallest loop body: decrement and JUMPI |
 | memory: MSTORE/MLOAD 32 KiB | MSTORE then MLOAD at 1,024 word offsets, growing memory to 32 KiB |
+| memory: 1k MSTOREs over 1 MiB | 1,024 MSTOREs spaced 1 KiB apart, growing memory to 1 MiB |
 | memory: CALLDATACOPY+MCOPY+RETURN 32 KiB | Copies 32 KiB of calldata into memory, MCOPYs it, RETURNs 64 KiB |
 | keccak: 5k x 32 B | KECCAK256 of a fresh 32-byte word, 5,000 times |
 | keccak: 64 KiB | One KECCAK256 over 64 KiB of memory |
