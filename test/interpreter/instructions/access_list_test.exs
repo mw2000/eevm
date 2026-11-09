@@ -51,6 +51,25 @@ defmodule EEVM.Interpreter.Instructions.AccessListTest do
       assert result.frame.gas == 10_000 - 3 - 100 - 2
     end
 
+    test "CALL-family opcodes charge 2600 for a cold target and 100 once warm" do
+      world_state = WorldState.new(%{0x42 => %{code: <<0x00>>}})
+
+      for opcode <- [0xF1, 0xF2, 0xF4, 0xFA] do
+        value = if opcode in [0xF1, 0xF2], do: <<0x60, 0x00>>, else: <<>>
+        # retSize retOffset argsSize argsOffset [value] address gas, then CALL* and POP
+        call =
+          <<0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x00>> <>
+            value <> <<0x60, 0x42, 0x60, 0x00, opcode, 0x50>>
+
+        pushes = if opcode in [0xF1, 0xF2], do: 7, else: 6
+
+        result = EEVM.execute(call <> call <> <<0x00>>, world_state: world_state, gas: 100_000)
+
+        # EIP-2929: first access 2,600 (static 100 + 2,500 surcharge), second 100.
+        assert result.frame.gas == 100_000 - 2 * (pushes * 3 + 2) - 2_600 - 100
+      end
+    end
+
     test "precompile addresses are pre-warmed" do
       world_state = WorldState.new(%{0x01 => %{balance: 0}})
       code = <<0x60, 0x01, 0x31, 0x50, 0x00>>

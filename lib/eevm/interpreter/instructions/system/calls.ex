@@ -15,15 +15,21 @@ defmodule EEVM.Interpreter.Instructions.System.Calls do
   - **STATICCALL** (0xFA) — read-only call that reverts on state changes (EIP-214).
 
   All call opcodes use EIP-150 gas forwarding: `min(requested, available - available/64)`.
+  Each call also charges EIP-2929 cold access for its target on top of the
+  warm cost in the static table.
   """
 
   alias EEVM.Context.Contract
   alias EEVM.Database
+  alias EEVM.Gas.Access
   alias EEVM.Gas.Dynamic
   alias EEVM.Gas.Memory, as: GasMemory
   alias EEVM.Interpreter
   alias EEVM.Interpreter.{Journal, MachineState, Memory, Stack}
   alias EEVM.Precompiles
+
+  # Warm access is already charged as the static cost of every call opcode.
+  @warm_access_cost 100
 
   @spec execute(non_neg_integer(), MachineState.t()) ::
           {:ok, MachineState.t()} | {:error, atom(), MachineState.t()}
@@ -166,11 +172,12 @@ defmodule EEVM.Interpreter.Instructions.System.Calls do
          ret_offset,
          ret_size
        ) do
-    db = state.db
-    account_exists = Database.account_exists?(db, address)
+    {access_cost, state} = target_access_cost(state, address)
+    account_exists = Database.account_exists?(state.db, address)
 
     call_cost =
-      Dynamic.call_value_cost(value) +
+      access_cost +
+        Dynamic.call_value_cost(value) +
         Dynamic.call_new_account_cost(account_exists, value) +
         call_memory_expansion_cost(
           state.frame.memory,
@@ -332,8 +339,11 @@ defmodule EEVM.Interpreter.Instructions.System.Calls do
          charge_value_cost?,
          add_stipend?
        ) do
+    {access_cost, state} = target_access_cost(state, address)
+
     call_cost =
-      if(charge_value_cost?, do: Dynamic.call_value_cost(callvalue), else: 0) +
+      access_cost +
+        if(charge_value_cost?, do: Dynamic.call_value_cost(callvalue), else: 0) +
         call_memory_expansion_cost(
           state.frame.memory,
           args_offset,
@@ -473,6 +483,13 @@ defmodule EEVM.Interpreter.Instructions.System.Calls do
        do: frame.gas
 
   defp returned_gas(_child_result), do: 0
+
+  # EIP-2929: charge the cold surcharge (2,600 - 100) on first access to the
+  # target and mark it warm.
+  defp target_access_cost(state, address) do
+    {cost, state} = Access.address_access_cost(state, address)
+    {cost - @warm_access_cost, state}
+  end
 
   defp call_memory_expansion_cost(memory, args_offset, args_size, ret_offset, ret_size) do
     current_size = Memory.size(memory)
