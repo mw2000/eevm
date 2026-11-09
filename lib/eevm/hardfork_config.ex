@@ -23,7 +23,7 @@ defmodule EEVM.HardforkConfig do
   | `:cancun`        | EIP-1153 (TLOAD/TSTORE), EIP-4844 (blobs), EIP-5656 (MCOPY), EIP-6780 (SELFDESTRUCT) |
    | `:prague`        | EIP-2537 (BLS12-381 precompiles), EIP-7623 (calldata floor), EIP-7702 (set-code) |
   | `:osaka`         | EIP-7825 (tx gas limit cap), EIP-7918 (blob base fee floor), EIP-7934 (block RLP size limit), EIP-7939 (CLZ) |
-  |                  | EIP-7883 (ModExp repricing) |
+  |                  | EIP-7883 (ModExp repricing), EIP-7951 (P256VERIFY precompile) |
   """
 
   @type spec_id ::
@@ -118,7 +118,9 @@ defmodule EEVM.HardforkConfig do
     # EIP-7934 (Osaka): RLP-encoded execution block capped at 8 MiB (10 MiB minus 2 MiB margin)
     eip_7934: :osaka,
     # EIP-7939 (Osaka/Fusaka): CLZ opcode
-    eip_7939: :osaka
+    eip_7939: :osaka,
+    # EIP-7951 (Osaka): P256VERIFY (secp256r1) precompile at 0x100
+    eip_7951: :osaka
   }
 
   @doc """

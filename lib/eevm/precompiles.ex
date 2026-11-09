@@ -28,6 +28,7 @@ defmodule EEVM.Precompiles do
   | 0x0F | BLS12 PAIRING — pairing check over BLS12-381 | EIP-2537 |
   | 0x10 | BLS12 MAP_FP_TO_G1 — map Fp element into BLS12-381 G1 | EIP-2537 |
   | 0x11 | BLS12 MAP_FP2_TO_G2 — map Fp2 element into BLS12-381 G2 | EIP-2537 |
+  | 0x100 | P256VERIFY — secp256r1 ECDSA signature verification | EIP-7951 (Osaka) |
   """
 
   alias EEVM.Config
@@ -48,6 +49,7 @@ defmodule EEVM.Precompiles do
   alias EEVM.Precompiles.KZGPointEval
   alias EEVM.Precompiles.ModExp
   alias EEVM.Precompiles.ModExpEIP7883
+  alias EEVM.Precompiles.P256Verify
   alias EEVM.Precompiles.RIPEMD160
   alias EEVM.Precompiles.SHA256
 
@@ -77,7 +79,8 @@ defmodule EEVM.Precompiles do
   # Hardfork-gated additions/overrides, merged in order over the default registry.
   @hardfork_registries [
     eip_2537: @eip_2537_registry,
-    eip_7883: %{0x05 => ModExpEIP7883}
+    eip_7883: %{0x05 => ModExpEIP7883},
+    eip_7951: %{0x100 => P256Verify}
   ]
 
   @spec precompile?(non_neg_integer()) :: boolean()

@@ -16,8 +16,8 @@ code is a small Rust NIF for BLS12-381 curve arithmetic (EIP-2537 precompiles).
 
 It aims to be a production-grade EVM for the BEAM: easy to embed, easy to read,
 and built from small, pure functions over immutable state. It includes the
-interpreter, gas accounting, all precompiles through `0x11`, typed transactions,
-block processing, and Merkle-Patricia state roots.
+interpreter, gas accounting, all precompiles through `0x11` plus P256VERIFY
+(`0x100`), typed transactions, block processing, and Merkle-Patricia state roots.
 
 > **Status:** eevm is under active development and does not yet pass the official
 > Ethereum test suites. Do not use it where consensus correctness matters. See
@@ -139,17 +139,17 @@ rules.
 
 Rules that do switch on the configured fork: EIP-170, EIP-2929, EIP-3529,
 EIP-3541, EIP-3855, EIP-3860, EIP-1153, EIP-5656, EIP-6780, EIP-4788, EIP-2537,
-EIP-2935, EIP-7623, EIP-7825, EIP-7883, EIP-7918, and EIP-7939.
+EIP-2935, EIP-7623, EIP-7825, EIP-7883, EIP-7918, EIP-7939, and EIP-7951.
 
 | Area | Implemented |
 |------|-------------|
 | Transactions | Legacy with EIP-155, EIP-2718 envelopes, EIP-2930 access lists, EIP-1559 fee market, EIP-4844 blobs, EIP-7702 set code (partial, see [#144](https://github.com/mw2000/eevm/issues/144)), EIP-7623 calldata floor, EIP-7825 gas limit cap |
 | Execution and gas | Full opcode set through Cancun (including PUSH0, TLOAD/TSTORE, MCOPY, BLOBHASH, BLOBBASEFEE), EIP-2929 warm/cold access, EIP-2200 and EIP-3529 SSTORE metering and refunds, EIP-161, EIP-170, EIP-3541, EIP-3651, EIP-3860, EIP-6780 |
-| Precompiles | `0x01`–`0x11`: ECRECOVER, SHA256, RIPEMD160, IDENTITY, MODEXP (EIP-198, EIP-2565, EIP-7883 from Osaka), alt_bn128 (EIP-196/197), BLAKE2F (EIP-152), KZG point evaluation (EIP-4844), BLS12-381 (EIP-2537) |
+| Precompiles | `0x01`–`0x11` and `0x100`: ECRECOVER, SHA256, RIPEMD160, IDENTITY, MODEXP (EIP-198, EIP-2565, EIP-7883 from Osaka), alt_bn128 (EIP-196/197), BLAKE2F (EIP-152), KZG point evaluation (EIP-4844), BLS12-381 (EIP-2537), P256VERIFY (EIP-7951, from Osaka) |
 | Blocks | Header validation, EIP-4895 withdrawals, EIP-4788 beacon roots, EIP-2935 block hashes, receipts, logs bloom, MPT state, transaction, and receipt roots |
 | Tooling | EIP-3155 tracing, disassembler, custom precompile registration |
 
-Osaka support (so far the CLZ opcode, EIP-7825, EIP-7883, and EIP-7918) is in progress.
+Osaka support (so far the CLZ opcode, EIP-7825, EIP-7883, EIP-7918, and EIP-7951) is in progress.
 The EIP-7934 block size limit is checked only by the `BlockchainTests` harness,
 because the library does not RLP-encode blocks yet. The
 [roadmap](https://github.com/mw2000/eevm/issues/153) tracks what remains.

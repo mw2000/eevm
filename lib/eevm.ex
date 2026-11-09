@@ -20,7 +20,7 @@ defmodule EEVM do
 
   - `EEVM.Interpreter` — fetch-decode-execute loop and call frames
   - `EEVM.Interpreter.MachineState` — frame-local state (pc, stack, memory, gas)
-  - `EEVM.Precompiles` — registered precompiles (`0x01`–`0x11`)
+  - `EEVM.Precompiles` — registered precompiles (`0x01`–`0x11`, `0x100`)
   - `EEVM.Transaction` — envelope decoding, validation, signing, intrinsic gas
   - `EEVM.Block.Processor` — end-to-end transaction-to-receipt pipeline
   - `EEVM.Database`, `EEVM.WorldState`, `EEVM.Storage` — account and storage state
