@@ -64,6 +64,11 @@ defmodule EEVM.HardforkConfigTest do
       refute HardforkConfig.enabled?(HardforkConfig.new(:prague), :eip_7918)
     end
 
+    test "EIP-7934 (RLP block size limit) is enabled from Osaka onward" do
+      assert HardforkConfig.enabled?(HardforkConfig.new(:osaka), :eip_7934)
+      refute HardforkConfig.enabled?(HardforkConfig.new(:prague), :eip_7934)
+    end
+
     test "EIP-7939 (CLZ) is enabled from Osaka onward" do
       assert HardforkConfig.enabled?(HardforkConfig.new(:osaka), :eip_7939)
       refute HardforkConfig.enabled?(HardforkConfig.new(:prague), :eip_7939)

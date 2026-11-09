@@ -22,7 +22,7 @@ defmodule EEVM.HardforkConfig do
   | `:shanghai`      | EIP-3651 (COINBASE pre-warm), EIP-3855 (PUSH0), EIP-3860 (initcode limit) |
   | `:cancun`        | EIP-1153 (TLOAD/TSTORE), EIP-4844 (blobs), EIP-5656 (MCOPY), EIP-6780 (SELFDESTRUCT) |
    | `:prague`        | EIP-2537 (BLS12-381 precompiles), EIP-7623 (calldata floor), EIP-7702 (set-code) |
-  | `:osaka`         | EIP-7825 (tx gas limit cap), EIP-7918 (blob base fee floor), EIP-7939 (CLZ) |
+  | `:osaka`         | EIP-7825 (tx gas limit cap), EIP-7918 (blob base fee floor), EIP-7934 (block RLP size limit), EIP-7939 (CLZ) |
   """
 
   @type spec_id ::
@@ -112,6 +112,8 @@ defmodule EEVM.HardforkConfig do
     eip_7825: :osaka,
     # EIP-7918 (Osaka): blob base fee bounded below by execution cost
     eip_7918: :osaka,
+    # EIP-7934 (Osaka): RLP-encoded execution block capped at 8 MiB (10 MiB minus 2 MiB margin)
+    eip_7934: :osaka,
     # EIP-7939 (Osaka/Fusaka): CLZ opcode
     eip_7939: :osaka
   }

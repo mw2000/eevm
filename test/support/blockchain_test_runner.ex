@@ -15,7 +15,8 @@ defmodule EEVM.TestSupport.BlockchainTestRunner do
   4. After every block applies cleanly, verify the final database matches
      the fixture's `postState`.
 
-  Before a block runs, its header is checked against the parent with
+  Before a block runs, its fixture RLP is checked against the EIP-7934 size
+  limit and its header is checked against the parent with
   `EEVM.Block.HeaderValidator`. EIP-1559 basefee header rules aren't
   checked yet.
   """
@@ -32,6 +33,9 @@ defmodule EEVM.TestSupport.BlockchainTestRunner do
   alias EEVM.TestSupport.BlockchainTestFixture.Block, as: FixtureBlock
   alias EEVM.TestSupport.BlockchainTestFixture.Withdrawal, as: FixtureWithdrawal
   alias EEVM.TestSupport.TxExecutor
+
+  # EIP-7934: MAX_BLOCK_SIZE (10 MiB) minus a 2 MiB beacon-block SAFETY_MARGIN.
+  @max_rlp_block_size 10_485_760 - 2_097_152
 
   @spec run_case(Case.t()) :: :ok | {:error, term()}
   def run_case(%Case{} = test) do
@@ -110,9 +114,17 @@ defmodule EEVM.TestSupport.BlockchainTestRunner do
   defp run_block(%FixtureBlock{header: header} = block, db, parent, config) do
     eevm_header = to_eevm_header(header)
 
-    with :ok <- HeaderValidator.validate(eevm_header, parent, config.hardfork) do
+    with :ok <- check_rlp_block_size(block, config),
+         :ok <- HeaderValidator.validate(eevm_header, parent, config.hardfork) do
       do_run_block(block, eevm_header, db, config)
     end
+  end
+
+  defp check_rlp_block_size(%FixtureBlock{rlp: rlp}, %Config{} = config) do
+    if byte_size(rlp) > @max_rlp_block_size and
+         HardforkConfig.enabled?(config.hardfork, :eip_7934),
+       do: {:error, :rlp_block_size_exceeded},
+       else: :ok
   end
 
   defp do_run_block(%FixtureBlock{header: header} = block, eevm_header, db, config) do

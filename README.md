@@ -149,7 +149,9 @@ EIP-2935, EIP-7623, EIP-7825, EIP-7918, and EIP-7939.
 | Blocks | Header validation, EIP-4895 withdrawals, EIP-4788 beacon roots, EIP-2935 block hashes, receipts, logs bloom, MPT state, transaction, and receipt roots |
 | Tooling | EIP-3155 tracing, disassembler, custom precompile registration |
 
-Osaka support (so far the CLZ opcode, EIP-7825, and EIP-7918) is in progress and tracked in [GitHub Issues](https://github.com/mw2000/eevm/issues).
+Osaka support (so far the CLZ opcode, EIP-7825, and EIP-7918) is in progress.
+The EIP-7934 block size limit is checked only by the `BlockchainTests` harness,
+because the library does not RLP-encode blocks yet. Osaka work is tracked in [GitHub Issues](https://github.com/mw2000/eevm/issues).
 
 ## Conformance
 
