@@ -5,8 +5,9 @@ defmodule EEVM.Block.Result do
 
   ### Fields
 
-  - `post_state_db` — the `EEVM.Database` after system calls and every
-    transaction have been applied in order.
+  - `post_state_db` — the `EEVM.Database` after system calls, every
+    transaction, the withdrawals, and the request system calls have been
+    applied in order.
   - `receipts` — the per-transaction receipts, already carrying their
     `cumulative_gas_used` figures.
   - `state_root` — post-execution world-state MPT root.
@@ -15,6 +16,8 @@ defmodule EEVM.Block.Result do
   - `logs_bloom` — bitwise OR of every receipt's logs bloom.
   - `gas_used` — total gas consumed across all transactions (matches the
     final receipt's `cumulative_gas_used`, `0` when the block is empty).
+  - `requests` — the block's EIP-7685 requests, each a type byte followed by
+    its payload (see `EEVM.Block.Requests`); `nil` before Prague.
   """
 
   alias EEVM.Block.{Bloom, Receipt}
@@ -27,7 +30,8 @@ defmodule EEVM.Block.Result do
           receipts_root: binary(),
           transactions_root: binary(),
           logs_bloom: Bloom.t(),
-          gas_used: non_neg_integer()
+          gas_used: non_neg_integer(),
+          requests: [binary()] | nil
         }
 
   defstruct [
@@ -37,6 +41,7 @@ defmodule EEVM.Block.Result do
     :receipts_root,
     :transactions_root,
     :logs_bloom,
-    :gas_used
+    :gas_used,
+    :requests
   ]
 end

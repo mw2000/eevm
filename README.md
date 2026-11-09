@@ -127,10 +127,10 @@ signed transaction bytes.
 header: it derives the base fee and blob fields, runs the transactions, and
 fills in every root. `encode/1` and `decode/1` convert to and from canonical
 RLP. `execute/4` validates a block against its parent (including the EIP-7934
-size limit from Osaka), applies the system calls, transactions, and
-withdrawals, and checks the header's commitments. Both take the same
-`:hardfork` and `:config` options as `EEVM.Handler.execute/4`, and errors are
-listed in `EEVM.Error`.
+size limit from Osaka), applies the system calls, transactions, withdrawals,
+and from Prague the EIP-7685 requests, and checks the header's commitments.
+Both take the same `:hardfork` and `:config` options as
+`EEVM.Handler.execute/4`, and errors are listed in `EEVM.Error`.
 
 ```elixir
 iex> alias EEVM.Block
@@ -173,7 +173,7 @@ each fork are built at compile time.
 | Transactions | Legacy with EIP-155, EIP-2718 envelopes, EIP-2930 access lists, EIP-1559 fee market, EIP-4844 blobs, EIP-7702 set code (partial, see [#144](https://github.com/mw2000/eevm/issues/144)), EIP-7623 calldata floor, EIP-7825 gas limit cap |
 | Execution and gas | Full opcode set through Cancun (including PUSH0, TLOAD/TSTORE, MCOPY, BLOBHASH, BLOBBASEFEE), EIP-2929 warm/cold access, EIP-2200 and EIP-3529 SSTORE metering and refunds, EIP-161, EIP-170, EIP-3541, EIP-3651, EIP-3860, EIP-6780 |
 | Precompiles | `0x01`–`0x11` and `0x100`: ECRECOVER, SHA256, RIPEMD160, IDENTITY, MODEXP (EIP-198, EIP-2565; EIP-7823 and EIP-7883 from Osaka), alt_bn128 (EIP-196/197), BLAKE2F (EIP-152), KZG point evaluation (EIP-4844), BLS12-381 (EIP-2537), P256VERIFY (EIP-7951, from Osaka) |
-| Blocks | RLP block codec, building, header and body validation, EIP-7934 size limit, EIP-4895 withdrawals, EIP-4788 beacon roots, EIP-2935 block hashes, receipts, logs bloom, MPT state, transaction, and receipt roots |
+| Blocks | RLP block codec, building, header and body validation, EIP-7934 size limit, EIP-4895 withdrawals, EIP-4788 beacon roots, EIP-2935 block hashes, EIP-7685 requests (EIP-6110 deposits, EIP-7002 withdrawals, EIP-7251 consolidations), receipts, logs bloom, MPT state, transaction, and receipt roots |
 | Tooling | EIP-3155 tracing, disassembler, custom precompile registration |
 
 Osaka support (so far the CLZ opcode, EIP-7823, EIP-7825, EIP-7883, EIP-7918,
@@ -204,6 +204,11 @@ when a case outside those lists fails. After fixing failures, regenerate a list
 with `--write-known-failures FILE`. `test/fixtures/*/skip.txt` lists the few
 fixtures that are not run at all because they abort the VM or cannot finish
 within the per-case timeout.
+
+The pinned `ethereum/tests` snapshot filled its Prague BlockchainTests before
+the final EIP-7002/EIP-7251 rule that the request contracts must have code, so
+its Prague cases without them are known failures. Current Prague coverage comes
+from [EEST](https://github.com/ethereum/execution-spec-tests) fixtures.
 
 ## Performance
 

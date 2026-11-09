@@ -1,8 +1,9 @@
 defmodule EEVM.Block.Processor do
   @moduledoc """
   Lower-level block engine with an injectable transaction executor: system
-  calls, then transactions in order, then beacon-chain withdrawals, then the
-  commitments a consensus-level verifier will check.
+  calls, then transactions in order, then beacon-chain withdrawals, then
+  EIP-7685 requests, then the commitments a consensus-level verifier will
+  check.
 
   Most callers want `EEVM.Block.execute/4`, which validates the block, runs
   each transaction through `EEVM.Handler`, and checks the commitments against
@@ -36,6 +37,11 @@ defmodule EEVM.Block.Processor do
     reflects them. Defaults to `[]`.
   - `:block_context` — the `EEVM.Context.Block` handed to system calls and
     the executor. Defaults to one derived from the header's fields.
+  - `:requests` — `(%Database{}, %Context.Block{}, [%Receipt{}]) ->
+    {:ok, requests, %Database{}} | {:error, reason}`, run after the
+    withdrawals to collect the block's EIP-7685 requests (see
+    `EEVM.Block.Requests.collect/5`). Its database is the one the
+    `state_root` is computed from. Without it, `result.requests` is `nil`.
   """
 
   alias EEVM.Block.{Bloom, Header, Receipt, Result, Withdrawal}
@@ -62,15 +68,19 @@ defmodule EEVM.Block.Processor do
 
   @type tx_encoder :: (term() -> binary())
 
+  @type requests_hook :: (Database.t(), BlockCtx.t(), [Receipt.t()] ->
+                            {:ok, [binary()], Database.t()} | {:error, atom()})
+
   @type process_opts :: [
           tx_executor: tx_executor(),
           system_calls: [system_call()],
           tx_encoder: tx_encoder(),
           withdrawals: [Withdrawal.t()],
-          block_context: BlockCtx.t()
+          block_context: BlockCtx.t(),
+          requests: requests_hook()
         ]
 
-  @type process_error :: {:tx_failed, non_neg_integer(), term()}
+  @type process_error :: {:tx_failed, non_neg_integer(), term()} | atom()
 
   @doc """
   Execute every phase of the block and produce a `%EEVM.Block.Result{}`.
@@ -86,6 +96,7 @@ defmodule EEVM.Block.Processor do
     (`header.gas_limit` minus the gas used so far).
   - `{:error, {:tx_failed, index, reason}}` when the injected executor
     rejects a transaction. `index` is 0-based in `transactions` order.
+  - `{:error, reason}` when the `:requests` hook fails.
   """
   @spec process_block(Header.t(), [term()], Database.t(), process_opts()) ::
           {:ok, Result.t()} | {:error, process_error()}
@@ -99,13 +110,18 @@ defmodule EEVM.Block.Processor do
     block_ctx = Keyword.get_lazy(opts, :block_context, fn -> to_block_ctx(header) end)
     db_after_system = apply_system_calls(pre_state_db, block_ctx, system_calls)
 
-    case execute_transactions(transactions, block_ctx, db_after_system, tx_executor, header) do
-      {:ok, receipts, post_tx_db, gas_used} ->
-        post_db = apply_withdrawals(post_tx_db, withdrawals)
-        {:ok, build_result(post_db, receipts, transactions, gas_used, tx_encoder)}
-
-      {:error, _} = error ->
-        error
+    with {:ok, receipts, post_tx_db, gas_used} <-
+           execute_transactions(transactions, block_ctx, db_after_system, tx_executor, header),
+         post_withdrawals_db = apply_withdrawals(post_tx_db, withdrawals),
+         {:ok, requests, post_db} <-
+           collect_requests(
+             Keyword.get(opts, :requests),
+             post_withdrawals_db,
+             block_ctx,
+             receipts
+           ) do
+      result = build_result(post_db, receipts, transactions, gas_used, tx_encoder)
+      {:ok, %{result | requests: requests}}
     end
   end
 
@@ -190,7 +206,14 @@ defmodule EEVM.Block.Processor do
     do: Database.set_balance(db, addr, Database.get_balance(db, addr) + amount)
 
   # ---------------------------------------------------------------------------
-  # Phase 5 — commitments
+  # Phase 5 — EIP-7685 requests
+  # ---------------------------------------------------------------------------
+
+  defp collect_requests(nil, db, _block_ctx, _receipts), do: {:ok, nil, db}
+  defp collect_requests(hook, db, block_ctx, receipts), do: hook.(db, block_ctx, receipts)
+
+  # ---------------------------------------------------------------------------
+  # Phase 6 — commitments
   # ---------------------------------------------------------------------------
 
   @spec build_result(

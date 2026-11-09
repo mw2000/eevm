@@ -9,15 +9,17 @@ defmodule EEVM.Block do
     limit, `EEVM.Block.HeaderValidator` against the parent, and the body
     against the header's commitments.
   - `execute/4` validates the block, applies it to a database (system calls,
-    each transaction through `EEVM.Handler`, withdrawals), and checks the
-    header's `gas_used`, `logs_bloom`, `receipts_root`, and `state_root`
-    against the result.
+    each transaction through `EEVM.Handler`, withdrawals, EIP-7685 requests),
+    and checks the header's `gas_used`, `logs_bloom`, `receipts_root`,
+    `state_root`, and `requests_hash` against the result.
   - `build/4` produces a child block of a parent: it derives the header,
     executes the transactions, fills in every commitment, and hashes it.
 
   Options follow `EEVM.Handler.execute/4`: `:hardfork` (default `:cancun`) or
   a full `:config`, and `:chain_id` (default `1`). `:block_hashes` maps
-  recent block numbers to their hashes for BLOCKHASH.
+  recent block numbers to their hashes for BLOCKHASH. From Prague,
+  `:deposit_contract_address` names the chain's EIP-6110 deposit contract
+  (default: mainnet's, `EEVM.Block.Requests.mainnet_deposit_contract/0`).
 
   Errors are `{:error, reason}` with the reasons catalogued in `EEVM.Error`
   as `t:EEVM.Error.block_error/0`.
@@ -35,12 +37,11 @@ defmodule EEVM.Block do
       iex> result.gas_used
       0
 
-  Not covered: ommer (uncle) validation and rewards, fork transitions inside
-  a chain, and EIP-7685 request computation. `requests_hash` is carried and
-  round-tripped but not recomputed; `build/4` sets the empty-requests hash.
+  Not covered: ommer (uncle) validation and rewards, and fork transitions
+  inside a chain.
   """
 
-  alias EEVM.Block.{Header, HeaderValidator, Processor, Result, Withdrawal}
+  alias EEVM.Block.{Header, HeaderValidator, Processor, Requests, Result, Withdrawal}
   alias EEVM.{Config, Database, HardforkConfig, TransactionResult}
   alias EEVM.Context.Block, as: BlockContext
   alias EEVM.Gas.Blob, as: BlobGas
@@ -52,11 +53,6 @@ defmodule EEVM.Block do
 
   # EIP-7934: MAX_BLOCK_SIZE (10 MiB) minus a 2 MiB beacon-block SAFETY_MARGIN.
   @max_rlp_block_size 10_485_760 - 2_097_152
-
-  # EIP-7685: sha256 of no request data, the requests_hash of a block with no requests.
-  @empty_requests_hash Base.decode16!(
-                         "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855"
-                       )
 
   @default_chain_id 1
 
@@ -75,7 +71,8 @@ defmodule EEVM.Block do
           hardfork: HardforkConfig.spec_id(),
           config: Config.t(),
           chain_id: non_neg_integer(),
-          block_hashes: %{non_neg_integer() => non_neg_integer()}
+          block_hashes: %{non_neg_integer() => non_neg_integer()},
+          deposit_contract_address: non_neg_integer()
         ]
 
   @type build_opts :: [
@@ -83,6 +80,7 @@ defmodule EEVM.Block do
           config: Config.t(),
           chain_id: non_neg_integer(),
           block_hashes: %{non_neg_integer() => non_neg_integer()},
+          deposit_contract_address: non_neg_integer(),
           timestamp: non_neg_integer(),
           coinbase: non_neg_integer(),
           gas_limit: non_neg_integer(),
@@ -159,14 +157,19 @@ defmodule EEVM.Block do
 
   @doc """
   Validates `block` with `validate/3`, then applies it to `db`: the EIP-4788
-  and EIP-2935 system calls, each transaction through `EEVM.Handler`, and the
-  EIP-4895 withdrawals. Finally checks the header's `gas_used`, `logs_bloom`,
-  `receipts_root`, and `state_root` against the result.
+  and EIP-2935 system calls, each transaction through `EEVM.Handler`, the
+  EIP-4895 withdrawals, and from Prague the EIP-7685 requests (EIP-6110
+  deposits, then the EIP-7002 and EIP-7251 system calls; see
+  `EEVM.Block.Requests`). Finally checks the header's `gas_used`,
+  `logs_bloom`, `receipts_root`, `state_root`, and `requests_hash` against
+  the result.
 
   Returns `{:ok, %EEVM.Block.Result{}}` whose `post_state_db` is the state
-  after the block. A transaction that `EEVM.Handler` rejects, or whose gas
-  limit exceeds the gas left in the block, fails the block with
-  `{:error, {:tx_failed, index, reason}}`.
+  after the block and whose `requests` are the block's requests. A
+  transaction that `EEVM.Handler` rejects, or whose gas limit exceeds the gas
+  left in the block, fails the block with
+  `{:error, {:tx_failed, index, reason}}`; a request that can't be collected
+  fails it with that reason.
   """
   @spec execute(t(), Header.t(), Database.t(), opts()) ::
           {:ok, Result.t()} | {:error, EEVM.Error.block_error()}
@@ -217,7 +220,7 @@ defmodule EEVM.Block do
         if(enabled?(hardfork, :eip_4844), do: BlobGas.calc_excess_blob_gas(parent, hardfork)),
       parent_beacon_block_root:
         if(enabled?(hardfork, :eip_4788), do: Keyword.get(opts, :parent_beacon_block_root, 0)),
-      requests_hash: if(enabled?(hardfork, :eip_7685), do: @empty_requests_hash)
+      requests_hash: nil
     }
 
     block = %__MODULE__{header: header, transactions: transactions, withdrawals: withdrawals}
@@ -229,7 +232,8 @@ defmodule EEVM.Block do
           transactions_root: result.transactions_root,
           receipts_root: result.receipts_root,
           logs_bloom: result.logs_bloom,
-          gas_used: result.gas_used
+          gas_used: result.gas_used,
+          requests_hash: result.requests && Requests.hash(result.requests)
       }
 
       {:ok, %{block | header: %{header | hash: Header.compute_hash(header)}}, result}
@@ -247,8 +251,18 @@ defmodule EEVM.Block do
       tx_executor: tx_executor(config, chain_id),
       system_calls: system_calls(header, config.hardfork),
       withdrawals: block.withdrawals || [],
-      block_context: block_context(header, config.hardfork, chain_id, opts)
+      block_context: block_context(header, config.hardfork, chain_id, opts),
+      requests: requests(config, opts)
     )
+  end
+
+  defp requests(%Config{} = config, opts) do
+    if enabled?(config.hardfork, :eip_7685) do
+      deposit_contract =
+        Keyword.get(opts, :deposit_contract_address, Requests.mainnet_deposit_contract())
+
+      &Requests.collect(&1, &2, &3, config, deposit_contract)
+    end
   end
 
   defp tx_executor(config, chain_id) do
@@ -312,11 +326,23 @@ defmodule EEVM.Block do
 
   defp check_result(%Result{} = result, %Header{} = header) do
     cond do
-      result.gas_used != header.gas_used -> {:error, :invalid_gas_used}
-      result.logs_bloom != header.logs_bloom -> {:error, :invalid_logs_bloom}
-      result.receipts_root != header.receipts_root -> {:error, :invalid_receipts_root}
-      result.state_root != header.state_root -> {:error, :invalid_state_root}
-      true -> {:ok, result}
+      result.gas_used != header.gas_used ->
+        {:error, :invalid_gas_used}
+
+      result.logs_bloom != header.logs_bloom ->
+        {:error, :invalid_logs_bloom}
+
+      result.receipts_root != header.receipts_root ->
+        {:error, :invalid_receipts_root}
+
+      result.state_root != header.state_root ->
+        {:error, :invalid_state_root}
+
+      result.requests && Requests.hash(result.requests) != header.requests_hash ->
+        {:error, :invalid_requests_hash}
+
+      true ->
+        {:ok, result}
     end
   end
 

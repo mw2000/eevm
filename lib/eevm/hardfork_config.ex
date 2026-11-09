@@ -22,6 +22,7 @@ defmodule EEVM.HardforkConfig do
   | `:shanghai`      | EIP-3651 (COINBASE pre-warm), EIP-3855 (PUSH0), EIP-3860 (initcode limit) |
   | `:cancun`        | EIP-1153 (TLOAD/TSTORE), EIP-4844 (blobs, BLOBHASH, KZG precompile), EIP-5656 (MCOPY), EIP-6780 (SELFDESTRUCT), EIP-7516 (BLOBBASEFEE) |
   | `:prague`        | EIP-2537 (BLS12-381 precompiles), EIP-7623 (calldata floor), EIP-7702 (set-code) |
+  |                  | EIP-2935 (block hashes), EIP-7685 requests: EIP-6110 deposits, EIP-7002 withdrawals, EIP-7251 consolidations |
   | `:osaka`         | EIP-7825 (tx gas limit cap), EIP-7918 (blob base fee floor), EIP-7934 (block RLP size limit), EIP-7939 (CLZ) |
   |                  | EIP-7823 (ModExp bounds), EIP-7883 (ModExp repricing), EIP-7951 (P256VERIFY precompile) |
   """
@@ -155,6 +156,12 @@ defmodule EEVM.HardforkConfig do
     eip_7691: :prague,
     # EIP-7685 (Prague): general execution-layer requests; header requests_hash
     eip_7685: :prague,
+    # EIP-6110 (Prague): deposit requests from the deposit contract's logs
+    eip_6110: :prague,
+    # EIP-7002 (Prague): withdrawal requests from the system contract at 0x00000961...7002
+    eip_7002: :prague,
+    # EIP-7251 (Prague): consolidation requests from the system contract at 0x0000BBdD...7251
+    eip_7251: :prague,
     # EIP-7702 (Prague): set-code transactions and delegation designators
     eip_7702: :prague,
     # EIP-7825 (Osaka): per-transaction gas limit cap of 2^24
