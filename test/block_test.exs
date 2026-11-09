@@ -122,6 +122,24 @@ defmodule EEVM.BlockTest do
     end
   end
 
+  describe "proof-of-work block reward" do
+    # Yellow Paper section 11.3, EIP-649 (Byzantium), EIP-1234
+    # (Constantinople); none from Paris (EIP-3675). An empty block pays no fees.
+    for {fork, reward} <- [
+          frontier: 5 * 10 ** 18,
+          spurious_dragon: 5 * 10 ** 18,
+          byzantium: 3 * 10 ** 18,
+          constantinople: 2 * 10 ** 18,
+          london: 2 * 10 ** 18,
+          paris: 0
+        ] do
+      test "#{fork} credits the miner #{reward} wei" do
+        {:ok, _block, built} = build([], hardfork: unquote(fork))
+        assert Database.get_balance(built.post_state_db, @coinbase) == unquote(reward)
+      end
+    end
+  end
+
   describe "EIP-7934 RLP block size limit" do
     test "Osaka accepts a block of exactly MAX_RLP_BLOCK_SIZE bytes and rejects one byte more" do
       limit = Block.max_rlp_block_size()

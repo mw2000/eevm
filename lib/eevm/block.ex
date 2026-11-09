@@ -43,7 +43,7 @@ defmodule EEVM.Block do
   """
 
   alias EEVM.Block.{Header, HeaderValidator, Processor, Requests, Result, Withdrawal}
-  alias EEVM.{Config, Database, HardforkConfig, TransactionResult}
+  alias EEVM.{Config, Database, HardforkConfig, StateRoot, TransactionResult}
   alias EEVM.Context.Block, as: BlockContext
   alias EEVM.Gas.Blob, as: BlobGas
   alias EEVM.Handler
@@ -54,6 +54,12 @@ defmodule EEVM.Block do
 
   # EIP-7934: MAX_BLOCK_SIZE (10 MiB) minus a 2 MiB beacon-block SAFETY_MARGIN.
   @max_rlp_block_size 10_485_760 - 2_097_152
+
+  # Proof-of-work block reward (Yellow Paper section 11.3), cut by EIP-649
+  # and EIP-1234; none from Paris (EIP-3675).
+  @frontier_block_reward 5_000_000_000_000_000_000
+  @byzantium_block_reward 3_000_000_000_000_000_000
+  @constantinople_block_reward 2_000_000_000_000_000_000
 
   @type transaction :: Legacy.t() | AccessList.t() | FeeMarket.t() | Blob.t() | SetCode.t()
 
@@ -247,6 +253,7 @@ defmodule EEVM.Block do
     Processor.process_block(header, block.transactions, db,
       tx_executor: tx_executor(config),
       system_calls: system_calls(header, config.hardfork),
+      rewards: rewards(block, config.hardfork),
       withdrawals: block.withdrawals || [],
       block_context: block_context(header, config, opts),
       requests: requests(config, opts)
@@ -273,7 +280,8 @@ defmodule EEVM.Block do
              logs: result.logs,
              db: result.post_state_db,
              tx_type: tx_type(tx)
-           }}
+           }
+           |> put_receipt_state_root(config.hardfork)}
 
         {:error, _reason} = error ->
           error
@@ -287,13 +295,52 @@ defmodule EEVM.Block do
       timestamp: header.timestamp,
       coinbase: header.coinbase,
       gaslimit: header.gas_limit,
-      prevrandao: header.prev_randao,
+      # Opcode 0x44 is DIFFICULTY before Paris and PREVRANDAO from it (EIP-4399).
+      prevrandao:
+        if(enabled?(config.hardfork, :eip_4399), do: header.prev_randao, else: header.difficulty),
       basefee: header.base_fee_per_gas || 0,
       blob_base_fee: blob_base_fee(header, config.hardfork),
       chain_id: config.chain_id,
       hashes: Keyword.get(opts, :block_hashes, %{}),
       parent_beacon_block_root: header.parent_beacon_block_root || 0
     }
+  end
+
+  # Before Byzantium a receipt commits to the state after its transaction
+  # instead of a status code (EIP-658).
+  defp put_receipt_state_root(tx_result, hardfork) do
+    if enabled?(hardfork, :eip_658),
+      do: tx_result,
+      else: Map.put(tx_result, :state_root, StateRoot.compute_state_root(tx_result.db))
+  end
+
+  # Before Paris the miner earns the block reward plus 1/32 of it per ommer,
+  # and each ommer's miner earns (8 + ommer number - block number) / 8 of it
+  # (Yellow Paper section 11.3).
+  defp rewards(%__MODULE__{header: header, ommers: ommers}, hardfork) do
+    reward = block_reward(hardfork)
+
+    if reward == 0 do
+      []
+    else
+      miner = {header.coinbase, reward + div(reward, 32) * length(ommers)}
+
+      ommer_rewards =
+        Enum.map(ommers, fn ommer ->
+          {ommer.coinbase, div((8 + ommer.number - header.number) * reward, 8)}
+        end)
+
+      [miner | ommer_rewards]
+    end
+  end
+
+  defp block_reward(hardfork) do
+    cond do
+      enabled?(hardfork, :eip_3675) -> 0
+      enabled?(hardfork, :eip_1234) -> @constantinople_block_reward
+      enabled?(hardfork, :eip_649) -> @byzantium_block_reward
+      true -> @frontier_block_reward
+    end
   end
 
   defp blob_base_fee(%Header{excess_blob_gas: nil}, _hardfork), do: 0

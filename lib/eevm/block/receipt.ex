@@ -5,6 +5,9 @@ defmodule EEVM.Block.Receipt do
   ### Fields
 
   - `status` — `1` if the top-level call completed, `0` if it reverted.
+  - `state_root` — before Byzantium, the state root after this transaction,
+    which the receipt carries in place of `status` (EIP-658); `nil` from
+    Byzantium on.
   - `cumulative_gas_used` — total gas consumed in the block up to and including
     this transaction. The `cumulative_gas_used` of the last receipt equals the
     block's `gas_used`.
@@ -19,7 +22,8 @@ defmodule EEVM.Block.Receipt do
   ## Wire encoding (EIP-2718)
 
   - **Legacy** (type-0) receipts encode as a plain RLP list:
-    `RLP([status, cumulative_gas_used, logs_bloom, logs])`.
+    `RLP([status, cumulative_gas_used, logs_bloom, logs])`, with the 32-byte
+    `state_root` in place of `status` when it is set.
   - **Typed** receipts (EIP-2930 / 1559 / 4844 / 7702) prepend a single type byte to
     the same RLP list, e.g. `<<0x02>> <> RLP([...])` for EIP-1559.
 
@@ -36,6 +40,7 @@ defmodule EEVM.Block.Receipt do
   @type t :: %__MODULE__{
           tx_type: tx_type(),
           status: 0 | 1,
+          state_root: binary() | nil,
           cumulative_gas_used: non_neg_integer(),
           logs: [log()],
           logs_bloom: Bloom.t()
@@ -43,6 +48,7 @@ defmodule EEVM.Block.Receipt do
 
   defstruct tx_type: :legacy,
             status: 1,
+            state_root: nil,
             cumulative_gas_used: 0,
             logs: [],
             logs_bloom: <<0::2048>>
@@ -93,7 +99,7 @@ defmodule EEVM.Block.Receipt do
 
   defp rlp_fields(%__MODULE__{} = receipt) do
     [
-      encode_integer(receipt.status),
+      receipt.state_root || encode_integer(receipt.status),
       encode_integer(receipt.cumulative_gas_used),
       receipt.logs_bloom,
       Enum.map(receipt.logs, &encode_log/1)

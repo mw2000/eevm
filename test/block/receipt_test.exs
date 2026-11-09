@@ -66,6 +66,14 @@ defmodule EEVM.Block.ReceiptTest do
       assert :binary.first(Receipt.encode(receipt)) >= 0xC0
     end
 
+    test "puts a pre-Byzantium state root in place of the status (EIP-658)" do
+      root = <<0xAB::256>>
+      receipt = Receipt.new(status: 1, state_root: root, cumulative_gas_used: 21_000)
+
+      assert Receipt.encode(receipt) ==
+               ExRLP.encode([root, <<0x52, 0x08>>, Bloom.empty(), []])
+    end
+
     test "encodes a reverted (status=0) receipt with empty status byte" do
       receipt = Receipt.new(status: 0, cumulative_gas_used: 50_000)
 

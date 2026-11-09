@@ -23,7 +23,9 @@ defmodule EEVM.Block.Processor do
     database after all prior transactions and system calls have been
     applied. The returned `tx_result` is a map with keys `:status`,
     `:gas_used`, `:logs`, and `:db`, plus an optional `:tx_type` (default
-    `:legacy`) that selects the EIP-2718 receipt encoding.
+    `:legacy`) that selects the EIP-2718 receipt encoding and an optional
+    `:state_root` that the receipt carries in place of its status (before
+    Byzantium, EIP-658).
   - `:system_calls` — list of hooks, each `(%Database{}, %Context.Block{})
     -> %Database{}`. Executed in order, strictly before any transaction.
     The default is `[]`.
@@ -31,6 +33,9 @@ defmodule EEVM.Block.Processor do
     `transactions_root`. Defaults to `EEVM.Transaction.Envelope.encode/1`,
     which handles every typed envelope this codebase knows about. Tests
     using plain maps supply their own.
+  - `:rewards` — list of `{address, wei}` balance credits for the block's
+    proof-of-work miner and ommer rewards, applied after the transactions.
+    Defaults to `[]`.
   - `:withdrawals` — list of `EEVM.Block.Withdrawal` structs (EIP-4895).
     Applied as flat balance credits after the transaction fold and before
     the state root is computed, so the returned `state_root` already
@@ -58,7 +63,8 @@ defmodule EEVM.Block.Processor do
           required(:gas_used) => non_neg_integer(),
           required(:logs) => [Bloom.log_entry()],
           required(:db) => Database.t(),
-          optional(:tx_type) => Receipt.tx_type()
+          optional(:tx_type) => Receipt.tx_type(),
+          optional(:state_root) => binary()
         }
 
   @type tx_executor :: (term(), BlockCtx.t(), Database.t() ->
@@ -75,6 +81,7 @@ defmodule EEVM.Block.Processor do
           tx_executor: tx_executor(),
           system_calls: [system_call()],
           tx_encoder: tx_encoder(),
+          rewards: [{non_neg_integer(), non_neg_integer()}],
           withdrawals: [Withdrawal.t()],
           block_context: BlockCtx.t(),
           requests: requests_hook()
@@ -112,7 +119,8 @@ defmodule EEVM.Block.Processor do
 
     with {:ok, receipts, post_tx_db, gas_used} <-
            execute_transactions(transactions, block_ctx, db_after_system, tx_executor, header),
-         post_withdrawals_db = apply_withdrawals(post_tx_db, withdrawals),
+         post_rewards_db = apply_rewards(post_tx_db, Keyword.get(opts, :rewards, [])),
+         post_withdrawals_db = apply_withdrawals(post_rewards_db, withdrawals),
          {:ok, requests, post_db} <-
            collect_requests(
              Keyword.get(opts, :requests),
@@ -166,6 +174,7 @@ defmodule EEVM.Block.Processor do
             receipt = %Receipt{
               tx_type: Map.get(tx_result, :tx_type, :legacy),
               status: status,
+              state_root: Map.get(tx_result, :state_root),
               cumulative_gas_used: new_cumulative,
               logs: logs,
               logs_bloom: Bloom.from_logs(logs)
@@ -188,7 +197,15 @@ defmodule EEVM.Block.Processor do
   end
 
   # ---------------------------------------------------------------------------
-  # Phase 4 — withdrawals (EIP-4895)
+  # Phase 4 — proof-of-work rewards, then withdrawals (EIP-4895)
+  # ---------------------------------------------------------------------------
+
+  defp apply_rewards(db, rewards) do
+    Enum.reduce(rewards, db, fn {addr, amount}, db_acc -> credit_balance(db_acc, addr, amount) end)
+  end
+
+  # ---------------------------------------------------------------------------
+  # Withdrawals (EIP-4895)
   # ---------------------------------------------------------------------------
 
   # Each withdrawal is a flat balance credit; `amount` is in gwei per the EIP,

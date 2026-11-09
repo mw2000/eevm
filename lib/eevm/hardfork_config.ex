@@ -92,12 +92,18 @@ defmodule EEVM.HardforkConfig do
     eip_197: :byzantium,
     # EIP-198 (Byzantium): ModExp precompile at 0x05
     eip_198: :byzantium,
+    # EIP-649 (Byzantium): block reward cut from 5 to 3 ETH
+    eip_649: :byzantium,
+    # EIP-658 (Byzantium): receipts carry a status code instead of a state root
+    eip_658: :byzantium,
     # EIP-140 (Byzantium): REVERT opcode
     eip_140: :byzantium,
     # EIP-211 (Byzantium): RETURNDATASIZE and RETURNDATACOPY opcodes
     eip_211: :byzantium,
     # EIP-214 (Byzantium): STATICCALL opcode
     eip_214: :byzantium,
+    # EIP-1234 (Constantinople): block reward cut from 3 to 2 ETH
+    eip_1234: :constantinople,
     # EIP-145 (Constantinople): SHL, SHR and SAR opcodes
     eip_145: :constantinople,
     # EIP-1052 (Constantinople): EXTCODEHASH opcode
@@ -132,6 +138,8 @@ defmodule EEVM.HardforkConfig do
     eip_3541: :london,
     # EIP-3675 (Paris): proof of stake; difficulty, nonce, and ommers are fixed to empty values
     eip_3675: :paris,
+    # EIP-4399 (Paris): opcode 0x44 returns PREVRANDAO instead of DIFFICULTY
+    eip_4399: :paris,
     # EIP-4895 (Shanghai): beacon-chain withdrawals; header withdrawals_root
     eip_4895: :shanghai,
     # EIP-3651 (Shanghai): COINBASE pre-warmed at tx start
