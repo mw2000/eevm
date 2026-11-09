@@ -20,7 +20,7 @@ defmodule EEVM.Gas.Dynamic do
   | CALL new account creation | 25,000 gas | Yellow Paper |
   | CALL gas forwarding | min(requested, available - available/64) | EIP-150 |
   | CALL value stipend | 2,300 gas | Yellow Paper |
-  | SSTORE | EIP-2200 schedule with EIP-3529 refund limits | EIP-2200, EIP-3529 |
+  | SSTORE | per-fork schedule, see `sstore_cost/4` | EIP-2200, EIP-2929, EIP-3529 |
 
   ## References
 
@@ -28,10 +28,13 @@ defmodule EEVM.Gas.Dynamic do
   - [EIP-150: Gas cost changes for IO-heavy operations](https://eips.ethereum.org/EIPS/eip-150)
   - [EIP-1014: Skinny CREATE2](https://eips.ethereum.org/EIPS/eip-1014)
   - [EIP-2200: Structured Definitions for Net Gas Metering](https://eips.ethereum.org/EIPS/eip-2200)
+  - [EIP-2929: Gas cost increases for state access opcodes](https://eips.ethereum.org/EIPS/eip-2929)
   - [EIP-3529: Reduction in refunds](https://eips.ethereum.org/EIPS/eip-3529)
   """
 
   import Bitwise
+
+  alias EEVM.HardforkConfig
 
   # EXP: 50 gas per byte of exponent (Yellow Paper)
   @gas_exp_byte 50
@@ -51,14 +54,20 @@ defmodule EEVM.Gas.Dynamic do
   @gas_call_value 9000
   # CALL: extra cost when creating a new account via value transfer (Yellow Paper)
   @gas_new_account 25_000
-  # SSTORE: cost for setting a fresh slot (0 → non-zero) (EIP-2200)
+  # SSTORE: cost for setting a fresh slot (0 → non-zero), every fork
   @sstore_set_gas 20_000
-  # SSTORE: cost for resetting an existing slot (non-zero → non-zero) (EIP-2200)
-  @sstore_reset_gas 2_900
-  # SSTORE: refund for clearing a slot (non-zero → 0) (EIP-3529)
-  @sstore_clears_schedule 4_800
-  # SSTORE: cost for no-op writes (value unchanged) (EIP-2200)
-  @sstore_noop_gas 100
+  # SSTORE: cost for any other write before EIP-2929 (Yellow Paper, EIP-2200)
+  @sstore_reset_gas 5_000
+  # SSTORE: refund for clearing a slot (non-zero → 0) before EIP-3529
+  @sstore_clears_schedule 15_000
+  # EIP-2200: no-op and dirty writes cost SLOAD_GAS, 800 since EIP-1884
+  @sload_gas 800
+  # EIP-2929: SLOAD_GAS becomes the warm read cost, and the cold-slot charge
+  # (2,100) moves out of SSTORE_RESET_GAS
+  @warm_storage_read_cost 100
+  @cold_sload_cost 2_100
+  # EIP-3529: reduced refund for clearing a slot
+  @eip_3529_sstore_clears_schedule 4_800
 
   @spec exp_dynamic_cost(non_neg_integer()) :: non_neg_integer()
   def exp_dynamic_cost(0), do: 0
@@ -106,45 +115,99 @@ defmodule EEVM.Gas.Dynamic do
   def call_stipend(0), do: 0
   def call_stipend(_value), do: 2300
 
-  @spec sstore_cost(non_neg_integer(), non_neg_integer(), non_neg_integer()) ::
+  @doc """
+  Returns `{gas, refund_delta}` for an SSTORE writing `new_value` over
+  `current`, where `original` is the slot's value at the start of the
+  transaction. The cold-slot charge (EIP-2929) is separate, in
+  `EEVM.Gas.Access.sstore_access_cost/3`.
+
+  - Before Istanbul: 20,000 to set a zero slot, 5,000 for any other write,
+    and a 15,000 refund for clearing one.
+  - Istanbul (EIP-2200) net metering: writes that leave the slot unchanged
+    or touch an already-dirty slot cost SLOAD_GAS (800); refunds track
+    whether the write clears the slot or restores its original value.
+  - Berlin (EIP-2929): SLOAD_GAS becomes 100 and the 5,000 reset cost 2,900.
+  - London (EIP-3529): the clearing refund drops to 4,800.
+
+  ## Examples
+
+      iex> EEVM.Gas.Dynamic.sstore_cost(7, 7, 0, EEVM.HardforkConfig.new(:byzantium))
+      {5000, 15000}
+
+      iex> EEVM.Gas.Dynamic.sstore_cost(7, 7, 0, EEVM.HardforkConfig.new(:istanbul))
+      {5000, 15000}
+
+      iex> EEVM.Gas.Dynamic.sstore_cost(7, 9, 9, EEVM.HardforkConfig.new(:istanbul))
+      {800, 0}
+
+      iex> EEVM.Gas.Dynamic.sstore_cost(7, 7, 0, EEVM.HardforkConfig.new(:london))
+      {2900, 4800}
+  """
+  @spec sstore_cost(non_neg_integer(), non_neg_integer(), non_neg_integer(), HardforkConfig.t()) ::
           {non_neg_integer(), integer()}
-  def sstore_cost(original, current, new_value) do
+  def sstore_cost(original, current, new_value, hardfork) do
+    if HardforkConfig.enabled?(hardfork, :eip_2200) do
+      net_metered_sstore_cost(original, current, new_value, sstore_schedule(hardfork))
+    else
+      legacy_sstore_cost(current, new_value)
+    end
+  end
+
+  defp legacy_sstore_cost(0, new_value) when new_value != 0, do: {@sstore_set_gas, 0}
+
+  defp legacy_sstore_cost(current, 0) when current != 0,
+    do: {@sstore_reset_gas, @sstore_clears_schedule}
+
+  defp legacy_sstore_cost(_current, _new_value), do: {@sstore_reset_gas, 0}
+
+  # {SLOAD_GAS, SSTORE_RESET_GAS, SSTORE_CLEARS_SCHEDULE} for the fork.
+  defp sstore_schedule(hardfork) do
+    {sload_gas, reset_gas} =
+      if HardforkConfig.enabled?(hardfork, :eip_2929),
+        do: {@warm_storage_read_cost, @sstore_reset_gas - @cold_sload_cost},
+        else: {@sload_gas, @sstore_reset_gas}
+
+    clears_schedule =
+      if HardforkConfig.enabled?(hardfork, :eip_3529),
+        do: @eip_3529_sstore_clears_schedule,
+        else: @sstore_clears_schedule
+
+    {sload_gas, reset_gas, clears_schedule}
+  end
+
+  defp net_metered_sstore_cost(original, current, new_value, schedule) do
+    {sload_gas, reset_gas, clears} = schedule
+
     cond do
       current == new_value ->
-        {@sstore_noop_gas, 0}
+        {sload_gas, 0}
 
       original == current and original == 0 ->
         {@sstore_set_gas, 0}
 
       original == current ->
-        refund = if new_value == 0, do: @sstore_clears_schedule, else: 0
-        {@sstore_reset_gas, refund}
+        refund = if new_value == 0, do: clears, else: 0
+        {reset_gas, refund}
 
       true ->
-        refund = dirty_slot_refund_delta(original, current, new_value)
-        {@sstore_noop_gas, refund}
+        {sload_gas, dirty_slot_refund_delta(original, current, new_value, schedule)}
     end
   end
 
-  @spec sstore_cost(non_neg_integer(), non_neg_integer(), non_neg_integer(), boolean()) ::
-          {non_neg_integer(), integer()}
-  def sstore_cost(original, current, new_value, _is_warm),
-    do: sstore_cost(original, current, new_value)
-
-  defp dirty_slot_refund_delta(original, current, new_value) do
+  defp dirty_slot_refund_delta(original, current, new_value, {sload_gas, reset_gas, clears}) do
     base_refund =
       if original != 0 do
         0
-        |> maybe_subtract(current == 0, @sstore_clears_schedule)
-        |> maybe_add(new_value == 0, @sstore_clears_schedule)
+        |> maybe_subtract(current == 0, clears)
+        |> maybe_add(new_value == 0, clears)
       else
         0
       end
 
     if original == new_value do
       if original == 0,
-        do: base_refund + (@sstore_set_gas - @sstore_noop_gas),
-        else: base_refund + (@sstore_reset_gas - @sstore_noop_gas)
+        do: base_refund + (@sstore_set_gas - sload_gas),
+        else: base_refund + (reset_gas - sload_gas)
     else
       base_refund
     end

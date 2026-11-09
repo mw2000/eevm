@@ -3,6 +3,7 @@ defmodule EEVM.GasTest do
 
   alias EEVM.Gas.{Dynamic, Memory, Static}
 
+  doctest Dynamic
   doctest Static
 
   describe "Gas Metering" do

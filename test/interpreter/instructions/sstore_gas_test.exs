@@ -196,4 +196,37 @@ defmodule EEVM.Interpreter.Instructions.SstoreGasTest do
     |> Enum.filter(fn [step, _next] -> step.op == :SSTORE and step.depth == depth end)
     |> Enum.map(fn [step, next] -> step.gas_remaining - next.gas_remaining end)
   end
+
+  describe "SSTORE gas schedule by hardfork" do
+    # Gas used by `PUSH1 value, PUSH1 0, SSTORE` against slot 0 holding 7,
+    # minus the two pushes. Refunds are not involved (no slot is cleared).
+    defp sstore_gas(value, fork, gas \\ 100_000) do
+      code = <<0x60, value, 0x60, 0x00, 0x55, 0x00>>
+      result = EEVM.execute(code, gas: gas, hardfork: fork, storage: Storage.new(%{0 => 7}))
+      {result.status, gas - result.frame.gas - 6}
+    end
+
+    test "before Istanbul every non-set write costs 5,000, even a no-op" do
+      assert sstore_gas(7, :byzantium) == {:stopped, 5_000}
+      assert sstore_gas(9, :byzantium) == {:stopped, 5_000}
+      # ConstantinopleFix (Petersburg) dropped EIP-1283 net metering.
+      assert sstore_gas(7, :constantinople) == {:stopped, 5_000}
+    end
+
+    test "Istanbul (EIP-2200) prices a no-op write at SLOAD_GAS, 800" do
+      assert sstore_gas(7, :istanbul) == {:stopped, 800}
+      assert sstore_gas(9, :istanbul) == {:stopped, 5_000}
+    end
+
+    test "Berlin (EIP-2929) prices a cold no-op at 2,100 + 100 and a cold update at 5,000" do
+      assert sstore_gas(7, :berlin) == {:stopped, 2_100 + 100}
+      assert sstore_gas(9, :berlin) == {:stopped, 2_100 + 2_900}
+    end
+
+    test "Istanbul onward, SSTORE needs more than the 2,300 stipend left (EIP-2200 sentry)" do
+      assert {:out_of_gas, _} = sstore_gas(7, :istanbul, 6 + 2_300)
+      assert sstore_gas(7, :istanbul, 6 + 2_301) == {:stopped, 800}
+      assert {:out_of_gas, _} = sstore_gas(7, :berlin, 6 + 2_300)
+    end
+  end
 end

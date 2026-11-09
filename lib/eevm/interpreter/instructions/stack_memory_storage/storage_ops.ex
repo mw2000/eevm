@@ -5,12 +5,14 @@ defmodule EEVM.Interpreter.Instructions.StackMemoryStorage.StorageOps do
   ## Persistent Storage (SLOAD/SSTORE)
 
   Persistent storage is a key-value mapping (256-bit → 256-bit) that persists across
-  transactions. Gas costs follow the EIP-2200 structured schedule with EIP-2929
-  cold/warm access tracking:
+  transactions. Gas costs depend on the hardfork:
 
-  - **SLOAD** (0x54) — reads a storage slot. Costs 2,100 (cold) or 100 (warm) per EIP-2929.
+  - **SLOAD** (0x54) — reads a storage slot. Costs 2,100 (cold) or 100 (warm) per
+    EIP-2929 from Berlin; a flat static price before (see `EEVM.Gas.Static`).
   - **SSTORE** (0x55) — writes a storage slot. Cost depends on the transition from
-    original → current → new value, with refunds for clearing slots (EIP-3529).
+    original → current → new value (`EEVM.Gas.Dynamic.sstore_cost/4`), plus
+    2,100 for a cold slot from Berlin. From Istanbul it fails out of gas when
+    no more than 2,300 gas remains (EIP-2200).
 
   ## Transient Storage (TLOAD/TSTORE)
 
@@ -23,7 +25,10 @@ defmodule EEVM.Interpreter.Instructions.StackMemoryStorage.StorageOps do
 
   alias EEVM.Database
   alias EEVM.Gas.{Access, Dynamic}
+  alias EEVM.HardforkConfig
   alias EEVM.Interpreter.{MachineState, Stack}
+
+  @sstore_sentry_gas 2_300
 
   @spec execute(non_neg_integer(), MachineState.t()) ::
           {:ok, MachineState.t()} | {:error, atom(), MachineState.t()}
@@ -62,31 +67,13 @@ defmodule EEVM.Interpreter.Instructions.StackMemoryStorage.StorageOps do
   end
 
   def execute(0x55, state) do
-    with {:ok, key, s1} <- Stack.pop(state.frame.stack),
-         {:ok, value, s2} <- Stack.pop(s1) do
-      state_after_stack = MachineState.update_frame(state, &%{&1 | stack: s2})
-      contract_address = state_after_stack.frame.contract.address
-
-      {access_cost, state_after_access} =
-        Access.sstore_access_cost(state_after_stack, contract_address, key)
-
-      {original_value, state_with_original} = get_original_value(state_after_access, key)
-      current_value = Database.storage_load(state_with_original.db, contract_address, key)
-
-      {sstore_gas, refund_delta} = Dynamic.sstore_cost(original_value, current_value, value)
-      total_cost = access_cost + sstore_gas
-
-      case MachineState.consume_gas(state_with_original, total_cost) do
-        {:ok, state_after_gas} ->
-          state_after_refund = apply_refund_delta(state_after_gas, refund_delta)
-          new_db = Database.storage_store(state_after_refund.db, contract_address, key, value)
-          {:ok, %{state_after_refund | db: new_db} |> MachineState.advance_pc()}
-
-        {:error, :out_of_gas, halted} ->
-          {:error, :out_of_gas, halted}
-      end
+    # EIP-2200 (Istanbul+) sentry: SSTORE fails out of gas unless more than the
+    # call stipend remains, so a stipend-funded call can never write storage.
+    if HardforkConfig.enabled?(state.env.config.hardfork, :eip_2200) and
+         state.frame.gas <= @sstore_sentry_gas do
+      {:error, :out_of_gas, MachineState.halt(state, :out_of_gas)}
     else
-      {:error, reason} -> {:error, reason, state}
+      sstore(state)
     end
   end
 
@@ -124,6 +111,37 @@ defmodule EEVM.Interpreter.Instructions.StackMemoryStorage.StorageOps do
   end
 
   def execute(_opcode, state), do: {:ok, MachineState.halt(state, :invalid)}
+
+  defp sstore(state) do
+    with {:ok, key, s1} <- Stack.pop(state.frame.stack),
+         {:ok, value, s2} <- Stack.pop(s1) do
+      state_after_stack = MachineState.update_frame(state, &%{&1 | stack: s2})
+      contract_address = state_after_stack.frame.contract.address
+
+      {access_cost, state_after_access} =
+        Access.sstore_access_cost(state_after_stack, contract_address, key)
+
+      {original_value, state_with_original} = get_original_value(state_after_access, key)
+      current_value = Database.storage_load(state_with_original.db, contract_address, key)
+
+      {sstore_gas, refund_delta} =
+        Dynamic.sstore_cost(original_value, current_value, value, state.env.config.hardfork)
+
+      total_cost = access_cost + sstore_gas
+
+      case MachineState.consume_gas(state_with_original, total_cost) do
+        {:ok, state_after_gas} ->
+          state_after_refund = apply_refund_delta(state_after_gas, refund_delta)
+          new_db = Database.storage_store(state_after_refund.db, contract_address, key, value)
+          {:ok, %{state_after_refund | db: new_db} |> MachineState.advance_pc()}
+
+        {:error, :out_of_gas, halted} ->
+          {:error, :out_of_gas, halted}
+      end
+    else
+      {:error, reason} -> {:error, reason, state}
+    end
+  end
 
   defp get_original_value(state, key) do
     address = state.frame.contract.address
