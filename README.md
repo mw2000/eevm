@@ -161,16 +161,12 @@ built-in backend; implement the behaviour to execute against your own storage.
 Pick the rules with the `:hardfork` option (default `:cancun`). `EEVM.HardforkConfig`
 knows every fork from `:frontier` to `:osaka`.
 
-Cancun is the primary target. Before Cancun, only some rules change with the
-configured fork. Static opcode gas, opcodes added before Shanghai (such as
-REVERT, CREATE2, and CHAINID), and several older EIPs (such as EIP-150 and
-EIP-2200) are not yet gated per fork, so older forks run with mostly post-Berlin
-rules.
-
-Rules that do switch on the configured fork: EIP-170, EIP-2929, EIP-3529,
-EIP-3541, EIP-3855, EIP-3860, EIP-1153, EIP-5656, EIP-6780, EIP-4788, EIP-2537,
-EIP-2935, EIP-7623, EIP-7823, EIP-7825, EIP-7883, EIP-7918, EIP-7934, EIP-7939,
-and EIP-7951.
+Each fork gets its own opcode set, static and dynamic gas schedule (Frontier,
+EIP-150, EIP-160, EIP-1884, then EIP-2929), SSTORE metering (pre-Istanbul,
+EIP-2200, EIP-2929, EIP-3529), intrinsic gas, and precompile set and prices.
+Every rule is gated on the EIP that introduced it through
+`EEVM.HardforkConfig.enabled?/2`; the opcode table and precompile registry for
+each fork are built at compile time.
 
 | Area | Implemented |
 |------|-------------|

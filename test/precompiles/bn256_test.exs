@@ -174,5 +174,17 @@ defmodule EEVM.Precompiles.BN256Test do
     test "routes 0x08 to ecPairing" do
       assert {:ok, _, 45_000} = EEVM.Precompiles.execute(0x08, <<>>, 100_000)
     end
+
+    test "charges the EIP-196/197 prices before Istanbul (EIP-1108)" do
+      config = EEVM.Config.new(:constantinople)
+      add_input = :binary.copy(<<0>>, 128)
+      mul_input = :binary.copy(<<0>>, 96)
+      pair_input = :binary.copy(<<0>>, 192)
+
+      assert {:ok, _, 500} = EEVM.Precompiles.execute(0x06, add_input, 1_000, config)
+      assert {:error, :out_of_gas} = EEVM.Precompiles.execute(0x06, add_input, 499, config)
+      assert {:ok, _, 40_000} = EEVM.Precompiles.execute(0x07, mul_input, 40_000, config)
+      assert {:ok, _, 180_000} = EEVM.Precompiles.execute(0x08, pair_input, 200_000, config)
+    end
   end
 end

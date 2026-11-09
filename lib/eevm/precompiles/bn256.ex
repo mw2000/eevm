@@ -10,13 +10,16 @@ defmodule EEVM.Precompiles.BN256 do
   - **ecPairing** (`0x08`) — evaluates an optimal Ate pairing check over a list
     of (G1, G2) point pairs.
 
-  ### Gas schedule (EIP-1108)
+  ### Gas schedule
 
-  | Operation | Gas                           |
-  |-----------|-------------------------------|
-  | ecAdd     | 150                           |
-  | ecMul     | 6,000                         |
-  | ecPairing | 45,000 + 34,000 × pair count  |
+  | Operation | Byzantium (EIP-196/197)        | Istanbul on (EIP-1108)        |
+  |-----------|--------------------------------|-------------------------------|
+  | ecAdd     | 500                            | 150                           |
+  | ecMul     | 40,000                         | 6,000                         |
+  | ecPairing | 100,000 + 80,000 × pair count  | 45,000 + 34,000 × pair count  |
+
+  Each operation takes the hardfork as an optional third argument (default:
+  Cancun) to pick its prices.
 
   ### Input formats
 
@@ -33,28 +36,33 @@ defmodule EEVM.Precompiles.BN256 do
   """
 
   alias BN.{BN128Arithmetic, FQ, FQ2, Pairing}
+  alias EEVM.HardforkConfig
 
   @field_modulus 21_888_242_871_839_275_222_246_405_745_257_275_088_696_311_157_297_823_662_689_037_894_645_226_208_583
 
-  @gas_add 150
-  @gas_mul 6_000
-  @gas_pairing_base 45_000
-  @gas_pairing_per_pair 34_000
+  @byzantium_gas %{add: 500, mul: 40_000, pairing_base: 100_000, pairing_per_pair: 80_000}
+  @eip_1108_gas %{add: 150, mul: 6_000, pairing_base: 45_000, pairing_per_pair: 34_000}
+
+  @default_hardfork HardforkConfig.new(:cancun)
 
   # --- ecAdd (0x06) ---
 
-  @spec execute_add(binary(), non_neg_integer()) ::
+  @doc "Adds two G1 points (ecAdd, `0x06`)."
+  @spec execute_add(binary(), non_neg_integer(), HardforkConfig.t()) ::
           {:ok, binary(), non_neg_integer()} | {:error, :out_of_gas | :invalid_point}
-  def execute_add(_input, gas_limit) when gas_limit < @gas_add, do: {:error, :out_of_gas}
+  def execute_add(input, gas_limit, hardfork \\ @default_hardfork) do
+    %{add: gas_cost} = gas_schedule(hardfork)
+    if gas_limit < gas_cost, do: {:error, :out_of_gas}, else: add(input, gas_cost)
+  end
 
-  def execute_add(input, _gas_limit) do
+  defp add(input, gas_cost) do
     padded = pad_right(input, 128)
     <<x1_bin::binary-32, y1_bin::binary-32, x2_bin::binary-32, y2_bin::binary-32>> = padded
 
     with {:ok, p1} <- decode_g1_point(x1_bin, y1_bin),
          {:ok, p2} <- decode_g1_point(x2_bin, y2_bin),
          {:ok, result} <- BN128Arithmetic.add(p1, p2) do
-      {:ok, encode_g1_point(result), @gas_add}
+      {:ok, encode_g1_point(result), gas_cost}
     else
       {:error, _} -> {:error, :invalid_point}
     end
@@ -62,18 +70,22 @@ defmodule EEVM.Precompiles.BN256 do
 
   # --- ecMul (0x07) ---
 
-  @spec execute_mul(binary(), non_neg_integer()) ::
+  @doc "Multiplies a G1 point by a scalar (ecMul, `0x07`)."
+  @spec execute_mul(binary(), non_neg_integer(), HardforkConfig.t()) ::
           {:ok, binary(), non_neg_integer()} | {:error, :out_of_gas | :invalid_point}
-  def execute_mul(_input, gas_limit) when gas_limit < @gas_mul, do: {:error, :out_of_gas}
+  def execute_mul(input, gas_limit, hardfork \\ @default_hardfork) do
+    %{mul: gas_cost} = gas_schedule(hardfork)
+    if gas_limit < gas_cost, do: {:error, :out_of_gas}, else: mul(input, gas_cost)
+  end
 
-  def execute_mul(input, _gas_limit) do
+  defp mul(input, gas_cost) do
     padded = pad_right(input, 96)
     <<x_bin::binary-32, y_bin::binary-32, scalar_bin::binary-32>> = padded
     scalar = :binary.decode_unsigned(scalar_bin)
 
     with {:ok, point} <- decode_g1_point(x_bin, y_bin),
          {:ok, result} <- BN128Arithmetic.mult(point, scalar) do
-      {:ok, encode_g1_point(result), @gas_mul}
+      {:ok, encode_g1_point(result), gas_cost}
     else
       {:error, _} -> {:error, :invalid_point}
     end
@@ -81,12 +93,14 @@ defmodule EEVM.Precompiles.BN256 do
 
   # --- ecPairing (0x08) ---
 
-  @spec execute_pairing(binary(), non_neg_integer()) ::
+  @doc "Checks a product of pairings over (G1, G2) pairs (ecPairing, `0x08`)."
+  @spec execute_pairing(binary(), non_neg_integer(), HardforkConfig.t()) ::
           {:ok, binary(), non_neg_integer()}
           | {:error, :out_of_gas | :invalid_input | :invalid_point}
-  def execute_pairing(input, gas_limit) do
+  def execute_pairing(input, gas_limit, hardfork \\ @default_hardfork) do
+    %{pairing_base: base, pairing_per_pair: per_pair} = gas_schedule(hardfork)
     pair_count = div(byte_size(input), 192)
-    gas_cost = @gas_pairing_base + @gas_pairing_per_pair * pair_count
+    gas_cost = base + per_pair * pair_count
 
     cond do
       rem(byte_size(input), 192) != 0 ->
@@ -108,6 +122,10 @@ defmodule EEVM.Precompiles.BN256 do
             {:error, :invalid_point}
         end
     end
+  end
+
+  defp gas_schedule(hardfork) do
+    if HardforkConfig.enabled?(hardfork, :eip_1108), do: @eip_1108_gas, else: @byzantium_gas
   end
 
   # --- G1 point encoding/decoding ---

@@ -152,6 +152,36 @@ defmodule EEVM.HardforkConfigTest do
     end
   end
 
+  describe "precompile availability by fork" do
+    @precompile_sets [
+      frontier: [0x01, 0x02, 0x03, 0x04],
+      spurious_dragon: [0x01, 0x02, 0x03, 0x04],
+      byzantium: Enum.to_list(0x01..0x08),
+      constantinople: Enum.to_list(0x01..0x08),
+      istanbul: Enum.to_list(0x01..0x09),
+      berlin: Enum.to_list(0x01..0x09),
+      shanghai: Enum.to_list(0x01..0x09),
+      cancun: Enum.to_list(0x01..0x0A),
+      prague: Enum.to_list(0x01..0x11),
+      osaka: Enum.to_list(0x01..0x11) ++ [0x100]
+    ]
+
+    for {fork, addresses} <- @precompile_sets do
+      test "#{fork} has precompiles #{inspect(addresses, base: :hex)}" do
+        config = EEVM.Config.new(unquote(fork))
+        assert EEVM.Precompiles.precompile_addresses(config) == unquote(addresses)
+      end
+    end
+
+    test "an address a fork does not define runs no precompile" do
+      assert {:error, :not_implemented} =
+               EEVM.Precompiles.execute(0x09, <<>>, 100_000, EEVM.Config.new(:constantinople))
+
+      assert {:error, :not_implemented} =
+               EEVM.Precompiles.execute(0x0A, <<>>, 100_000, EEVM.Config.new(:shanghai))
+    end
+  end
+
   describe "EIP-2537 BLS12-381 precompile hardfork guard" do
     test "BLS12-381 precompiles are registered on Prague" do
       config = EEVM.Config.new(:prague)

@@ -3,8 +3,10 @@ defmodule EEVM.Precompiles.ModExpTest do
 
   import Bitwise
 
+  alias EEVM.HardforkConfig
   alias EEVM.Precompiles.ModExp
-  alias EEVM.Precompiles.ModExpEIP7883
+
+  @osaka HardforkConfig.new(:osaka)
 
   describe "execute/2" do
     test "basic computation: 2^10 mod 1000 = 24" do
@@ -133,16 +135,16 @@ defmodule EEVM.Precompiles.ModExpTest do
         gas_new = @vector["GasNew"]
 
         assert {:ok, ^expected, ^gas_old} = ModExp.execute(input, 100_000_000)
-        assert {:ok, ^expected, ^gas_new} = ModExpEIP7883.execute(input, 100_000_000)
-        assert {:error, :out_of_gas} = ModExpEIP7883.execute(input, gas_new - 1)
+        assert {:ok, ^expected, ^gas_new} = ModExp.execute(input, 100_000_000, @osaka)
+        assert {:error, :out_of_gas} = ModExp.execute(input, gas_new - 1, @osaka)
       end
     end
   end
 
   describe "EIP-7883 pricing" do
     test "minimum cost rises from 200 to 500" do
-      assert {:ok, <<>>, 500} = ModExpEIP7883.execute(<<>>, 500)
-      assert {:error, :out_of_gas} = ModExpEIP7883.execute(<<>>, 499)
+      assert {:ok, <<>>, 500} = ModExp.execute(<<>>, 500, @osaka)
+      assert {:error, :out_of_gas} = ModExp.execute(<<>>, 499, @osaka)
     end
 
     test "exponent bytes past 32 count 16 iterations each instead of 8" do
@@ -152,7 +154,30 @@ defmodule EEVM.Precompiles.ModExpTest do
       mod_bytes = <<0x01, 0::size(63 * 8)>>
 
       input = encode_modexp_bytes(base_bytes, exp_bytes, mod_bytes)
-      assert {:ok, _out, 34_688} = ModExpEIP7883.execute(input, 1_000_000)
+      assert {:ok, _out, 34_688} = ModExp.execute(input, 1_000_000, @osaka)
+    end
+  end
+
+  describe "EIP-198 pricing (Byzantium through Istanbul)" do
+    @istanbul HardforkConfig.new(:istanbul)
+
+    test "complexity is x² up to 64 bytes" do
+      # 64-byte operands → 64² = 4096; a 32-byte all-ones exponent → 255 iterations.
+      input = encode_modexp_bytes(<<1::512>>, <<-1::256>>, <<3::512>>)
+      assert {:ok, _out, 52_224} = ModExp.execute(input, 1_000_000, @istanbul)
+    end
+
+    test "complexity is x²/4 + 96x − 3072 up to 1024 bytes" do
+      # 100² / 4 + 9600 − 3072 = 9028; exponent 1 → 1 iteration; 9028 / 20 = 451.
+      input = encode_modexp_bytes(<<1::800>>, <<1>>, <<3::800>>)
+      assert {:ok, _out, 451} = ModExp.execute(input, 1_000_000, @istanbul)
+      assert {:error, :out_of_gas} = ModExp.execute(input, 450, @istanbul)
+    end
+
+    test "complexity is x²/16 + 480x − 199680 above 1024 bytes" do
+      # 2000² / 16 + 960_000 − 199_680 = 1_010_320; 1 iteration; / 20 = 50_516.
+      input = encode_modexp_bytes(<<1::16_000>>, <<1>>, <<3::16_000>>)
+      assert {:ok, _out, 50_516} = ModExp.execute(input, 1_000_000, @istanbul)
     end
   end
 
@@ -163,8 +188,8 @@ defmodule EEVM.Precompiles.ModExpTest do
         at_limit = header_with_length(unquote(index), 1024)
         over_limit = header_with_length(unquote(index), 1025)
 
-        assert {:ok, _out, _gas} = ModExpEIP7883.execute(at_limit, 100_000_000)
-        assert {:error, :invalid_input} = ModExpEIP7883.execute(over_limit, 100_000_000)
+        assert {:ok, _out, _gas} = ModExp.execute(at_limit, 100_000_000, @osaka)
+        assert {:error, :invalid_input} = ModExp.execute(over_limit, 100_000_000, @osaka)
       end
     end
 
@@ -180,8 +205,15 @@ defmodule EEVM.Precompiles.ModExpTest do
       assert :binary.decode_unsigned(out) == 24
     end
 
-    test "applies EIP-2565 pricing through Prague and EIP-7883 pricing from Osaka" do
+    test "applies EIP-198, then EIP-2565 from Berlin, then EIP-7883 from Osaka" do
       input = encode_modexp(2, 10, 1000)
+
+      # 2-byte operands → 2² = 4; exponent 10 → 3 iterations; 12 / 20 = 0.
+      assert {:ok, _out, 0} =
+               EEVM.Precompiles.execute(0x05, input, 100_000, EEVM.Config.new(:istanbul))
+
+      assert {:ok, _out, 200} =
+               EEVM.Precompiles.execute(0x05, input, 100_000, EEVM.Config.new(:berlin))
 
       assert {:ok, _out, 200} =
                EEVM.Precompiles.execute(0x05, input, 100_000, EEVM.Config.new(:prague))

@@ -13,15 +13,15 @@ defmodule EEVM.HardforkConfig do
   | `:homestead`     | EIP-2 (contract-creation tx cost), EIP-7 (DELEGATECALL) |
   | `:tangerine_whistle` | EIP-150 gas repricing |
   | `:spurious_dragon` | EIP-155, EIP-160 (EXP cost), EIP-161, EIP-170 (code size limit) |
-  | `:byzantium`     | EIP-140 (REVERT), EIP-211 (RETURNDATASIZE/RETURNDATACOPY), EIP-214 (STATICCALL) |
+  | `:byzantium`     | EIP-140 (REVERT), EIP-196/197 (alt_bn128 precompiles), EIP-198 (ModExp precompile), EIP-211 (RETURNDATASIZE/RETURNDATACOPY), EIP-214 (STATICCALL) |
   | `:constantinople` | EIP-1014 (CREATE2), EIP-145 (SHL/SHR/SAR), EIP-1052 (EXTCODEHASH) |
-  | `:istanbul`      | EIP-1344 (CHAINID), EIP-1884 (SELFBALANCE), EIP-2028 (calldata cost), EIP-2200 (SSTORE) |
-  | `:berlin`        | EIP-2929 (cold/warm access), EIP-2930 (access lists) |
+  | `:istanbul`      | EIP-152 (BLAKE2F precompile), EIP-1108 (alt_bn128 repricing), EIP-1344 (CHAINID), EIP-1884 (SELFBALANCE), EIP-2028 (calldata cost), EIP-2200 (SSTORE) |
+  | `:berlin`        | EIP-2565 (ModExp repricing), EIP-2929 (cold/warm access), EIP-2930 (access lists) |
   | `:london`        | EIP-1559 (basefee), EIP-3198 (BASEFEE), EIP-3529 (refund cap), EIP-3541 (0xEF rejection) |
   | `:paris`         | The Merge (PREVRANDAO replaces DIFFICULTY) |
   | `:shanghai`      | EIP-3651 (COINBASE pre-warm), EIP-3855 (PUSH0), EIP-3860 (initcode limit) |
-  | `:cancun`        | EIP-1153 (TLOAD/TSTORE), EIP-4844 (blobs, BLOBHASH), EIP-5656 (MCOPY), EIP-6780 (SELFDESTRUCT), EIP-7516 (BLOBBASEFEE) |
-   | `:prague`        | EIP-2537 (BLS12-381 precompiles), EIP-7623 (calldata floor), EIP-7702 (set-code) |
+  | `:cancun`        | EIP-1153 (TLOAD/TSTORE), EIP-4844 (blobs, BLOBHASH, KZG precompile), EIP-5656 (MCOPY), EIP-6780 (SELFDESTRUCT), EIP-7516 (BLOBBASEFEE) |
+  | `:prague`        | EIP-2537 (BLS12-381 precompiles), EIP-7623 (calldata floor), EIP-7702 (set-code) |
   | `:osaka`         | EIP-7825 (tx gas limit cap), EIP-7918 (blob base fee floor), EIP-7934 (block RLP size limit), EIP-7939 (CLZ) |
   |                  | EIP-7823 (ModExp bounds), EIP-7883 (ModExp repricing), EIP-7951 (P256VERIFY precompile) |
   """
@@ -81,6 +81,12 @@ defmodule EEVM.HardforkConfig do
     eip_161: :spurious_dragon,
     # EIP-170 (Spurious Dragon): 24,576-byte runtime code size limit
     eip_170: :spurious_dragon,
+    # EIP-196 (Byzantium): alt_bn128 ADD and MUL precompiles at 0x06 and 0x07
+    eip_196: :byzantium,
+    # EIP-197 (Byzantium): alt_bn128 pairing precompile at 0x08
+    eip_197: :byzantium,
+    # EIP-198 (Byzantium): ModExp precompile at 0x05
+    eip_198: :byzantium,
     # EIP-140 (Byzantium): REVERT opcode
     eip_140: :byzantium,
     # EIP-211 (Byzantium): RETURNDATASIZE and RETURNDATACOPY opcodes
@@ -101,8 +107,14 @@ defmodule EEVM.HardforkConfig do
     eip_1884: :istanbul,
     # EIP-2028 (Istanbul): non-zero calldata bytes cost 16 gas instead of 68
     eip_2028: :istanbul,
+    # EIP-152 (Istanbul): BLAKE2F precompile at 0x09
+    eip_152: :istanbul,
+    # EIP-1108 (Istanbul): cheaper alt_bn128 precompiles
+    eip_1108: :istanbul,
     # EIP-2929 (Berlin): cold/warm address & storage access costs
     eip_2929: :berlin,
+    # EIP-2565 (Berlin): ModExp repricing
+    eip_2565: :berlin,
     # EIP-1559 (London): fee market; header base_fee_per_gas follows the parent's gas usage
     eip_1559: :london,
     # EIP-3529 (London): reduce gas refunds (cap at 1/5 of gas used)
@@ -147,8 +159,9 @@ defmodule EEVM.HardforkConfig do
     eip_7702: :prague,
     # EIP-7825 (Osaka): per-transaction gas limit cap of 2^24
     eip_7825: :osaka,
-    # EIP-7883 (Osaka): ModExp precompile gas cost increase; its rules in
-    # `EEVM.Precompiles.ModExp` also carry the EIP-7823 1024-byte input bounds
+    # EIP-7823 (Osaka): ModExp base, exponent, and modulus lengths capped at 1024 bytes
+    eip_7823: :osaka,
+    # EIP-7883 (Osaka): ModExp precompile gas cost increase
     eip_7883: :osaka,
     # EIP-7918 (Osaka): blob base fee bounded below by execution cost
     eip_7918: :osaka,

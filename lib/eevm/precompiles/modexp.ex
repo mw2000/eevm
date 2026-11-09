@@ -4,6 +4,15 @@ defmodule EEVM.Precompiles.ModExp do
 
   Computes `base^exp mod modulus` over arbitrarily large integers.
 
+  ### Gas schedule (EIP-198, Byzantium through Istanbul)
+
+  `gas = floor(multiplication_complexity * iteration_count / 20)`
+
+  where `multiplication_complexity` of `x = max(base_length, mod_length)` is
+  `x^2` for `x <= 64`, `x^2 / 4 + 96x - 3072` for `x <= 1024`, and
+  `x^2 / 16 + 480x - 199680` above, and `iteration_count` is computed as for
+  EIP-2565 below.
+
   ### Gas schedule (EIP-2565, Berlin through Prague)
 
   `gas = max(200, floor(multiplication_complexity * iteration_count / 3))`
@@ -37,9 +46,7 @@ defmodule EEVM.Precompiles.ModExp do
   If `base_length`, `exp_length`, or `mod_length` exceeds 1024 bytes, the call
   fails with `{:error, :invalid_input}`, consuming all gas it was given.
 
-  `execute/2` applies the EIP-2565 rules; `EEVM.Precompiles` routes `0x05` to
-  `EEVM.Precompiles.ModExpEIP7883` once `:eip_7883` is active. The `:eip_7883`
-  rules also enforce the EIP-7823 bounds, which activate in the same fork.
+  `execute/3` picks the gas schedule and bounds from the hardfork it is given.
 
   Gas is charged from the 96-byte header and at most the first 32 exponent
   bytes before any operand is read, so oversized declared lengths fail with
@@ -60,38 +67,29 @@ defmodule EEVM.Precompiles.ModExp do
   the precompile returns `mod_length` zero bytes.
   """
 
-  @behaviour EEVM.Precompile
-
-  @type pricing :: :eip_2565 | :eip_7883
+  alias EEVM.HardforkConfig
 
   # EIP-7823: maximum base, exponent, and modulus length in bytes.
   @max_input_length 1024
 
   @doc """
-  Executes the ModExp precompile with EIP-2565 pricing.
+  Executes the ModExp precompile with the gas schedule and input bounds of
+  `hardfork` (default: Cancun).
   """
-  @spec execute(binary(), non_neg_integer()) ::
-          {:ok, binary(), non_neg_integer()} | {:error, :out_of_gas}
-  @impl true
-  def execute(input, gas_limit), do: execute(input, gas_limit, :eip_2565)
-
-  @doc """
-  Executes the ModExp precompile with the given `pricing` rules
-  (`:eip_7883` also applies the EIP-7823 input bounds).
-  """
-  @spec execute(binary(), non_neg_integer(), pricing()) ::
+  @spec execute(binary(), non_neg_integer(), HardforkConfig.t()) ::
           {:ok, binary(), non_neg_integer()} | {:error, :out_of_gas | :invalid_input}
-  def execute(input, gas_limit, pricing) do
+  def execute(input, gas_limit, hardfork \\ HardforkConfig.new(:cancun)) do
     <<base_length::unsigned-size(256), exp_length::unsigned-size(256),
       mod_length::unsigned-size(256)>> = slice_with_right_padding(input, 0, 96)
 
-    if pricing == :eip_7883 and max(base_length, max(exp_length, mod_length)) > @max_input_length do
+    if HardforkConfig.enabled?(hardfork, :eip_7823) and
+         max(base_length, max(exp_length, mod_length)) > @max_input_length do
       {:error, :invalid_input}
     else
       # Gas depends only on the header and the exponent's first 32 bytes, so
       # charge it before touching operands whose declared lengths may be huge.
       exp_head = exponent_head(input, base_length, exp_length)
-      cost = gas_cost(pricing, base_length, exp_length, mod_length, exp_head)
+      cost = gas_cost(pricing(hardfork), base_length, exp_length, mod_length, exp_head)
 
       if cost > gas_limit do
         {:error, :out_of_gas}
@@ -107,6 +105,19 @@ defmodule EEVM.Precompiles.ModExp do
     |> :binary.decode_unsigned()
   end
 
+  defp pricing(hardfork) do
+    cond do
+      HardforkConfig.enabled?(hardfork, :eip_7883) -> :eip_7883
+      HardforkConfig.enabled?(hardfork, :eip_2565) -> :eip_2565
+      true -> :eip_198
+    end
+  end
+
+  defp gas_cost(:eip_198, base_length, exp_length, mod_length, exp_head) do
+    multiplication_complexity = eip_198_complexity(max(base_length, mod_length))
+    div(multiplication_complexity * iteration_count(exp_length, exp_head, 8), 20)
+  end
+
   defp gas_cost(:eip_2565, base_length, exp_length, mod_length, exp_head) do
     multiplication_complexity = square(words(max(base_length, mod_length)))
     iteration_count = iteration_count(exp_length, exp_head, 8)
@@ -119,6 +130,10 @@ defmodule EEVM.Precompiles.ModExp do
     iteration_count = iteration_count(exp_length, exp_head, 16)
     max(500, multiplication_complexity * iteration_count)
   end
+
+  defp eip_198_complexity(x) when x <= 64, do: square(x)
+  defp eip_198_complexity(x) when x <= 1024, do: div(square(x), 4) + 96 * x - 3072
+  defp eip_198_complexity(x), do: div(square(x), 16) + 480 * x - 199_680
 
   defp words(length), do: div(length + 7, 8)
 
