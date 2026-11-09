@@ -2,7 +2,7 @@
 # Each line is a directory (dir/), a fixture file, a test (file#name), or a case.
 # Regenerate after fixing failures with:
 #   mix eevm.blockchain_tests 'test/fixtures/state_tests/ethereum-tests/BlockchainTests/{ValidBlocks,InvalidBlocks,TransitionTests}/**/*.json' --write-known-failures test/fixtures/blockchain_tests/known_failures.txt
-BlockchainTests/InvalidBlocks/bc4895-withdrawals/accountInteractions.json
+BlockchainTests/InvalidBlocks/bc4895-withdrawals/accountInteractions.json#accountInteractions_Prague
 BlockchainTests/InvalidBlocks/bc4895-withdrawals/amountIs0.json#amountIs0_Prague
 BlockchainTests/InvalidBlocks/bc4895-withdrawals/amountIs0TouchAccount.json#amountIs0TouchAccount_Prague
 BlockchainTests/InvalidBlocks/bc4895-withdrawals/amountIs0TouchAccountAndTransaction.json#amountIs0TouchAccountAndTransaction_Prague
@@ -245,7 +245,7 @@ BlockchainTests/ValidBlocks/bcStateTests/ZeroValue_TransactionCALLwithData_ToNon
 BlockchainTests/ValidBlocks/bcStateTests/ZeroValue_TransactionCALLwithData_ToOneStorageKey_OOGRevert_Paris.json#ZeroValue_TransactionCALLwithData_ToOneStorageKey_OOGRevert_Paris_Prague
 BlockchainTests/ValidBlocks/bcStateTests/blockhashNonConstArg.json#blockhashNonConstArg_Prague
 BlockchainTests/ValidBlocks/bcStateTests/blockhashTests.json#blockhashTests_Prague
-BlockchainTests/ValidBlocks/bcStateTests/callcodeOutput3partial.json
+BlockchainTests/ValidBlocks/bcStateTests/callcodeOutput3partial.json#callcodeOutput3partial_Prague
 BlockchainTests/ValidBlocks/bcStateTests/create2collisionwithSelfdestructSameBlock.json#create2collisionwithSelfdestructSameBlock_Prague
 BlockchainTests/ValidBlocks/bcStateTests/extCodeHashOfDeletedAccount.json#extCodeHashOfDeletedAccount_Prague
 BlockchainTests/ValidBlocks/bcStateTests/extCodeHashOfDeletedAccountDynamic.json#extCodeHashOfDeletedAccountDynamic_Prague
