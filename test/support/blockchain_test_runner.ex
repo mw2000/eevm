@@ -9,13 +9,19 @@ defmodule EEVM.TestSupport.BlockchainTestRunner do
      of the previous valid block. BLOCKHASH sees the hashes of every block
      applied so far. Transition networks such as `CancunToPragueAtTime15k`
      pick the fork for each block from its header.
-  3. Verify that the state after the fixture's `lastblockhash` matches its
-     `postState`.
+  3. Verify that the chain head is the fixture's `lastblockhash` and that the
+     state after it matches its `postState`.
 
   Each block applies on top of the block its `parent_hash` names, so fixtures
-  with side chains (a reorg to a heavier chain) build every branch. A block
-  with `expectException` must fail to decode or execute and leaves the known
-  blocks unchanged. A block without one must apply.
+  with side chains (a reorg to a heavier chain) build every branch. The head
+  follows geth's fork choice: before the Merge, the block with the highest
+  total difficulty (a tie keeps the current head); after it, the newest
+  block. A block with `expectException` must fail to decode or execute and
+  leaves the known blocks unchanged. A block without one must apply, and the
+  hash re-computed from its decoded header fields must match its
+  `blockHeader.hash`, as must the genesis block's (geth's runner checks the
+  same). `EEVM.Block.decode/1` hashes the raw header bytes, so only the
+  re-computed hash catches a field that decodes or re-encodes wrongly.
   """
 
   alias EEVM.Block
@@ -30,6 +36,7 @@ defmodule EEVM.TestSupport.BlockchainTestRunner do
   @spec run_case(Case.t()) :: :ok | {:error, term()}
   def run_case(%Case{} = test) do
     with {:ok, %Block{header: genesis}} <- Block.decode(test.genesis_rlp),
+         :ok <- verify_hash(:genesis, genesis, test.genesis_hash),
          db = build_pre_state(test.pre, block_config(test, genesis, 0)),
          {:ok, final_db} <- run_blocks(test.blocks, db, genesis, test) do
       verify_post_state(final_db, test.post)
@@ -65,17 +72,36 @@ defmodule EEVM.TestSupport.BlockchainTestRunner do
     Enum.reduce_while(blocks, {:ok, known, genesis.hash}, fn block, {:ok, known, head} ->
       case attempt_block(block, known, test) do
         {:ok, ^known} -> {:cont, {:ok, known, head}}
-        {:ok, known, hash} -> {:cont, {:ok, known, hash}}
+        {:ok, known, hash} -> {:cont, {:ok, known, fork_choice(known, head, hash)}}
         {:error, _} = error -> {:halt, error}
       end
     end)
     |> case do
-      {:ok, known, head} ->
-        {db, _header, _hashes, _td} = Map.fetch!(known, test.last_block_hash || head)
+      {:ok, known, head} when test.last_block_hash in [nil, head] ->
+        {db, _header, _hashes, _td} = Map.fetch!(known, head)
         {:ok, db}
+
+      {:ok, _known, head} ->
+        {:error, {:last_block_hash_mismatch, expected: test.last_block_hash, actual: head}}
 
       {:error, _} = error ->
         error
+    end
+  end
+
+  # geth's `ForkChoice.ReorgNeeded`: a post-Merge block always becomes the
+  # head; before it, only a heavier chain does. (geth also breaks some ties,
+  # which no fixture exercises.)
+  defp fork_choice(known, head, hash) do
+    {_, _, _, head_td} = Map.fetch!(known, head)
+    {_, %Header{difficulty: difficulty}, _, td} = Map.fetch!(known, hash)
+    if difficulty == 0 or td > head_td, do: hash, else: head
+  end
+
+  defp verify_hash(block_number, %Header{} = header, expected) do
+    case Header.compute_hash(header) do
+      ^expected -> :ok
+      actual -> {:error, {:block_hash_mismatch, block_number, expected: expected, actual: actual}}
     end
   end
 
@@ -84,8 +110,9 @@ defmodule EEVM.TestSupport.BlockchainTestRunner do
   # one, any rejection fails the case.
   defp attempt_block(%FixtureBlock{expect_exception: exception} = block, known, test) do
     case {apply_block(block, known, test), exception} do
-      {{:ok, entry}, nil} ->
-        {:ok, Map.put(known, elem(entry, 1).hash, entry), elem(entry, 1).hash}
+      {{:ok, {_db, header, _hashes, _td} = entry}, nil} ->
+        with :ok <- verify_hash(block.block_number, header, block.hash),
+             do: {:ok, Map.put(known, header.hash, entry), header.hash}
 
       {{:error, reason}, nil} ->
         {:error, {:block_failed, block.block_number, reason}}

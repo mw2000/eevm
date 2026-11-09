@@ -4,10 +4,10 @@ defmodule EEVM.TestSupport.BlockchainTestFixture do
 
   The runner executes blocks from their canonical `rlp` through
   `EEVM.Block`, so the loader keeps only what that needs: the pre- and
-  post-state, the network, the genesis block's RLP, and each block's `rlp`
-  and optional `expectException`. The JSON copies of headers and
-  transactions are ignored; `InvalidBlocks` fixtures deliberately put
-  malformed values there.
+  post-state, the network, the genesis block's RLP and hash, `lastblockhash`,
+  and each block's `rlp`, optional `expectException`, and `blockHeader.hash`.
+  The other JSON header and transaction fields are ignored; `InvalidBlocks`
+  fixtures deliberately put malformed values there.
   """
 
   defmodule Account do
@@ -29,10 +29,11 @@ defmodule EEVM.TestSupport.BlockchainTestFixture do
     @type t :: %__MODULE__{
             block_number: non_neg_integer(),
             rlp: binary(),
+            hash: binary() | nil,
             expect_exception: String.t() | nil
           }
 
-    defstruct [:block_number, :rlp, expect_exception: nil]
+    defstruct [:block_number, :rlp, hash: nil, expect_exception: nil]
   end
 
   defmodule Case do
@@ -45,6 +46,7 @@ defmodule EEVM.TestSupport.BlockchainTestFixture do
             pre: %{non_neg_integer() => Account.t()},
             post: %{non_neg_integer() => Account.t()},
             genesis_rlp: binary(),
+            genesis_hash: binary(),
             last_block_hash: binary() | nil,
             blocks: [Block.t()]
           }
@@ -56,6 +58,7 @@ defmodule EEVM.TestSupport.BlockchainTestFixture do
       :pre,
       :post,
       :genesis_rlp,
+      :genesis_hash,
       :last_block_hash,
       blocks: []
     ]
@@ -93,7 +96,8 @@ defmodule EEVM.TestSupport.BlockchainTestFixture do
         pre: parse_accounts(Map.fetch!(payload, "pre")),
         post: parse_accounts(Map.get(payload, "postState", %{})),
         genesis_rlp: parse_bytes!(Map.fetch!(payload, "genesisRLP")),
-        last_block_hash: payload |> Map.get("lastblockhash") |> then(&(&1 && parse_bytes!(&1))),
+        genesis_hash: parse_bytes!(get_in(payload, ["genesisBlockHeader", "hash"])),
+        last_block_hash: payload |> Map.get("lastblockhash") |> parse_hash(),
         blocks: Enum.map(Map.fetch!(payload, "blocks"), &parse_block/1)
       }
     end)
@@ -103,9 +107,14 @@ defmodule EEVM.TestSupport.BlockchainTestFixture do
     %Block{
       block_number: parse_quantity!(Map.get(block, "blocknumber", "0")),
       rlp: parse_bytes!(Map.fetch!(block, "rlp")),
+      hash: block |> get_in(["blockHeader", "hash"]) |> parse_hash(),
       expect_exception: Map.get(block, "expectException")
     }
   end
+
+  # `blockHeader` is absent from some blocks that are expected to fail.
+  defp parse_hash(nil), do: nil
+  defp parse_hash(hex), do: parse_bytes!(hex)
 
   defp parse_accounts(map) do
     Enum.into(map, %{}, fn {address, payload} ->
