@@ -120,6 +120,36 @@ defmodule EEVM.Precompiles.ModExpTest do
     end
   end
 
+  describe "even moduli" do
+    # An even modulus m = q·2^k (k at most half of m's bits) is computed mod q
+    # and mod 2^k and recombined by CRT. Integer.pow/2 and OpenSSL's own
+    # even-modulus path serve as independent references.
+    test "match Integer.pow/2 for small operands" do
+      for m <- [2, 6, 12_345 <<< 1, 255 <<< 4, 1001 <<< 8],
+          base <- [0, 1, 2, 7, 64, 1_000_003, m + 5],
+          exp <- [0, 1, 2, 3, 8, 9, 300] do
+        assert {:ok, out, _gas} = ModExp.execute(encode_modexp(base, exp, m), 10_000_000)
+
+        assert :binary.decode_unsigned(out) == rem(Integer.pow(base, exp), m),
+               inspect({base, exp, m})
+      end
+    end
+
+    test "match :crypto.mod_pow/3 for 2048-bit operands" do
+      for k <- [1, 64, 1024] do
+        q = :rand.uniform(1 <<< (2048 - k)) - 1
+        modulus = (q ||| 1 ||| 1 <<< (2047 - k)) <<< k
+        base = :rand.bytes(256)
+        exp = :rand.bytes(256)
+        input = <<256::256, 256::256, 256::256, base::binary, exp::binary, modulus::2048>>
+        expected = :crypto.mod_pow(base, exp, modulus)
+
+        assert {:ok, out, _gas} = ModExp.execute(input, 100_000_000)
+        assert :binary.decode_unsigned(out) == :binary.decode_unsigned(expected)
+      end
+    end
+  end
+
   describe "official EIP-2565 / EIP-7883 vectors" do
     # Each vector carries the expected output and both gas schedules (GasOld = EIP-2565,
     # GasNew = EIP-7883); see test/fixtures/precompiles/README.md for the source.

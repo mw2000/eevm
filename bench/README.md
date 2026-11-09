@@ -74,7 +74,8 @@ which an in-memory database doesn't pay. Compare the compute scenarios with othe
 | sha256 1 KiB (0x02) | 444 | 573,514 | 255 |
 | ripemd160 1 KiB (0x03) | 4,440 | 210,151 | 933 |
 | identity 1 KiB (0x04) | 111 | 2,347,937 | 261 |
-| modexp 2048-bit (0x05) | 698,368 | 145 | 101 |
+| modexp 2048-bit (0x05), before #188 | 698,368 | 145 | 101 |
+| modexp 2048-bit (0x05) | 698,368 | 481 | 336 |
 | bn256 add (0x06), before #182 | 150 | 11,597 | 1.74 |
 | bn256 add (0x06) | 150 | 175,448 | 26.3 |
 | bn256 mul (0x07), before #182 | 6,000 | 68.0 | 0.41 |
@@ -91,6 +92,13 @@ The BN256 and BLAKE2F rows were measured later, on the same kind of orb: after
 [#181](https://github.com/mw2000/eevm/issues/181) and
 [#182](https://github.com/mw2000/eevm/issues/182) replaced the `bn` library's pairing,
 ecAdd, and ecMul with `EEVM.Precompiles.BN256.Curve`.
+
+The ModExp job's random modulus is even. OpenSSL's `BN_mod_exp`, behind
+`:crypto.mod_pow/3`, uses Montgomery multiplication only for odd moduli, so even ones
+took about 7 ms against 2.1 ms for odd ones until
+[#188](https://github.com/mw2000/eevm/issues/188) split them as q·2^k and recombined
+the results by CRT. Odd moduli take the same path as before. A pure-Elixir
+square-and-multiply was 3-9x slower than OpenSSL at 256-4096 bits.
 
 ### Hot spots
 
