@@ -19,6 +19,10 @@ defmodule EEVM.Block.Header do
   | `receipts_root` | MPT root of `{rlp(index) => rlp(receipt)}` |
   | `transactions_root` | MPT root of `{rlp(index) => rlp(transaction)}` |
   | `logs_bloom` | 256-byte bloom summarising every log in the block |
+  | `gas_used` | Total gas the block's transactions consumed, as declared by the producer |
+  | `extra_data` | Arbitrary producer bytes (at most 32 bytes on mainnet) |
+  | `difficulty` | Proof-of-work difficulty (always zero post-Merge) |
+  | `hash` | Keccak hash of this header, as supplied by the caller (not computed here) |
   """
 
   @type t :: %__MODULE__{
@@ -33,7 +37,11 @@ defmodule EEVM.Block.Header do
           state_root: binary(),
           receipts_root: binary(),
           transactions_root: binary(),
-          logs_bloom: binary()
+          logs_bloom: binary(),
+          gas_used: non_neg_integer(),
+          extra_data: binary(),
+          difficulty: non_neg_integer(),
+          hash: binary()
         }
 
   defstruct number: 0,
@@ -47,7 +55,11 @@ defmodule EEVM.Block.Header do
             state_root: <<0::256>>,
             receipts_root: <<0::256>>,
             transactions_root: <<0::256>>,
-            logs_bloom: <<0::2048>>
+            logs_bloom: <<0::2048>>,
+            gas_used: 0,
+            extra_data: <<>>,
+            difficulty: 0,
+            hash: <<0::256>>
 
   @doc "Returns a zero-initialised header."
   @spec new() :: t()

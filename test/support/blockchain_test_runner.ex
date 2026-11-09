@@ -15,20 +15,18 @@ defmodule EEVM.TestSupport.BlockchainTestRunner do
   4. After every block applies cleanly, verify the final database matches
      the fixture's `postState`.
 
-  Header validation (parent hash, timestamp monotonicity, gas-limit
-  elasticity, EIP-1559 basefee, blob fields) and the InvalidBlocks negative
-  path are intentionally out of scope for this commit — they land in the
-  follow-ups.
+  Before a block runs, its header is checked against the parent with
+  `EEVM.Block.HeaderValidator`. EIP-1559 basefee and blob-field header rules
+  aren't checked yet.
   """
 
-  alias EEVM.Block.{Header, Processor, Withdrawal}
+  alias EEVM.Block.{Header, HeaderValidator, Processor, Withdrawal}
   alias EEVM.Config
   alias EEVM.Context.{Block, Transaction}
   alias EEVM.Database
   alias EEVM.Database.InMemory
   alias EEVM.HardforkConfig
   alias EEVM.SystemContracts.{BeaconRoots, BlockHashes}
-  alias EEVM.TestSupport.BlockchainHeaderValidator, as: HeaderValidator
   alias EEVM.TestSupport.BlockchainTestFixture.{Account, Case, TransactionFields}
   alias EEVM.TestSupport.BlockchainTestFixture.Block, as: FixtureBlock
   alias EEVM.TestSupport.BlockchainTestFixture.Withdrawal, as: FixtureWithdrawal
@@ -66,7 +64,8 @@ defmodule EEVM.TestSupport.BlockchainTestRunner do
   end
 
   defp run_blocks(blocks, db, config, genesis_header) do
-    Enum.reduce_while(blocks, {:ok, db, genesis_header}, fn block, {:ok, db_acc, parent} ->
+    Enum.reduce_while(blocks, {:ok, db, to_eevm_header(genesis_header)}, fn block,
+                                                                            {:ok, db_acc, parent} ->
       case attempt_block(block, db_acc, parent, config) do
         {:ok, new_db, new_parent} -> {:cont, {:ok, new_db, new_parent}}
         {:halt, reason} -> {:halt, {:error, reason}}
@@ -78,6 +77,9 @@ defmodule EEVM.TestSupport.BlockchainTestRunner do
     end
   end
 
+  # `parent` is always an `EEVM.Block.Header` built from the previous applied
+  # block's fixture header (or the genesis header).
+  #
   # Wraps run_block with `expect_exception` semantics: when a block declares an
   # exception, an error from run_block is the expected outcome (we move on with
   # the same db/parent), and a successful application is itself the test
@@ -85,7 +87,7 @@ defmodule EEVM.TestSupport.BlockchainTestRunner do
   defp attempt_block(%FixtureBlock{expect_exception: nil} = block, db, parent, config) do
     case run_block(block, db, parent, config) do
       {:ok, new_db} ->
-        {:ok, new_db, block.header}
+        {:ok, new_db, to_eevm_header(block.header)}
 
       {:error, reason} ->
         {:halt, {:block_failed, block.block_number, reason}}
@@ -107,13 +109,14 @@ defmodule EEVM.TestSupport.BlockchainTestRunner do
     do: {:error, :missing_block_header}
 
   defp run_block(%FixtureBlock{header: header} = block, db, parent, config) do
-    with :ok <- HeaderValidator.validate(header, parent) do
-      do_run_block(block, db, config)
+    eevm_header = to_eevm_header(header)
+
+    with :ok <- HeaderValidator.validate(eevm_header, parent) do
+      do_run_block(block, eevm_header, db, config)
     end
   end
 
-  defp do_run_block(%FixtureBlock{header: header} = block, db, config) do
-    eevm_header = to_eevm_header(header)
+  defp do_run_block(%FixtureBlock{header: header} = block, eevm_header, db, config) do
     transactions = Enum.map(block.transactions, &to_context_transaction/1)
 
     opts = [
@@ -170,7 +173,11 @@ defmodule EEVM.TestSupport.BlockchainTestRunner do
       state_root: header.state_root,
       receipts_root: header.receipts_root,
       transactions_root: header.transactions_root,
-      logs_bloom: header.logs_bloom
+      logs_bloom: header.logs_bloom,
+      gas_used: header.gas_used,
+      extra_data: header.extra_data,
+      difficulty: header.difficulty,
+      hash: header.hash
     )
   end
 
