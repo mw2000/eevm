@@ -22,7 +22,7 @@ defmodule EEVM.Interpreter.Instructions.System.Termination do
 
   @spec execute(non_neg_integer(), MachineState.t()) ::
           {:ok, MachineState.t()} | {:error, atom(), MachineState.t()}
-  def execute(0x00, state), do: {:ok, MachineState.halt(state, :stopped)}
+  def execute(0x00, state), do: {:ok, state |> clear_output() |> MachineState.halt(:stopped)}
 
   def execute(0xF3, state) do
     with {:ok, offset, s1} <- Stack.pop(state.frame.stack),
@@ -129,7 +129,8 @@ defmodule EEVM.Interpreter.Instructions.System.Termination do
               end
             end
 
-          {:ok, MachineState.halt(%{state_after_touch | db: db_after}, :stopped)}
+          {:ok,
+           %{state_after_touch | db: db_after} |> clear_output() |> MachineState.halt(:stopped)}
 
         {:error, :out_of_gas, halted_state} ->
           {:error, :out_of_gas, halted_state}
@@ -153,4 +154,9 @@ defmodule EEVM.Interpreter.Instructions.System.Termination do
       {0, state}
     end
   end
+
+  # STOP and SELFDESTRUCT end the frame with empty output. `frame.return_data`
+  # still holds the last sub-call's output, which must not become this frame's
+  # (CREATE would deploy it as code; the caller would see it as RETURNDATA).
+  defp clear_output(state), do: MachineState.update_frame(state, &%{&1 | return_data: <<>>})
 end

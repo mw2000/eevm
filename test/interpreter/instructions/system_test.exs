@@ -200,7 +200,6 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
 
       assert result.status == :stopped
       assert EEVM.stack_values(result) == [1]
-      assert result.frame.return_data == <<0x2A>>
       {mem, _} = Memory.read_bytes(result.frame.memory, 0, 1)
       assert mem == <<0x2A>>
     end
@@ -324,7 +323,6 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
 
       assert result.status == :stopped
       assert EEVM.stack_values(result) == [1]
-      assert result.frame.return_data == <<0x2A>>
       {mem, _} = Memory.read_bytes(result.frame.memory, 0, 1)
       assert mem == <<0x2A>>
     end
@@ -388,7 +386,6 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
 
       assert result.status == :stopped
       assert EEVM.stack_values(result) == [1]
-      assert result.frame.return_data == <<0x00>>
       {mem, _} = Memory.read_bytes(result.frame.memory, 0, 1)
       assert mem == <<0x00>>
       assert Database.storage_load(result.db, 0, 0) == 0

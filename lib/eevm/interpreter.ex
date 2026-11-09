@@ -95,7 +95,10 @@ defmodule EEVM.Interpreter do
   def run_loop(%MachineState{status: :running} = state) do
     case MachineState.current_opcode(state) do
       nil ->
-        MachineState.halt(state, :stopped)
+        # Running off the end of the code is an implicit STOP: empty output.
+        state
+        |> MachineState.update_frame(&%{&1 | return_data: <<>>})
+        |> MachineState.halt(:stopped)
 
       opcode ->
         static_cost = if opcode == 0xFE, do: state.frame.gas, else: Static.static_cost(opcode)

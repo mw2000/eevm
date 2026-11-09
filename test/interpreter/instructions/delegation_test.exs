@@ -49,8 +49,11 @@ defmodule EEVM.Interpreter.Instructions.DelegationTest do
       direct = run(call(0xF1, @identity, input: <<0xAB>>), accounts: accounts)
       delegated = run(call(0xF1, @authority, input: <<0xAB>>), accounts: accounts)
 
-      assert {EEVM.stack_values(direct), direct.frame.return_data} == {[1], <<0xAB>>}
-      assert {EEVM.stack_values(delegated), delegated.frame.return_data} == {[1], <<>>}
+      # `call/3` has the callee's output written to memory at 0x20.
+      returned = fn state -> state.frame.memory |> Memory.read_bytes(0x20, 1) |> elem(0) end
+
+      assert {EEVM.stack_values(direct), returned.(direct)} == {[1], <<0xAB>>}
+      assert {EEVM.stack_values(delegated), returned.(delegated)} == {[1], <<0x00>>}
     end
 
     test "do not follow designators before Prague" do

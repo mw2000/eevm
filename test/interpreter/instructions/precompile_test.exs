@@ -2,6 +2,7 @@ defmodule EEVM.Interpreter.Instructions.PrecompileTest do
   use ExUnit.Case, async: true
 
   alias EEVM.Config
+  alias EEVM.Interpreter.Memory
   alias EEVM.Precompiles
   alias EEVM.WorldState
 
@@ -50,7 +51,8 @@ defmodule EEVM.Interpreter.Instructions.PrecompileTest do
       result = EEVM.execute(code, world_state: world_state, gas: 1_000_000)
       assert result.status == :stopped
       assert EEVM.stack_values(result) == [1]
-      assert result.frame.return_data == <<0x2A>>
+      {mem, _} = Memory.read_bytes(result.frame.memory, 0, 1)
+      assert mem == <<0x2A>>
     end
 
     test "successful CALL with value credits the precompile" do
@@ -105,13 +107,14 @@ defmodule EEVM.Interpreter.Instructions.PrecompileTest do
       config = Config.new() |> Config.register_precompile(0x100, TestPrecompile)
 
       code =
-        <<0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x61, 0x01, 0x00, 0x61,
+        <<0x60, 0x01, 0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x61, 0x01, 0x00, 0x61,
           0xFF, 0xFF, 0xF1, 0x00>>
 
       result = EEVM.execute(code, config: config, gas: 1_000_000)
       assert result.status == :stopped
       assert EEVM.stack_values(result) == [1]
-      assert result.frame.return_data == <<0xAA>>
+      {mem, _} = Memory.read_bytes(result.frame.memory, 0, 1)
+      assert mem == <<0xAA>>
     end
 
     test "custom precompile detection is config-dependent" do

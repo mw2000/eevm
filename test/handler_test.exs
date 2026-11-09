@@ -244,6 +244,21 @@ defmodule EEVM.HandlerTest do
       assert Database.get_code(result.post_state_db, target) == <<0xFE>>
       assert Database.get_nonce(result.post_state_db, sender_address()) == 1
     end
+
+    test "initcode that STOPs after a sub-call deploys empty code" do
+      # CALL the identity precompile with 32 bytes, then STOP. The call's 32
+      # bytes of output are not the initcode's output: nothing is deployed and
+      # no code deposit is charged. Intrinsic 21_000 + 32_000 + 180 calldata +
+      # 2 initcode; execution 6 PUSH1 + GAS + CALL + identity (15 + 3) + memory 3.
+      initcode =
+        <<0x60, 0x00, 0x60, 0x00, 0x60, 0x20, 0x60, 0x00, 0x60, 0x00, 0x60, 0x04, 0x5A, 0xF1,
+          0x00>>
+
+      assert {:ok, result} = run(create_tx(initcode, 0), db_with_sender())
+      assert result.status == :success
+      assert Database.get_code(result.post_state_db, result.contract_address) == <<>>
+      assert result.gas_used == 53_182 + 18 + 2 + 100 + 18 + 3
+    end
   end
 
   describe "execute/4 — precompile as the transaction target" do
