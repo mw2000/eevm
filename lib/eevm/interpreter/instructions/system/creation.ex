@@ -93,6 +93,11 @@ defmodule EEVM.Interpreter.Instructions.System.Creation do
 
           case MachineState.consume_gas(state_after_cost, initcode_cost) do
             {:ok, state_after_initcode_cost} ->
+              # EIP-150: the init code gets all but 1/64 of the remaining gas.
+              available_gas = state_after_initcode_cost.frame.gas
+              create_gas = Dynamic.call_forwarded_gas(available_gas, available_gas)
+              reserve_gas = available_gas - create_gas
+
               {init_code, memory_after_read} =
                 Memory.read_bytes(state_after_initcode_cost.frame.memory, offset, size)
 
@@ -120,7 +125,7 @@ defmodule EEVM.Interpreter.Instructions.System.Creation do
 
                     child_state =
                       MachineState.new(init_code,
-                        gas: state_after_initcode_cost.frame.gas,
+                        gas: create_gas,
                         db: db_after_transfer,
                         tx: state_after_touch.env.tx,
                         block: state_after_touch.env.block,
@@ -138,11 +143,15 @@ defmodule EEVM.Interpreter.Instructions.System.Creation do
                     child_result = Interpreter.run_loop(child_state)
                     deployment_success = child_result.status == :stopped
 
-                    post_child_fail_state = %{
-                      state_after_touch
-                      | db: db_after_nonce,
-                        tracer: child_result.tracer
-                    }
+                    # A failed deployment keeps the 1/64 reserve plus whatever a
+                    # reverted init code left unused. Exceptional halts and rejected
+                    # runtime code (size, 0xEF prefix, deposit cost) consume the rest.
+                    returned_gas =
+                      if child_result.status == :reverted, do: child_result.frame.gas, else: 0
+
+                    post_child_fail_state =
+                      %{state_after_touch | db: db_after_nonce, tracer: child_result.tracer}
+                      |> MachineState.update_frame(&%{&1 | gas: reserve_gas + returned_gas})
 
                     if deployment_success do
                       runtime_code = child_result.frame.return_data
@@ -186,7 +195,7 @@ defmodule EEVM.Interpreter.Instructions.System.Creation do
                                  &1
                                  | stack: stack_after_create,
                                    memory: memory_after_read,
-                                   gas: child_result.frame.gas - deposit_cost,
+                                   gas: reserve_gas + child_result.frame.gas - deposit_cost,
                                    return_data: child_result.frame.return_data
                                }
                              )
@@ -212,8 +221,10 @@ defmodule EEVM.Interpreter.Instructions.System.Creation do
                     )
                 end
               else
+                # Address collision: the gas meant for the init code is consumed.
                 create_failed(
-                  %{state_after_touch | db: db_after_nonce},
+                  %{state_after_touch | db: db_after_nonce}
+                  |> MachineState.update_frame(&%{&1 | gas: reserve_gas}),
                   stack
                 )
               end

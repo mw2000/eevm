@@ -303,13 +303,14 @@ defmodule EEVM.Interpreter.Instructions.EnvironmentTest do
       assert EEVM.stack_values(result) == [expected]
     end
 
-    test "reverts on out-of-bounds read" do
+    test "out-of-bounds read halts exceptionally and burns all gas" do
       return_data = <<0xAA, 0xBB>>
       code = <<0x60, 2, 0x60, 1, 0x60, 0, 0x3E, 0x00>>
 
       result = EEVM.execute(code, return_data: return_data)
 
-      assert result.status == :reverted
+      assert result.status == {:error, :return_data_out_of_bounds}
+      assert result.frame.gas == 0
     end
 
     test "zero-length copy is a no-op" do

@@ -161,6 +161,56 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
       assert Database.get_balance(result.db, 1) == 1
       assert result.frame.return_data == <<>>
     end
+
+    # Parent: CALL(gas: GAS, to: 0xAA, value/in/out: 0), STOP. Before forwarding it has
+    # 200_000 - 6 * 3 (PUSH1) - 2 (GAS) - 100 (CALL) = 199_880 gas, and EIP-150 keeps
+    # div(199_880, 64) = 3_123 back while the child gets the rest.
+    @call_with_all_gas <<0x60, 0, 0x60, 0, 0x60, 0, 0x60, 0, 0x60, 0, 0x60, 0xAA, 0x5A, 0xF1,
+                         0x00>>
+
+    for {halt, child_code} <- [
+          {"stack underflow", <<0x01>>},
+          {"INVALID", <<0xFE>>},
+          {"out of gas", <<0x5B, 0x60, 0x00, 0x56>>}
+        ] do
+      test "#{halt} in child burns its gas, leaving the parent only its 1/64 reserve" do
+        world_state =
+          WorldState.new(%{
+            0 => %{balance: 0},
+            0xAA => %{balance: 0, code: unquote(child_code)}
+          })
+
+        result =
+          EEVM.execute(@call_with_all_gas,
+            gas: 200_000,
+            world_state: world_state,
+            accessed_addresses: MapSet.new([0, 0xAA])
+          )
+
+        assert result.status == :stopped
+        assert EEVM.stack_values(result) == [0]
+        assert result.frame.gas == 3_123
+      end
+    end
+
+    test "reverted child returns its unused gas to the parent" do
+      # Child: PUSH1 0, PUSH1 0, REVERT uses 6 gas.
+      world_state =
+        WorldState.new(%{
+          0 => %{balance: 0},
+          0xAA => %{balance: 0, code: <<0x60, 0, 0x60, 0, 0xFD>>}
+        })
+
+      result =
+        EEVM.execute(@call_with_all_gas,
+          gas: 200_000,
+          world_state: world_state,
+          accessed_addresses: MapSet.new([0, 0xAA])
+        )
+
+      assert EEVM.stack_values(result) == [0]
+      assert result.frame.gas == 199_880 - 6
+    end
   end
 
   describe "STATICCALL (0xFA)" do

@@ -126,10 +126,7 @@ defmodule EEVM.Interpreter.Instructions.Environment.Data do
            state |> MachineState.update_frame(&%{&1 | stack: s3}) |> MachineState.advance_pc()}
 
         data_offset + length > byte_size(state.frame.return_data) ->
-          {:ok,
-           state
-           |> MachineState.update_frame(&%{&1 | stack: s3})
-           |> MachineState.halt(:reverted)}
+          {:error, :return_data_out_of_bounds, state}
 
         true ->
           dynamic_cost =

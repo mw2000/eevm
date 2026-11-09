@@ -297,7 +297,7 @@ defmodule EEVM.Interpreter.Instructions.System.Calls do
                  | stack: stack_after_call,
                    memory: memory_result,
                    return_data: child_result.frame.return_data,
-                   gas: state_after_forward.frame.gas + child_result.frame.gas
+                   gas: state_after_forward.frame.gas + returned_gas(child_result)
                }
              )
              |> MachineState.advance_pc()}
@@ -451,7 +451,7 @@ defmodule EEVM.Interpreter.Instructions.System.Calls do
                  | stack: stack_after_call,
                    memory: memory_result,
                    return_data: child_result.frame.return_data,
-                   gas: state_after_forward.frame.gas + child_result.frame.gas
+                   gas: state_after_forward.frame.gas + returned_gas(child_result)
                }
              )
              |> MachineState.advance_pc()}
@@ -465,6 +465,14 @@ defmodule EEVM.Interpreter.Instructions.System.Calls do
         {:error, :out_of_gas, halted_state}
     end
   end
+
+  # Only STOP/RETURN and REVERT hand unused gas back to the caller; an exceptional
+  # halt consumes everything forwarded to the child.
+  defp returned_gas(%MachineState{status: status, frame: frame})
+       when status in [:stopped, :reverted],
+       do: frame.gas
+
+  defp returned_gas(_child_result), do: 0
 
   defp call_memory_expansion_cost(memory, args_offset, args_size, ret_offset, ret_size) do
     current_size = Memory.size(memory)

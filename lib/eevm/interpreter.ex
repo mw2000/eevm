@@ -118,7 +118,7 @@ defmodule EEVM.Interpreter do
   def run_loop(state), do: state
 
   defp apply_refund(%MachineState{status: status} = state, _initial_gas)
-       when status in [:reverted, :out_of_gas, :invalid] do
+       when status in [:reverted, :out_of_gas, :invalid] or is_tuple(status) do
     MachineState.update_frame(state, &%{&1 | refund: 0})
   end
 

@@ -268,10 +268,20 @@ defmodule EEVM.Interpreter.MachineState do
   def sub_refund(state, amount),
     do: update_frame(state, &%{&1 | refund: max(&1.refund - amount, 0)})
 
-  @doc "Halts execution with the given status."
+  @doc """
+  Halts execution with the given status.
+
+  `:stopped` and `:reverted` keep the frame's remaining gas. Exceptional halts
+  (`:invalid`, `:out_of_gas`, `{:error, reason}`) consume all of it and
+  produce no return data.
+  """
   @spec halt(t(), status()) :: t()
-  def halt(state, status) do
+  def halt(state, status) when status in [:running, :stopped, :reverted] do
     %{state | status: status}
+  end
+
+  def halt(state, status) do
+    %{update_frame(state, &%{&1 | gas: 0, return_data: <<>>}) | status: status}
   end
 
   @doc "Marks an address as touched for EIP-161 post-transaction cleanup."
