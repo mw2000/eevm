@@ -12,15 +12,14 @@ defmodule EEVM.Interpreter do
   (0xFE) is special-cased: its "base" gas cost is set to the entire
   remaining gas, draining it completely before the opcode runs.
 
-  Opcode dispatch is data-driven via
-  `EEVM.Interpreter.Instructions.Registry`; opcode modules own their
+  Opcode dispatch is data-driven via the frame's per-hardfork
+  `EEVM.Interpreter.InstructionTable` (built from
+  `EEVM.Interpreter.Instructions.Registry`); opcode modules own their
   semantics, and the interpreter only orchestrates.
   """
 
   alias EEVM.Database
-  alias EEVM.Gas.Static
   alias EEVM.HardforkConfig
-  alias EEVM.Interpreter.Instructions.Registry
   alias EEVM.Interpreter.{MachineState, Memory, Stack}
   alias EEVM.Tracer
   alias EEVM.Tracer.TraceStep
@@ -102,12 +101,13 @@ defmodule EEVM.Interpreter do
         |> MachineState.halt(:stopped)
 
       opcode ->
-        static_cost = if opcode == 0xFE, do: state.frame.gas, else: Static.static_cost(opcode)
+        instruction = elem(state.env.instruction_table, opcode)
+        static_cost = if opcode == 0xFE, do: state.frame.gas, else: elem(instruction, 0)
         traced_state = trace_opcode(state, opcode, static_cost)
 
         case MachineState.consume_gas(traced_state, static_cost) do
           {:ok, state_after_gas} ->
-            case execute_opcode(opcode, state_after_gas) do
+            case execute_opcode(instruction, state_after_gas) do
               {:ok, new_state} ->
                 run_loop(new_state)
 
@@ -203,39 +203,25 @@ defmodule EEVM.Interpreter do
 
   defp cleanup_touched_empty_accounts(state), do: state
 
-  # Dispatch an opcode byte to its implementing module via the Registry.
-  #
-  # The Registry maps each opcode to a `:module` (the `Instructions.*` module
-  # whose `execute/2` handles it), its stack `:inputs`/`:outputs`, and a
-  # `:state_mutating` flag. Before the module runs, the stack bounds are checked
-  # once here: fewer than `inputs` items is a stack underflow, and ending above
-  # 1024 items is a stack overflow (Yellow Paper §9.4.2). Opcode modules can
-  # therefore push without handling `{:error, :stack_overflow}`. Inside a
-  # STATICCALL frame (`frame.is_static`), state-mutating opcodes (SSTORE,
-  # TSTORE, LOG0..4, CREATE, CREATE2, SELFDESTRUCT) are an exceptional halt
-  # (EIP-214). Unknown opcodes halt as `:invalid`.
+  # Dispatch an opcode to the module its instruction-table entry names (see
+  # `EEVM.Interpreter.InstructionTable`). Before the module runs, the stack
+  # bounds are checked once here: fewer than the entry's minimum depth is a
+  # stack underflow, and above its maximum depth the opcode would end with
+  # more than 1024 items, a stack overflow (Yellow Paper §9.4.2). Opcode
+  # modules can therefore push without handling `{:error, :stack_overflow}`.
+  # Inside a STATICCALL frame (`frame.is_static`), state-mutating opcodes
+  # (SSTORE, TSTORE, LOG0..4, CREATE, CREATE2, SELFDESTRUCT) are an
+  # exceptional halt (EIP-214). Bytes the active fork does not define
+  # dispatch as INVALID.
 
-  @max_stack_depth Stack.max_depth()
-
-  defp execute_opcode(opcode, state) do
+  defp execute_opcode({_gas, module, opcode, min_depth, max_depth, state_mutating?}, state) do
     depth = Stack.depth(state.frame.stack)
 
-    case Registry.info(opcode) do
-      {:ok, %{inputs: inputs}} when depth < inputs ->
-        {:error, :stack_underflow, state}
-
-      {:ok, %{inputs: inputs, outputs: outputs}}
-      when depth - inputs + outputs > @max_stack_depth ->
-        {:error, :stack_overflow, state}
-
-      {:ok, %{state_mutating: true}} when state.frame.is_static ->
-        {:error, :static_state_modification, state}
-
-      {:ok, %{module: module}} ->
-        module.execute(opcode, state)
-
-      {:error, :unknown_opcode} ->
-        {:ok, MachineState.halt(state, :invalid)}
+    cond do
+      depth < min_depth -> {:error, :stack_underflow, state}
+      depth > max_depth -> {:error, :stack_overflow, state}
+      state_mutating? and state.frame.is_static -> {:error, :static_state_modification, state}
+      true -> module.execute(opcode, state)
     end
   end
 

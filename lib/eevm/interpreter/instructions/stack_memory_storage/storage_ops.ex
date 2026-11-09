@@ -23,7 +23,6 @@ defmodule EEVM.Interpreter.Instructions.StackMemoryStorage.StorageOps do
 
   alias EEVM.Database
   alias EEVM.Gas.{Access, Dynamic}
-  alias EEVM.HardforkConfig
   alias EEVM.Interpreter.{MachineState, Stack}
 
   @cold_sload_cost 2100
@@ -109,44 +108,34 @@ defmodule EEVM.Interpreter.Instructions.StackMemoryStorage.StorageOps do
 
   # TLOAD (EIP-1153, Cancun+): reads from transient storage — a key-value map
   # per account, shared by every frame of the transaction and cleared at its end.
-  # Pre-Cancun, 0x5C is undefined → :invalid.
-  def execute(0x5C, %{env: %{config: %{hardfork: hardfork}}} = state) do
-    if HardforkConfig.enabled?(hardfork, :eip_1153) do
-      with {:ok, key, s1} <- Stack.pop(state.frame.stack),
-           value =
-             Map.get(state.substate.transient_storage, {state.frame.contract.address, key}, 0),
-           {:ok, s2} <- Stack.push(s1, value) do
-        {:ok, state |> MachineState.update_frame(&%{&1 | stack: s2}) |> MachineState.advance_pc()}
-      else
-        {:error, reason} -> {:error, reason, state}
-      end
+  def execute(0x5C, state) do
+    with {:ok, key, s1} <- Stack.pop(state.frame.stack),
+         value =
+           Map.get(state.substate.transient_storage, {state.frame.contract.address, key}, 0),
+         {:ok, s2} <- Stack.push(s1, value) do
+      {:ok, state |> MachineState.update_frame(&%{&1 | stack: s2}) |> MachineState.advance_pc()}
     else
-      {:ok, MachineState.halt(state, :invalid)}
+      {:error, reason} -> {:error, reason, state}
     end
   end
 
   # TSTORE (EIP-1153, Cancun+): writes to transient storage. The static-context
   # guard in the executor rejects TSTORE before this clause is reached in static mode.
-  # Pre-Cancun, 0x5D is undefined → :invalid.
-  def execute(0x5D, %{env: %{config: %{hardfork: hardfork}}} = state) do
-    if HardforkConfig.enabled?(hardfork, :eip_1153) do
-      with {:ok, key, s1} <- Stack.pop(state.frame.stack),
-           {:ok, value, s2} <- Stack.pop(s1) do
-        sub = state.substate
-        slot = {state.frame.contract.address, key}
-        new_sub = %{sub | transient_storage: Map.put(sub.transient_storage, slot, value)}
+  def execute(0x5D, state) do
+    with {:ok, key, s1} <- Stack.pop(state.frame.stack),
+         {:ok, value, s2} <- Stack.pop(s1) do
+      sub = state.substate
+      slot = {state.frame.contract.address, key}
+      new_sub = %{sub | transient_storage: Map.put(sub.transient_storage, slot, value)}
 
-        state_after =
-          state
-          |> MachineState.update_frame(&%{&1 | stack: s2})
-          |> Map.put(:substate, new_sub)
+      state_after =
+        state
+        |> MachineState.update_frame(&%{&1 | stack: s2})
+        |> Map.put(:substate, new_sub)
 
-        {:ok, MachineState.advance_pc(state_after)}
-      else
-        {:error, reason} -> {:error, reason, state}
-      end
+      {:ok, MachineState.advance_pc(state_after)}
     else
-      {:ok, MachineState.halt(state, :invalid)}
+      {:error, reason} -> {:error, reason, state}
     end
   end
 

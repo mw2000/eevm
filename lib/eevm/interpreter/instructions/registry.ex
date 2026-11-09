@@ -11,6 +11,10 @@ defmodule EEVM.Interpreter.Instructions.Registry do
     the opcode; `EEVM.Interpreter` dispatches on this field
   - `:state_mutating` (when present) — opcode mutates persistent state and is an
     exceptional halt (`{:error, :static_state_modification}`) inside a STATICCALL frame
+  - `:eip` (when present) — the `EEVM.HardforkConfig` flag of the EIP that
+    introduced the opcode; before that EIP activates the byte is undefined.
+    Opcodes without it exist since Frontier. `EEVM.Interpreter.InstructionTable`
+    applies this per hardfork.
 
   PUSH1–PUSH32, DUP1–DUP16, and SWAP1–SWAP16 are generated dynamically from their
   opcode ranges rather than stored in the static map.
@@ -162,7 +166,7 @@ defmodule EEVM.Interpreter.Instructions.Registry do
     @shl => %{name: "SHL", inputs: 2, outputs: 1, module: Bitwise},
     @shr => %{name: "SHR", inputs: 2, outputs: 1, module: Bitwise},
     @sar => %{name: "SAR", inputs: 2, outputs: 1, module: Bitwise},
-    @clz => %{name: "CLZ", inputs: 1, outputs: 1, module: Bitwise},
+    @clz => %{name: "CLZ", inputs: 1, outputs: 1, module: Bitwise, eip: :eip_7939},
     @address => %{name: "ADDRESS", inputs: 0, outputs: 1, module: Simple},
     @balance => %{name: "BALANCE", inputs: 1, outputs: 1, module: External},
     @origin => %{name: "ORIGIN", inputs: 0, outputs: 1, module: Simple},
@@ -191,17 +195,24 @@ defmodule EEVM.Interpreter.Instructions.Registry do
     @blobhash => %{name: "BLOBHASH", inputs: 1, outputs: 1, module: Simple},
     @blobbasefee => %{name: "BLOBBASEFEE", inputs: 0, outputs: 1, module: Simple},
     @gas_ => %{name: "GAS", inputs: 0, outputs: 1, module: Simple},
-    @push0 => %{name: "PUSH0", inputs: 0, outputs: 1, module: ControlFlow},
+    @push0 => %{name: "PUSH0", inputs: 0, outputs: 1, module: ControlFlow, eip: :eip_3855},
     @pop => %{name: "POP", inputs: 1, outputs: 0, module: StackOps},
     @mload => %{name: "MLOAD", inputs: 1, outputs: 1, module: MemoryOps},
     @mstore => %{name: "MSTORE", inputs: 2, outputs: 0, module: MemoryOps},
     @mstore8 => %{name: "MSTORE8", inputs: 2, outputs: 0, module: MemoryOps},
     @sload => %{name: "SLOAD", inputs: 1, outputs: 1, module: StorageOps},
     @sstore => %{name: "SSTORE", inputs: 2, outputs: 0, module: StorageOps, state_mutating: true},
-    @tload => %{name: "TLOAD", inputs: 1, outputs: 1, module: StorageOps},
-    @tstore => %{name: "TSTORE", inputs: 2, outputs: 0, module: StorageOps, state_mutating: true},
+    @tload => %{name: "TLOAD", inputs: 1, outputs: 1, module: StorageOps, eip: :eip_1153},
+    @tstore => %{
+      name: "TSTORE",
+      inputs: 2,
+      outputs: 0,
+      module: StorageOps,
+      state_mutating: true,
+      eip: :eip_1153
+    },
     @msize => %{name: "MSIZE", inputs: 0, outputs: 1, module: MemoryOps},
-    @mcopy => %{name: "MCOPY", inputs: 3, outputs: 0, module: MemoryOps},
+    @mcopy => %{name: "MCOPY", inputs: 3, outputs: 0, module: MemoryOps, eip: :eip_5656},
     @jump => %{name: "JUMP", inputs: 1, outputs: 0, module: ControlFlow},
     @jumpi => %{name: "JUMPI", inputs: 2, outputs: 0, module: ControlFlow},
     @pc => %{name: "PC", inputs: 0, outputs: 1, module: ControlFlow},

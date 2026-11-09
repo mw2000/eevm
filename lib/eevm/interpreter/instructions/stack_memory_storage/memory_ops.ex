@@ -14,7 +14,6 @@ defmodule EEVM.Interpreter.Instructions.StackMemoryStorage.MemoryOps do
 
   alias EEVM.Gas.Dynamic
   alias EEVM.Gas.Memory, as: GasMemory
-  alias EEVM.HardforkConfig
   alias EEVM.Interpreter.Instructions.Helpers
   alias EEVM.Interpreter.{MachineState, Memory, Stack}
 
@@ -92,46 +91,41 @@ defmodule EEVM.Interpreter.Instructions.StackMemoryStorage.MemoryOps do
   end
 
   # MCOPY (EIP-5656, Cancun+): copies a region of memory to another location.
-  # Pre-Cancun, 0x5E is undefined → :invalid.
-  def execute(0x5E, %{env: %{config: %{hardfork: hardfork}}} = state) do
-    if HardforkConfig.enabled?(hardfork, :eip_5656) do
-      with {:ok, dst, s1} <- Stack.pop(state.frame.stack),
-           {:ok, src, s2} <- Stack.pop(s1),
-           {:ok, length, s3} <- Stack.pop(s2) do
-        if length == 0 do
-          {:ok,
-           state
-           |> MachineState.update_frame(&%{&1 | stack: s3})
-           |> MachineState.advance_pc()}
-        else
-          max_offset = max(src + length, dst + length)
-
-          expansion_cost =
-            GasMemory.memory_expansion_cost(Memory.size(state.frame.memory), 0, max_offset)
-
-          dynamic_cost = Dynamic.copy_cost(length) + expansion_cost
-
-          case MachineState.consume_gas(
-                 MachineState.update_frame(state, &%{&1 | stack: s3}),
-                 dynamic_cost
-               ) do
-            {:ok, s4} ->
-              new_memory = Memory.copy(s4.frame.memory, dst, src, length)
-
-              {:ok,
-               s4
-               |> MachineState.update_frame(&%{&1 | memory: new_memory})
-               |> MachineState.advance_pc()}
-
-            {:error, :out_of_gas, halted_state} ->
-              {:error, :out_of_gas, halted_state}
-          end
-        end
+  def execute(0x5E, state) do
+    with {:ok, dst, s1} <- Stack.pop(state.frame.stack),
+         {:ok, src, s2} <- Stack.pop(s1),
+         {:ok, length, s3} <- Stack.pop(s2) do
+      if length == 0 do
+        {:ok,
+         state
+         |> MachineState.update_frame(&%{&1 | stack: s3})
+         |> MachineState.advance_pc()}
       else
-        {:error, reason} -> {:error, reason, state}
+        max_offset = max(src + length, dst + length)
+
+        expansion_cost =
+          GasMemory.memory_expansion_cost(Memory.size(state.frame.memory), 0, max_offset)
+
+        dynamic_cost = Dynamic.copy_cost(length) + expansion_cost
+
+        case MachineState.consume_gas(
+               MachineState.update_frame(state, &%{&1 | stack: s3}),
+               dynamic_cost
+             ) do
+          {:ok, s4} ->
+            new_memory = Memory.copy(s4.frame.memory, dst, src, length)
+
+            {:ok,
+             s4
+             |> MachineState.update_frame(&%{&1 | memory: new_memory})
+             |> MachineState.advance_pc()}
+
+          {:error, :out_of_gas, halted_state} ->
+            {:error, :out_of_gas, halted_state}
+        end
       end
     else
-      {:ok, MachineState.halt(state, :invalid)}
+      {:error, reason} -> {:error, reason, state}
     end
   end
 

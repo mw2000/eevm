@@ -12,7 +12,6 @@ defmodule EEVM.Interpreter.Instructions.ControlFlow do
   - **PC** (0x58) and **JUMPDEST** (0x5B).
   """
 
-  alias EEVM.HardforkConfig
   alias EEVM.Interpreter.Instructions.Helpers
   alias EEVM.Interpreter.Instructions.Registry
   alias EEVM.Interpreter.{MachineState, Stack}
@@ -66,14 +65,7 @@ defmodule EEVM.Interpreter.Instructions.ControlFlow do
   def execute(0x5B, state), do: {:ok, MachineState.advance_pc(state)}
   # PUSH0 (EIP-3855, Shanghai+): pushes the constant 0 onto the stack without
   # consuming any inline bytecode bytes. Saves 1 byte and 2 gas vs PUSH1 0x00.
-  # Pre-Shanghai, 0x5F is an undefined opcode and halts with :invalid.
-  def execute(0x5F, %{env: %{config: %{hardfork: hardfork}}} = state) do
-    if HardforkConfig.enabled?(hardfork, :eip_3855) do
-      Helpers.push_value(state, 0)
-    else
-      {:ok, MachineState.halt(state, :invalid)}
-    end
-  end
+  def execute(0x5F, state), do: Helpers.push_value(state, 0)
 
   # PUSH1-PUSH32 — read `n` bytes immediately following the current PC from
   # bytecode and push the value as a big-endian unsigned integer.
