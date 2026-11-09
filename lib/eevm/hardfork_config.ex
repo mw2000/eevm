@@ -118,6 +118,8 @@ defmodule EEVM.HardforkConfig do
     eip_1108: :istanbul,
     # EIP-2929 (Berlin): cold/warm address & storage access costs
     eip_2929: :berlin,
+    # EIP-2930 (Berlin): optional access-list transactions (type 1)
+    eip_2930: :berlin,
     # EIP-2565 (Berlin): ModExp repricing
     eip_2565: :berlin,
     # EIP-1559 (London): fee market; header base_fee_per_gas follows the parent's gas usage

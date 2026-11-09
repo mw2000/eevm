@@ -53,13 +53,19 @@ defmodule EEVM.Transaction.Validator do
     end
   end
 
-  defp validate_tx_type(%Transaction{type: :eip7702}, %HardforkConfig{} = hardfork) do
-    if HardforkConfig.enabled?(hardfork, :eip_7702),
-      do: :ok,
-      else: {:error, :tx_type_not_supported}
-  end
+  # Each EIP-2718 transaction type is valid from the fork of the EIP that
+  # introduced it.
+  @tx_type_eips %{eip2930: :eip_2930, eip1559: :eip_1559, eip4844: :eip_4844, eip7702: :eip_7702}
 
-  defp validate_tx_type(%Transaction{}, %HardforkConfig{}), do: :ok
+  defp validate_tx_type(%Transaction{type: type}, %HardforkConfig{} = hardfork) do
+    case @tx_type_eips do
+      %{^type => eip} ->
+        if HardforkConfig.enabled?(hardfork, eip), do: :ok, else: {:error, :tx_type_not_supported}
+
+      _legacy ->
+        :ok
+    end
+  end
 
   defp validate_set_code_tx(%Transaction{type: :eip7702} = tx) do
     cond do

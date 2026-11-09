@@ -140,6 +140,26 @@ defmodule EEVM.Transaction.ValidatorTest do
       assert :ok = Validator.validate(valid_tx(), db, valid_block())
     end
 
+    test "accepts each transaction type only from the fork of its EIP" do
+      db = db_for_sender(balance: 1_000_000)
+
+      for {type, first_fork, previous_fork} <-
+            [
+              eip2930: :berlin,
+              eip1559: :london,
+              eip4844: :cancun
+            ]
+            |> Enum.map(fn {type, fork} -> {type, fork, previous(fork)} end) do
+        tx = valid_tx(type: type)
+
+        assert {:error, :tx_type_not_supported} =
+                 Validator.validate(tx, db, valid_block(), HardforkConfig.new(previous_fork))
+
+        refute Validator.validate(tx, db, valid_block(), HardforkConfig.new(first_fork)) ==
+                 {:error, :tx_type_not_supported}
+      end
+    end
+
     test "rejects set-code transactions before Prague and malformed ones from Prague" do
       auth = %{chain_id: 1, address: 0xBEEF, nonce: 0, y_parity: 0, r: 1, s: 1}
       tx = valid_tx(type: :eip7702, gas_limit: 100_000, authorization_list: [auth])
@@ -228,6 +248,11 @@ defmodule EEVM.Transaction.ValidatorTest do
                  valid_block(gaslimit: 1_000_000)
                )
     end
+  end
+
+  defp previous(fork) do
+    ids = HardforkConfig.all_spec_ids()
+    Enum.at(ids, Enum.find_index(ids, &(&1 == fork)) - 1)
   end
 
   defp valid_tx(overrides \\ []) do
