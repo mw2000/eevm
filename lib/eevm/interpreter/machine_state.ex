@@ -168,8 +168,8 @@ defmodule EEVM.Interpreter.MachineState do
 
   @doc "Advances the program counter by `n` positions."
   @spec advance_pc(t(), non_neg_integer()) :: t()
-  def advance_pc(state, n \\ 1) do
-    update_frame(state, &%{&1 | pc: &1.pc + n})
+  def advance_pc(%__MODULE__{frame: frame} = state, n \\ 1) do
+    %{state | frame: %{frame | pc: frame.pc + n}}
   end
 
   @spec current_depth(t()) :: non_neg_integer()
@@ -193,8 +193,8 @@ defmodule EEVM.Interpreter.MachineState do
   `{:error, :out_of_gas, state}` if the gas would go negative.
   """
   @spec consume_gas(t(), non_neg_integer()) :: {:ok, t()} | {:error, :out_of_gas, t()}
-  def consume_gas(%__MODULE__{frame: %Frame{gas: gas}} = state, cost) when cost <= gas do
-    {:ok, update_frame(state, &%{&1 | gas: &1.gas - cost})}
+  def consume_gas(%__MODULE__{frame: %Frame{gas: gas} = frame} = state, cost) when cost <= gas do
+    {:ok, %{state | frame: %{frame | gas: gas - cost}}}
   end
 
   def consume_gas(state, _cost) do

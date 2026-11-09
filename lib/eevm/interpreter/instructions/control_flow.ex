@@ -74,12 +74,7 @@ defmodule EEVM.Interpreter.Instructions.ControlFlow do
 
   def execute(op, state) when op >= 0x60 and op <= 0x7F do
     n = Registry.push_bytes(op)
-    bytes = MachineState.read_code(state, state.frame.pc + 1, n)
-
-    value =
-      bytes
-      |> :binary.bin_to_list()
-      |> Enum.reduce(0, fn byte, acc -> acc * 256 + byte end)
+    value = state |> MachineState.read_code(state.frame.pc + 1, n) |> :binary.decode_unsigned()
 
     case Stack.push(state.frame.stack, value) do
       {:ok, new_stack} ->

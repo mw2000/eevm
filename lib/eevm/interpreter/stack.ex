@@ -51,7 +51,7 @@ defmodule EEVM.Interpreter.Stack do
   """
   @spec peek(t(), non_neg_integer()) :: {:ok, non_neg_integer()} | {:error, :stack_underflow}
   def peek(%__MODULE__{elements: elements, size: size}, depth) when depth < size do
-    {:ok, Enum.at(elements, depth)}
+    {:ok, :lists.nth(depth + 1, elements)}
   end
 
   def peek(_stack, _depth), do: {:error, :stack_underflow}
@@ -66,16 +66,9 @@ defmodule EEVM.Interpreter.Stack do
     {:error, :stack_underflow}
   end
 
-  def swap(%__MODULE__{elements: elements, size: size}, depth) do
-    top = Enum.at(elements, 0)
-    target = Enum.at(elements, depth)
-
-    new_elements =
-      elements
-      |> List.replace_at(0, target)
-      |> List.replace_at(depth, top)
-
-    {:ok, %__MODULE__{elements: new_elements, size: size}}
+  def swap(%__MODULE__{elements: [top | rest]} = stack, depth) do
+    {between, [target | below]} = :lists.split(depth - 1, rest)
+    {:ok, %{stack | elements: [target | between ++ [top | below]]}}
   end
 
   @doc "Returns the maximum stack depth (1024)."
