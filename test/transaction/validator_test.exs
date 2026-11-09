@@ -78,6 +78,22 @@ defmodule EEVM.Transaction.ValidatorTest do
       assert {:error, :nonce_too_high} = Validator.validate(tx, db, valid_block())
     end
 
+    # EIP-2681: a sender at nonce 2^64 - 1 can't send, since the nonce can't be
+    # incremented (ethereum/tests stCreateTest/CreateTransactionHighNonce).
+    test "returns nonce is max at 2^64 - 1, and accepts 2^64 - 2" do
+      max = 0xFFFFFFFFFFFFFFFF
+
+      assert {:error, :nonce_is_max} =
+               Validator.validate(valid_tx(nonce: max), db_for_sender(nonce: max), valid_block())
+
+      assert :ok =
+               Validator.validate(
+                 valid_tx(nonce: max - 1),
+                 db_for_sender(nonce: max - 1),
+                 valid_block()
+               )
+    end
+
     test "returns priority fee above max fee for eip1559" do
       tx =
         valid_tx(

@@ -54,6 +54,7 @@ defmodule EEVM.Error do
   | `:gas_limit_exceeds_block` | `gas_limit` is above the block gas limit |
   | `:nonce_too_low` | `nonce` is below the sender's account nonce |
   | `:nonce_too_high` | `nonce` is above the sender's account nonce |
+  | `:nonce_is_max` | `nonce` is 2^64 - 1, so the sender's nonce can't be incremented (EIP-2681) |
   | `:priority_fee_above_max_fee` | `max_priority_fee_per_gas` exceeds `max_fee_per_gas` (EIP-1559) |
   | `:max_fee_below_basefee` | `max_fee_per_gas` is below the block base fee (EIP-1559) |
   | `:insufficient_balance` | Balance can't cover `gas_limit * max price + blob gas * max_fee_per_blob_gas + value` |
@@ -158,6 +159,7 @@ defmodule EEVM.Error do
           | :gas_limit_exceeds_block
           | :nonce_too_low
           | :nonce_too_high
+          | :nonce_is_max
           | :priority_fee_above_max_fee
           | :max_fee_below_basefee
           | :insufficient_balance

@@ -101,9 +101,11 @@ defmodule EEVM.Transaction.Validator do
     account_nonce = Database.get_nonce(db, tx.origin)
 
     cond do
-      account_nonce == tx.nonce -> :ok
       account_nonce > tx.nonce -> {:error, :nonce_too_low}
-      true -> {:error, :nonce_too_high}
+      account_nonce < tx.nonce -> {:error, :nonce_too_high}
+      # EIP-2681: the sender's nonce could not be incremented.
+      tx.nonce >= @max_uint64 -> {:error, :nonce_is_max}
+      true -> :ok
     end
   end
 

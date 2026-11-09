@@ -170,6 +170,30 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
       assert EEVM.stack_values(result) == [0, 0]
     end
 
+    # EIP-2681 / execution-specs `generic_create`: at nonce 2^64 - 1 CREATE pushes
+    # 0, keeps the nonce, and returns the gas it would have forwarded
+    # (ethereum/tests stCreateTest/CREATE_HighNonce).
+    test "CREATE from an account at nonce 2^64 - 1 pushes 0 and keeps the nonce" do
+      max = 0xFFFFFFFFFFFFFFFF
+      # PUSH1 0 (size), PUSH1 0 (offset), PUSH1 0 (value), CREATE, STOP
+      code = <<0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0xF0, 0x00>>
+
+      for {nonce, created?} <- [{max, false}, {max - 1, true}] do
+        world_state = WorldState.new(%{0 => %{balance: 10, nonce: nonce}})
+        result = EEVM.execute(code, world_state: world_state, gas: 100_000)
+        [address] = EEVM.stack_values(result)
+
+        if created? do
+          assert address != 0
+          assert Database.get_nonce(result.db, 0) == max
+        else
+          assert address == 0
+          assert Database.get_nonce(result.db, 0) == max
+          assert result.frame.gas == 100_000 - 9 - 32_000
+        end
+      end
+    end
+
     test "CREATE fails and pushes zero when balance is insufficient" do
       init_code = <<0x60, 0x00, 0x60, 0x00, 0xF3>>
       code = build_create_program(init_code, :create, 0x09)

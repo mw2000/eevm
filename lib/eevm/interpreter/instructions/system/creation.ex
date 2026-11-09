@@ -17,13 +17,16 @@ defmodule EEVM.Interpreter.Instructions.System.Creation do
   Oversized initcode halts the calling frame with `:initcode_too_large`.
 
   Creation fails and pushes 0 without touching the creator's nonce at the
-  1,024 call-depth limit or when its balance can't cover the endowment. A
-  collision with an existing account (EIP-684, EIP-7610) also pushes 0, but
-  keeps the nonce bump and consumes the gas meant for the init code.
+  1,024 call-depth limit, when its balance can't cover the endowment, or when
+  its nonce is already 2^64 - 1 (EIP-2681). A collision with an existing
+  account (EIP-684, EIP-7610) also pushes 0, but keeps the nonce bump and
+  consumes the gas meant for the init code.
   """
 
   @max_code_size 24_576
   @max_initcode_size 49_152
+  # EIP-2681: account nonces stop at 2^64 - 1.
+  @max_nonce 0xFFFFFFFFFFFFFFFF
   @initcode_word_cost 2
 
   alias EEVM.Context.Contract
@@ -146,11 +149,12 @@ defmodule EEVM.Interpreter.Instructions.System.Creation do
               |> MachineState.touch_address(new_address)
 
             cond do
-              # The depth and balance checks follow the gas charges and precede
-              # the nonce bump: such a CREATE leaves the nonce alone and returns
-              # the gas it would have forwarded.
+              # The depth, balance, and nonce (EIP-2681) checks follow the gas
+              # charges and precede the nonce bump: such a CREATE leaves the
+              # nonce alone and returns the gas it would have forwarded.
               state_after_read.frame.depth >= 1024 or
-                  Database.get_balance(state_after_read.db, creator) < value ->
+                Database.get_balance(state_after_read.db, creator) < value or
+                  nonce >= @max_nonce ->
                 create_failed(state_after_read, stack)
 
               # EIP-684: a collision keeps the nonce bump and consumes the gas
