@@ -76,7 +76,7 @@ defmodule EEVM.MixProject do
     [
       main: "EEVM",
       source_url: @source_url,
-      source_ref: "v#{@version}",
+      source_ref: "main",
       extras: ["README.md", "LICENSE"],
       groups_for_modules: [
         Interpreter: [~r/^EEVM\.Interpreter($|\.)/],
