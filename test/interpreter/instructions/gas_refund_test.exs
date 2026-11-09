@@ -23,11 +23,11 @@ defmodule EEVM.Interpreter.Instructions.GasRefundTest do
     assert updated.frame.refund == 15
   end
 
-  test "sub_refund decrements with floor at 0" do
+  test "sub_refund decrements and may go below 0" do
     state = MachineState.new(<<0x00>>, refund: 10)
 
     assert MachineState.sub_refund(state, 3).frame.refund == 7
-    assert MachineState.sub_refund(state, 100).frame.refund == 0
+    assert MachineState.sub_refund(state, 100).frame.refund == -90
   end
 
   test "refund is capped at gas_used/5" do

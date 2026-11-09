@@ -40,20 +40,39 @@ defmodule EEVM.Interpreter do
   - `:authorization_refund` — EIP-7702 refund earned before execution; it is
     added to the refund counter even when execution fails
 
-  Returns the final `MachineState` after execution completes.
+  Returns the final `MachineState` after execution completes, with the
+  transaction-end steps of `finalize/3` applied.
   """
 
   @spec run(binary(), keyword()) :: MachineState.t()
   def run(code, opts \\ []) do
-    initial_gas = Keyword.get(opts, :gas, 1_000_000)
+    code
+    |> MachineState.new(opts)
+    |> run_loop()
+    |> finalize(Keyword.get(opts, :gas, 1_000_000), Keyword.get(opts, :authorization_refund, 0))
+  end
 
-    final_state =
-      code
-      |> MachineState.new(opts)
-      |> run_loop()
-      |> cleanup_touched_empty_accounts()
+  @doc """
+  Applies the transaction-end steps to a halted top-level state: deletes
+  touched empty accounts (EIP-161), then settles the refund counter into
+  `frame.gas` and resets the counter to 0.
 
-    apply_refund(final_state, initial_gas, Keyword.get(opts, :authorization_refund, 0))
+  The refund is capped at a fraction of the gas used by the whole
+  transaction: 1/5 from London (EIP-3529), 1/2 before. When `env.tx.gas_limit`
+  is set, gas used counts from it and so includes intrinsic gas; otherwise it
+  counts from `initial_gas`. The execution refund counts only when execution
+  succeeded; `authorization_refund` (EIP-7702) always counts. From Prague the
+  gas charged after the refund is floored at the EIP-7623 calldata cost.
+
+  `run/2` calls this itself. Callers that charge more gas after execution
+  ends, such as the code deposit of a CREATE transaction, call `run_loop/1`,
+  charge that gas, then call this, so the cap counts it.
+  """
+  @spec finalize(MachineState.t(), non_neg_integer(), non_neg_integer()) :: MachineState.t()
+  def finalize(%MachineState{} = state, initial_gas, authorization_refund \\ 0) do
+    state
+    |> cleanup_touched_empty_accounts()
+    |> apply_refund(initial_gas, authorization_refund)
   end
 
   @doc """

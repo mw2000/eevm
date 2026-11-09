@@ -102,8 +102,21 @@ defmodule EEVM.Interpreter.JournalTest do
     end
   end
 
+  describe "merge_child_result/2 — refund counter" do
+    test "adds the child's counter, even a negative one, on success; drops it on failure" do
+      base = parent_state()
+      parent = %{base | frame: %{base.frame | refund: 4_800}}
+      child = %{parent | frame: %{parent.frame | refund: -4_800}}
+
+      assert Journal.merge_child_result(parent, %{child | status: :stopped}).frame.refund == 0
+
+      assert Journal.merge_child_result(parent, %{child | status: :reverted}).frame.refund ==
+               4_800
+    end
+  end
+
   describe "merge_child_result/2 — non-revertible fields" do
-    test "parent's stack, memory, pc, gas, refund, contract are not touched on success" do
+    test "parent's stack, memory, pc, gas, contract are not touched on success" do
       parent = parent_state()
 
       child = %{
@@ -116,7 +129,6 @@ defmodule EEVM.Interpreter.JournalTest do
 
       assert merged.frame.pc == parent.frame.pc
       assert merged.frame.gas == parent.frame.gas
-      assert merged.frame.refund == parent.frame.refund
       assert merged.frame.stack == parent.frame.stack
       assert merged.frame.memory == parent.frame.memory
       assert merged.frame.contract == parent.frame.contract

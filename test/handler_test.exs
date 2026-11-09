@@ -268,6 +268,62 @@ defmodule EEVM.HandlerTest do
     end
   end
 
+  describe "execute/4 — gas refunds" do
+    test "a refund earned in a successful child frame reaches the transaction" do
+      # The recipient CALLs a child that writes its slot 0 (holding 2). Clearing
+      # it and resetting it to 3 cost the same; only clearing earns 4_800.
+      parent_code = :binary.copy(<<0x60, 0x00>>, 5) <> <<0x61, 0xC4, 0x11, 0x5A, 0xF1, 0x00>>
+
+      gas_used_with_child = fn child_code ->
+        db =
+          db_with_sender()
+          |> Database.put_code(@recipient, parent_code)
+          |> Database.put_code(0xC411, child_code)
+          |> Database.storage_store(0xC411, 0, 2)
+
+        {:ok, result} = run(legacy_value_transfer(gas_limit: 100_000), db)
+        assert result.status == :success
+        result.gas_used
+      end
+
+      clearing = gas_used_with_child.(<<0x60, 0x00, 0x60, 0x00, 0x55, 0x00>>)
+      resetting = gas_used_with_child.(<<0x60, 0x03, 0x60, 0x00, 0x55, 0x00>>)
+
+      assert resetting - clearing == 4_800
+    end
+
+    test "a child frame can take its refund counter below zero" do
+      # ethereum/tests SstoreCallToSelfSubRefundBelowZero. Slot 1 holds 2. The
+      # top frame clears it (+4_800), then CALLs itself; the child writes 3,
+      # undoing that refund (-4_800) from a counter that starts at 0.
+      code = Base.decode16!("3330146015576000600155600080808080305AF1005B600360015500")
+
+      db =
+        db_with_sender()
+        |> Database.put_code(@recipient, code)
+        |> Database.storage_store(@recipient, 1, 2)
+
+      assert {:ok, result} = run(legacy_value_transfer(gas_limit: 100_000), db)
+      assert result.status == :success
+      assert result.gas_used == 26_272
+      assert Database.storage_load(result.post_state_db, @recipient, 1) == 3
+    end
+
+    test "a creation tx counts the code deposit toward the refund cap" do
+      # Initcode: SSTORE(0, 1); SSTORE(0, 0) (earns 19_900); RETURN 10 zero bytes.
+      # Intrinsic 21_000 + 32_000 + 192 calldata + 2 initcode = 53_194; execution
+      # 22_106 + 106 + 9 = 22_221; code deposit 10 * 200 = 2_000. The cap is
+      # 77_415 / 5 = 15_483. Settling before the deposit would cap at 15_083.
+      initcode =
+        <<0x60, 0x01, 0x60, 0x00, 0x55, 0x60, 0x00, 0x60, 0x00, 0x55, 0x60, 0x0A, 0x60, 0x00,
+          0xF3>>
+
+      assert {:ok, result} = run(create_tx(initcode, 0), db_with_sender())
+      assert result.status == :success
+      assert result.gas_used == 77_415 - 15_483
+    end
+  end
+
   describe "execute/4 — REVERT" do
     test "marks status :reverted and emits no logs" do
       # PUSH1 0 PUSH1 0 REVERT

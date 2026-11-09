@@ -263,10 +263,15 @@ defmodule EEVM.Interpreter.MachineState do
   @spec add_refund(t(), non_neg_integer()) :: t()
   def add_refund(state, amount), do: update_frame(state, &%{&1 | refund: &1.refund + amount})
 
-  @doc "Subtracts `amount` from refund, flooring at 0."
+  @doc """
+  Subtracts `amount` from the accumulated gas refund.
+
+  The counter is frame-local (a child frame starts at 0 and its counter is
+  added to the parent's on success), so it may go negative: a child can undo
+  a refund that its parent earned, e.g. by restoring a slot the parent cleared.
+  """
   @spec sub_refund(t(), non_neg_integer()) :: t()
-  def sub_refund(state, amount),
-    do: update_frame(state, &%{&1 | refund: max(&1.refund - amount, 0)})
+  def sub_refund(state, amount), do: update_frame(state, &%{&1 | refund: &1.refund - amount})
 
   @doc """
   Halts execution with the given status.

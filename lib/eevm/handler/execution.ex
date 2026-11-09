@@ -24,6 +24,7 @@ defmodule EEVM.Handler.Execution do
   alias EEVM.{Config, Database, Delegation, HardforkConfig, Precompiles}
   alias EEVM.Context.{Block, Contract, Transaction}
   alias EEVM.Handler.PreExecution
+  alias EEVM.Interpreter
   alias EEVM.Interpreter.Instructions.System.Creation
   alias EEVM.Interpreter.MachineState
 
@@ -150,8 +151,11 @@ defmodule EEVM.Handler.Execution do
         calldata: <<>>
       )
 
-    final_state =
-      EEVM.execute(tx.data,
+    # The code deposit is part of the creation message, so it is charged
+    # before the refund is settled and counts toward the refund cap.
+    {deploy_result, deployed_state} =
+      tx.data
+      |> MachineState.new(
         gas: execution_gas,
         db: db_before_init,
         tx: tx,
@@ -163,10 +167,14 @@ defmodule EEVM.Handler.Execution do
         accessed_storage_keys: PreExecution.initial_accessed_storage_keys(tx),
         created_addresses: MapSet.new([new_address])
       )
+      |> Interpreter.run_loop()
+      |> deploy_runtime_code(new_address)
 
-    case deploy_runtime_code(final_state, new_address) do
-      {:ok, deployed_state} -> {deployed_state, new_address}
-      {:error, deployed_state} -> {deployed_state, nil}
+    final_state = Interpreter.finalize(deployed_state, execution_gas)
+
+    case deploy_result do
+      :ok -> {final_state, new_address}
+      :error -> {final_state, nil}
     end
   end
 

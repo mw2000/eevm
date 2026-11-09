@@ -28,7 +28,7 @@ defmodule EEVM.Interpreter.MachineState.Frame do
           stack: Stack.t(),
           memory: Memory.t(),
           gas: non_neg_integer(),
-          refund: non_neg_integer(),
+          refund: integer(),
           code: binary(),
           return_data: binary(),
           contract: Contract.t(),

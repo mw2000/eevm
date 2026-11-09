@@ -31,7 +31,7 @@ defmodule EEVM.Tracer do
             stack: [non_neg_integer()],
             memory_size: non_neg_integer(),
             depth: non_neg_integer(),
-            refund: non_neg_integer(),
+            refund: integer(),
             return_data: binary(),
             error: atom() | nil
           }
@@ -59,7 +59,7 @@ defmodule EEVM.Tracer do
           stack: [non_neg_integer()],
           memory_size: non_neg_integer(),
           depth: non_neg_integer(),
-          refund: non_neg_integer()
+          refund: integer()
         }
 
   @type t :: %__MODULE__{steps: [TraceStep.t()]}
