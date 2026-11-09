@@ -416,6 +416,28 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
       end
     end
 
+    # execution-specs `generic_call` writes min(ret_size, len(output)) bytes; the
+    # rest of the output area keeps its contents, but memory still expands over it.
+    for {callee, input_size, expected_word} <- [
+          # Identity returns the 1 input byte 0xAB.
+          {0x04, 1, 0xAB * 2 ** 248 + 0xFF},
+          # ECRECOVER of an all-zero input succeeds with empty output.
+          {0x01, 0, 0xFF}
+        ] do
+      test "CALL to precompile #{callee} writes only its output into a larger area" do
+        # MSTORE(0, 0xFF); MSTORE8(32, 0xAB);
+        # CALL(gas, callee, 0, in: 32/input_size, out: 0/32), POP; MLOAD(0), MSIZE, STOP
+        code =
+          <<0x60, 0xFF, 0x60, 0x00, 0x52, 0x60, 0xAB, 0x60, 0x20, 0x53, 0x60, 0x20, 0x60, 0x00,
+            0x60, unquote(input_size), 0x60, 0x20, 0x60, 0x00, 0x60, unquote(callee), 0x61, 0xFF,
+            0xFF, 0xF1, 0x50, 0x60, 0x00, 0x51, 0x59, 0x00>>
+
+        result = EEVM.execute(code)
+
+        assert EEVM.stack_values(result) == [64, unquote(expected_word)]
+      end
+    end
+
     test "a CALL that fails on balance clears the return data of an earlier call" do
       # CALL 0xAA with value 5 from an empty account, POP, RETURNDATASIZE, STOP
       code =

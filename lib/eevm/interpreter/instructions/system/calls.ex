@@ -552,20 +552,20 @@ defmodule EEVM.Interpreter.Instructions.System.Calls do
     end
   end
 
+  # Only min(size, byte_size(return_data)) bytes are written; the rest of the
+  # output area keeps its contents (execution-specs `generic_call`,
+  # `actual_output_size`). Memory still expands over the whole area, which the
+  # CALL already paid for.
   defp write_return_data(memory, _offset, 0, _return_data), do: memory
 
   defp write_return_data(memory, offset, size, return_data) do
-    bytes =
-      for i <- 0..(size - 1), into: <<>> do
-        if i < byte_size(return_data), do: <<:binary.at(return_data, i)>>, else: <<0>>
-      end
+    {_, expanded} = Memory.read_bytes(memory, offset, size)
 
-    bytes
+    return_data
+    |> binary_part(0, min(size, byte_size(return_data)))
     |> :binary.bin_to_list()
     |> Enum.with_index()
-    |> Enum.reduce(memory, fn {byte, i}, mem ->
-      Memory.store_byte(mem, offset + i, byte)
-    end)
+    |> Enum.reduce(expanded, fn {byte, i}, mem -> Memory.store_byte(mem, offset + i, byte) end)
   end
 
   # A call that fails before running (depth limit, insufficient balance)

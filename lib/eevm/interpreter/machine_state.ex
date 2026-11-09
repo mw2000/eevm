@@ -305,19 +305,17 @@ defmodule EEVM.Interpreter.MachineState do
 
   defp write_return_data(memory, _offset, 0, return_data), do: {memory, return_data}
 
+  # Writes min(size, byte_size(return_data)) bytes and leaves the rest of the
+  # output area untouched, but expands memory over all of it.
   defp write_return_data(memory, offset, size, return_data) do
-    bytes =
-      for i <- 0..(size - 1), into: <<>> do
-        if i < byte_size(return_data), do: <<:binary.at(return_data, i)>>, else: <<0>>
-      end
+    {_, expanded} = Memory.read_bytes(memory, offset, size)
 
     new_memory =
-      bytes
+      return_data
+      |> binary_part(0, min(size, byte_size(return_data)))
       |> :binary.bin_to_list()
       |> Enum.with_index()
-      |> Enum.reduce(memory, fn {byte, i}, mem ->
-        Memory.store_byte(mem, offset + i, byte)
-      end)
+      |> Enum.reduce(expanded, fn {byte, i}, mem -> Memory.store_byte(mem, offset + i, byte) end)
 
     {new_memory, return_data}
   end
