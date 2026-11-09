@@ -28,6 +28,13 @@ defmodule EEVM.Interpreter.Instructions.System.Creation do
   alias EEVM.Interpreter
   alias EEVM.Interpreter.{Journal, MachineState, Memory, Stack}
 
+  @doc """
+  Executes CREATE (0xF0) or CREATE2 (0xF5) against the current frame.
+
+  Pushes the new contract's address on success and 0 on any creation failure
+  (depth limit, static context, insufficient balance, address collision, or a
+  failed or rejected initcode run). Any other opcode halts as `:invalid`.
+  """
   @spec execute(non_neg_integer(), MachineState.t()) ::
           {:ok, MachineState.t()} | {:error, atom(), MachineState.t()}
   def execute(0xF0, state) do
@@ -114,6 +121,18 @@ defmodule EEVM.Interpreter.Instructions.System.Creation do
               if can_create do
                 case Database.transfer(db_after_nonce, creator, new_address, value) do
                   {:ok, db_after_transfer} ->
+                    config = state_after_touch.env.config
+
+                    # The new account exists before its initcode runs, with nonce 1
+                    # from EIP-161 on, so CREATEs issued by the initcode derive
+                    # addresses from nonce 1.
+                    child_db =
+                      Database.set_nonce(
+                        db_after_transfer,
+                        new_address,
+                        if(HardforkConfig.enabled?(config.hardfork, :eip_161), do: 1, else: 0)
+                      )
+
                     child_contract =
                       Contract.new(
                         address: new_address,
@@ -126,11 +145,11 @@ defmodule EEVM.Interpreter.Instructions.System.Creation do
                     child_state =
                       MachineState.new(init_code,
                         gas: create_gas,
-                        db: db_after_transfer,
+                        db: child_db,
                         tx: state_after_touch.env.tx,
                         block: state_after_touch.env.block,
                         contract: child_contract,
-                        config: state_after_touch.env.config,
+                        config: config,
                         touched_addresses: state_after_touch.substate.touched_addresses,
                         accessed_addresses: state_after_touch.substate.accessed_addresses,
                         accessed_storage_keys: state_after_touch.substate.accessed_storage_keys,
@@ -173,9 +192,7 @@ defmodule EEVM.Interpreter.Instructions.System.Creation do
 
                           if child_result.frame.gas >= deposit_cost do
                             db_after_deploy =
-                              child_result.db
-                              |> Database.put_code(new_address, runtime_code)
-                              |> Database.set_nonce(new_address, 1)
+                              Database.put_code(child_result.db, new_address, runtime_code)
 
                             {:ok, stack_after_create} = Stack.push(stack, new_address)
 

@@ -197,6 +197,20 @@ defmodule EEVM.HandlerTest do
       assert Database.get_code(result.post_state_db, result.contract_address) == <<0x00>>
       assert Database.get_nonce(result.post_state_db, result.contract_address) == 1
     end
+
+    test "initcode runs with the new contract's nonce at 1" do
+      # Initcode issues the same empty-initcode CREATE2 twice; the second collides.
+      # EIP-161: the new contract starts at nonce 1. EIP-684/EIP-1014: every
+      # CREATE2, colliding or not, bumps the creator's nonce, so 1 + 2 = 3
+      # (ethereum/tests stCreate2/create2collisionSelfdestructed).
+      create2_empty = <<0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0xF5, 0x50>>
+
+      tx = create_tx(create2_empty <> create2_empty <> <<0x00>>, 0)
+
+      assert {:ok, result} = run(tx, db_with_sender(balance: 10_000_000))
+      assert result.status == :success
+      assert Database.get_nonce(result.post_state_db, result.contract_address) == 3
+    end
   end
 
   describe "execute/4 — REVERT" do
@@ -238,6 +252,10 @@ defmodule EEVM.HandlerTest do
       },
       @chain_id
     )
+  end
+
+  defp create_tx(initcode, value) do
+    legacy_value_transfer(to: <<>>, data: initcode, value: value, gas_limit: 200_000)
   end
 
   defp sign_legacy(%Legacy{} = tx, chain_id) do

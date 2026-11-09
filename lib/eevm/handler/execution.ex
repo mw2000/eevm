@@ -23,6 +23,13 @@ defmodule EEVM.Handler.Execution do
   @max_code_size 24_576
   @code_deposit_gas_per_byte 200
 
+  @doc """
+  Runs a validated transaction's EVM execution with `execution_gas` against
+  `db`, in which the sender's nonce is already bumped.
+
+  Returns the final machine state and the deployed contract address, or `nil`
+  for a message call or a failed deployment.
+  """
   @spec run_top_level(Transaction.t(), Database.t(), Block.t(), Config.t(), non_neg_integer()) ::
           {MachineState.t(), non_neg_integer() | nil}
   def run_top_level(%Transaction{to: to} = tx, db, block, config, execution_gas)
@@ -59,7 +66,16 @@ defmodule EEVM.Handler.Execution do
     pre_nonce = max(Database.get_nonce(db, creator) - 1, 0)
     new_address = derive_create_address(creator, pre_nonce)
 
-    db_after_value = transfer_value(db, creator, new_address, tx.value)
+    # The new account exists before its initcode runs, with nonce 1 from
+    # EIP-161 on, so CREATEs issued by the initcode derive addresses from
+    # nonce 1.
+    db_before_init =
+      db
+      |> transfer_value(creator, new_address, tx.value)
+      |> Database.set_nonce(
+        new_address,
+        if(HardforkConfig.enabled?(config.hardfork, :eip_161), do: 1, else: 0)
+      )
 
     contract_ctx =
       Contract.new(
@@ -72,7 +88,7 @@ defmodule EEVM.Handler.Execution do
     final_state =
       EEVM.execute(tx.data,
         gas: execution_gas,
-        db: db_after_value,
+        db: db_before_init,
         tx: tx,
         block: block,
         contract: contract_ctx,
@@ -105,10 +121,7 @@ defmodule EEVM.Handler.Execution do
         {:error, zero_gas_revert(state)}
 
       true ->
-        updated_db =
-          state.db
-          |> Database.put_code(new_address, runtime_code)
-          |> Database.set_nonce(new_address, 1)
+        updated_db = Database.put_code(state.db, new_address, runtime_code)
 
         deducted = MachineState.update_frame(state, &%{&1 | gas: &1.gas - deposit_cost})
         {:ok, %{deducted | db: updated_db}}

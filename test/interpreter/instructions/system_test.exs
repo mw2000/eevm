@@ -76,6 +76,22 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
       assert Database.get_code(result1.db, address1) == <<0xBB>>
     end
 
+    test "initcode runs with its own nonce at 1, and a CREATE2 collision still bumps it" do
+      # Initcode issues the same empty-initcode CREATE2 twice; the second collides.
+      # EIP-161: the new contract starts at nonce 1. EIP-684/EIP-1014: every
+      # CREATE2, colliding or not, bumps the creator's nonce, so 1 + 2 = 3
+      # (ethereum/tests stCreate2/create2collisionSelfdestructed).
+      create2_empty = <<0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0xF5, 0x50>>
+      init_code = create2_empty <> create2_empty <> <<0x00>>
+      code = build_create_program(init_code, :create, 0x00)
+
+      result = EEVM.execute(code, world_state: WorldState.new(%{0 => %{balance: 10}}))
+      [created_address] = EEVM.stack_values(result)
+
+      assert created_address != 0
+      assert Database.get_nonce(result.db, created_address) == 3
+    end
+
     test "CREATE fails and pushes zero when balance is insufficient" do
       init_code = <<0x60, 0x00, 0x60, 0x00, 0xF3>>
       code = build_create_program(init_code, :create, 0x09)
