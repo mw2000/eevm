@@ -5,9 +5,9 @@ defmodule EEVM.Block.Result do
 
   ### Fields
 
-  - `post_state_db` — the `EEVM.Database` after system calls, every
-    transaction, the withdrawals, and the request system calls have been
-    applied in order.
+  - `db` — the `EEVM.Database` after system calls, every transaction, the
+    withdrawals, and the request system calls have been applied in order.
+    `post_state_db` is a deprecated copy, kept for one minor version.
   - `receipts` — the per-transaction receipts, already carrying their
     `cumulative_gas_used` figures.
   - `state_root` — post-execution world-state MPT root.
@@ -18,30 +18,37 @@ defmodule EEVM.Block.Result do
     final receipt's `cumulative_gas_used`, `0` when the block is empty).
   - `requests` — the block's EIP-7685 requests, each a type byte followed by
     its payload (see `EEVM.Block.Requests`); `nil` before Prague.
+  - `trace` — with the `:tracer` option, one `EEVM.Tracer` per transaction,
+    in block order; otherwise `nil`.
   """
 
   alias EEVM.Block.{Bloom, Receipt}
   alias EEVM.Database
+  alias EEVM.Tracer
 
   @type t :: %__MODULE__{
-          post_state_db: Database.t(),
+          db: Database.t(),
           receipts: [Receipt.t()],
           state_root: binary(),
           receipts_root: binary(),
           transactions_root: binary(),
           logs_bloom: Bloom.t(),
           gas_used: non_neg_integer(),
-          requests: [binary()] | nil
+          requests: [binary()] | nil,
+          trace: [Tracer.t()] | nil,
+          post_state_db: Database.t()
         }
 
   defstruct [
-    :post_state_db,
+    :db,
     :receipts,
     :state_root,
     :receipts_root,
     :transactions_root,
     :logs_bloom,
     :gas_used,
-    :requests
+    :requests,
+    :trace,
+    :post_state_db
   ]
 end

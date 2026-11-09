@@ -81,9 +81,9 @@ defmodule EEVM.BlockTest do
       {:ok, decoded} = block |> Block.encode() |> Block.decode()
       assert {:ok, result} = Block.execute(decoded, parent(), db())
       assert result.state_root == block.header.state_root
-      assert Database.get_balance(result.post_state_db, @recipient) == 1_000
+      assert Database.get_balance(result.db, @recipient) == 1_000
       # Coinbase earns the 1 wei tip per gas; the 7 wei base fee is burned.
-      assert Database.get_balance(result.post_state_db, @coinbase) == 21_000
+      assert Database.get_balance(result.db, @coinbase) == 21_000
     end
 
     test "rejects a body or result that doesn't match the header" do
@@ -108,6 +108,14 @@ defmodule EEVM.BlockTest do
 
       assert {:error, {:tx_failed, 0, :gas_allowance_exceeded}} =
                build([signed_transfer(gas_limit: 21_001)], gas_limit: 21_000)
+    end
+
+    test "tracer: true returns one trace per transaction; it is nil otherwise" do
+      {:ok, block, built} = build([signed_transfer(), signed_transfer(nonce: 1)])
+      assert built.trace == nil
+
+      assert {:ok, %{trace: [%EEVM.Tracer{}, %EEVM.Tracer{}]}} =
+               Block.execute(block, parent(), db(), tracer: true)
     end
 
     test "runs header validation against the parent" do
@@ -135,7 +143,7 @@ defmodule EEVM.BlockTest do
         ] do
       test "#{fork} credits the miner #{reward} wei" do
         {:ok, _block, built} = build([], hardfork: unquote(fork))
-        assert Database.get_balance(built.post_state_db, @coinbase) == unquote(reward)
+        assert Database.get_balance(built.db, @coinbase) == unquote(reward)
       end
     end
   end

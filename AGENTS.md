@@ -29,7 +29,7 @@ minor version) before removing anything (#150).
   message, in `EEVM.Error`.
 - Give every public function `@spec` and `@doc` and every module `@moduledoc`,
   adding missing ones where you touch. Prefer doctests for small examples.
-- Cite the EIP or Yellow Paper section beside non-obvious rules.
+- Cite the EIP or Yellow Paper section for non-obvious rules.
 - No wrappers, behaviours, or helper modules with one caller; extend the module
   that owns the behaviour. `Instructions.Helpers` holds helpers shared across
   opcode families.
@@ -38,21 +38,18 @@ minor version) before removing anything (#150).
 
 ## Performance
 
-The interpreter loop runs once per opcode, so hot-path code matters.
-
-- Represent EVM words as integers and byte data as binaries. Use binary pattern
-  matching (`<<value::unsigned-big-256>>`) and `binary_part/3` instead of
-  converting to lists.
+- Represent EVM words as integers and byte data as binaries; use binary pattern
+  matching and `binary_part/3`, not lists.
 - Avoid copying: don't rebuild large structs or binaries per opcode, don't
   `Enum.reverse`/`++` on hot paths, and update only the struct fields you change
   (`MachineState.update_frame/2`).
 - Keep disabled features free: the tracer costs one pattern match when
   `tracer: nil`. Follow that model for anything optional.
 - `EEVM.Interpreter.Memory` currently stores bytes in a map, which is slow.
-  Don't copy that pattern; moving it to a binary is welcome work.
+  Don't copy that pattern.
 - Benchmark any change to the interpreter, stack, memory, gas, or opcode
   handlers. The repo has no benchmark harness yet: time a representative workload
-  (for example a loop-heavy contract via `EEVM.execute/2`) before and after with
+  (for example a loop-heavy contract via `EEVM.run/2`) before and after with
   `:timer.tc` or Benchee in a scratch script, on the same machine, and put the
   numbers in the commit message.
 
@@ -60,7 +57,7 @@ The interpreter loop runs once per opcode, so hot-path code matters.
 
 | What | Where |
 |------|-------|
-| Public entry points | `lib/eevm.ex` (`execute/2`, `trace/2`, `disassemble/1`) |
+| Public entry points | `lib/eevm.ex` (`run/2`, `transact/4`, `disassemble/1`), `lib/eevm/block.ex` |
 | Fetch-decode-execute loop, refunds | `lib/eevm/interpreter.ex` |
 | Opcode metadata (name, stack I/O, module, static flag) | `lib/eevm/interpreter/instructions/registry.ex` |
 | Opcode semantics | `lib/eevm/interpreter/instructions/` by family (`arithmetic.ex`, `system/calls.ex`, ...) |
@@ -121,11 +118,8 @@ commit's CI run passes.
   mix eevm.blockchain_tests 'test/fixtures/state_tests/ethereum-tests/BlockchainTests/ValidBlocks/**/*.json'
   ```
 
-  `mix test` runs only the checked-in smoke fixtures. CI's Conformance jobs run
-  every suite against its known-failures list
-  (`test/fixtures/eest/known_failures_*.txt`,
-  `test/fixtures/*/known_failures.txt`) and fail on any failure a list doesn't
-  cover. When you fix failures, regenerate the lists with the commands in their
+  CI's Conformance jobs run every suite against its `known_failures*.txt` list
+  and fail on any failure a list doesn't cover. When you fix failures, regenerate the lists with the commands in their
   headers and commit them with the fix. `stale_fixtures.txt` lists fixtures
   older than a rule eevm implements. `test/fixtures/*/skip.txt` is only for
   fixtures that abort the VM or cannot finish within the per-case timeout.

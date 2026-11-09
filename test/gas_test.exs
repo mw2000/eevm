@@ -1,5 +1,6 @@
 defmodule EEVM.GasTest do
   use ExUnit.Case, async: true
+  import EEVM.TestSupport.MachineHelpers
 
   alias EEVM.Gas.{Dynamic, Memory, Static}
 
@@ -11,7 +12,7 @@ defmodule EEVM.GasTest do
       # PUSH1 2, PUSH1 3, ADD, STOP
       # Gas costs: PUSH1=3, PUSH1=3, ADD=3, STOP=0 → total = 9
       code = <<0x60, 2, 0x60, 3, 0x01, 0x00>>
-      result = EEVM.execute(code, gas: 1_000_000)
+      result = run_code(code, gas: 1_000_000)
       assert result.status == :stopped
       assert result.frame.gas == 1_000_000 - 9
     end
@@ -19,14 +20,14 @@ defmodule EEVM.GasTest do
     test "out of gas halts execution" do
       # PUSH1 1, PUSH1 2, ADD, STOP — needs 9 gas, give it 5
       code = <<0x60, 1, 0x60, 2, 0x01, 0x00>>
-      result = EEVM.execute(code, gas: 5)
+      result = run_code(code, gas: 5)
       assert result.status == :out_of_gas
     end
 
     test "exact gas is sufficient" do
       # PUSH1 1, STOP — needs exactly 3 gas
       code = <<0x60, 1, 0x00>>
-      result = EEVM.execute(code, gas: 3)
+      result = run_code(code, gas: 3)
       assert result.status == :stopped
       assert result.frame.gas == 0
     end
@@ -34,34 +35,34 @@ defmodule EEVM.GasTest do
     test "one gas short causes out_of_gas" do
       # PUSH1 1, STOP — needs 3 gas, give 2
       code = <<0x60, 1, 0x00>>
-      result = EEVM.execute(code, gas: 2)
+      result = run_code(code, gas: 2)
       assert result.status == :out_of_gas
     end
 
     test "MUL costs 5 gas" do
       # PUSH1 2, PUSH1 3, MUL, STOP → 3+3+5+0 = 11
       code = <<0x60, 2, 0x60, 3, 0x02, 0x00>>
-      result = EEVM.execute(code, gas: 1000)
+      result = run_code(code, gas: 1000)
       assert result.frame.gas == 1000 - 11
     end
 
     test "DIV costs 5 gas" do
       # PUSH1 2, PUSH1 10, DIV, STOP → 3+3+5+0 = 11
       code = <<0x60, 2, 0x60, 10, 0x04, 0x00>>
-      result = EEVM.execute(code, gas: 1000)
+      result = run_code(code, gas: 1000)
       assert result.frame.gas == 1000 - 11
     end
 
     test "comparison opcodes cost 3 gas" do
       # PUSH1 1, PUSH1 2, LT, STOP → 3+3+3+0 = 9
       code = <<0x60, 1, 0x60, 2, 0x10, 0x00>>
-      result = EEVM.execute(code, gas: 1000)
+      result = run_code(code, gas: 1000)
       assert result.frame.gas == 1000 - 9
     end
 
     test "INVALID consumes all remaining gas" do
       code = <<0xFE>>
-      result = EEVM.execute(code, gas: 5000)
+      result = run_code(code, gas: 5000)
       assert result.status == :invalid
       assert result.frame.gas == 0
     end
@@ -72,7 +73,7 @@ defmodule EEVM.GasTest do
       # Dynamic: exponent 0xFF is 1 byte → 50 * 1 = 50
       # Total: 16 + 50 = 66
       code = <<0x60, 0xFF, 0x60, 2, 0x0A, 0x00>>
-      result = EEVM.execute(code, gas: 1000)
+      result = run_code(code, gas: 1000)
       assert result.status == :stopped
       assert result.frame.gas == 1000 - 66
     end
@@ -81,7 +82,7 @@ defmodule EEVM.GasTest do
       # PUSH1 0, PUSH1 2, EXP, STOP
       # Static: 3+3+10+0 = 16, Dynamic: 0 bytes → 0
       code = <<0x60, 0, 0x60, 2, 0x0A, 0x00>>
-      result = EEVM.execute(code, gas: 1000)
+      result = run_code(code, gas: 1000)
       assert result.status == :stopped
       assert result.frame.gas == 1000 - 16
     end
@@ -90,7 +91,7 @@ defmodule EEVM.GasTest do
       # PUSH2 0x0100 (=256, 2 bytes), PUSH1 2, EXP, STOP
       # Static: 3+3+10+0 = 16, Dynamic: 2 bytes → 100
       code = <<0x61, 0x01, 0x00, 0x60, 2, 0x0A, 0x00>>
-      result = EEVM.execute(code, gas: 1000)
+      result = run_code(code, gas: 1000)
       assert result.status == :stopped
       assert result.frame.gas == 1000 - 116
     end
@@ -100,7 +101,7 @@ defmodule EEVM.GasTest do
       # PUSH1=3 + PUSH1=3 + MSTORE=3 + mem_expansion(0→32) + STOP=0
       # Memory expansion: 0→1 word = 3*1 + 1^2/512 = 3
       code = <<0x60, 0xFF, 0x60, 0, 0x52, 0x00>>
-      result = EEVM.execute(code, gas: 1000)
+      result = run_code(code, gas: 1000)
       assert result.status == :stopped
       expected_gas = 3 + 3 + 3 + Memory.memory_expansion_cost_word(0, 0) + 0
       assert result.frame.gas == 1000 - expected_gas
@@ -110,7 +111,7 @@ defmodule EEVM.GasTest do
       # Store at offset 1024 — expands 0→1056 bytes (33 words)
       # PUSH1 1, PUSH2 0x0400, MSTORE, STOP
       code = <<0x60, 1, 0x61, 0x04, 0x00, 0x52, 0x00>>
-      result = EEVM.execute(code, gas: 100_000)
+      result = run_code(code, gas: 100_000)
       assert result.status == :stopped
       # Memory expanded from 0 to cover offset 1024+32 = 1056 → 33 words
       mem_cost = Memory.memory_expansion_cost_word(0, 1024)
@@ -122,7 +123,7 @@ defmodule EEVM.GasTest do
       # MSTORE at 0, then MLOAD at 0 — second op has no expansion
       # PUSH1 1, PUSH1 0, MSTORE, PUSH1 0, MLOAD, STOP
       code = <<0x60, 1, 0x60, 0, 0x52, 0x60, 0, 0x51, 0x00>>
-      result = EEVM.execute(code, gas: 100_000)
+      result = run_code(code, gas: 100_000)
       assert result.status == :stopped
 
       # First MSTORE: 3(push)+3(push)+3(mstore)+3(mem 0→32)+3(push)+3(mload)+0(mem, already 32)+0(stop)
@@ -135,14 +136,14 @@ defmodule EEVM.GasTest do
     test "POP costs 2 gas" do
       # PUSH1 1, POP, STOP → 3+2+0 = 5
       code = <<0x60, 1, 0x50, 0x00>>
-      result = EEVM.execute(code, gas: 1000)
+      result = run_code(code, gas: 1000)
       assert result.frame.gas == 1000 - 5
     end
 
     test "JUMP costs 8 gas" do
       # PUSH1 3, JUMP, JUMPDEST, STOP
       code = <<0x60, 3, 0x56, 0x5B, 0x00>>
-      result = EEVM.execute(code, gas: 1000)
+      result = run_code(code, gas: 1000)
       # PUSH1=3, JUMP=8, JUMPDEST=1, STOP=0 → 12
       assert result.frame.gas == 1000 - 12
     end
@@ -183,8 +184,8 @@ defmodule EEVM.GasTest do
       # CALL(gas: GAS, to: 0x42, value 0, no memory), STOP
       code = <<0x60, 0, 0x60, 0, 0x60, 0, 0x60, 0, 0x60, 0, 0x60, 0x42, 0x5A, 0xF1, 0x00>>
 
-      assert EEVM.execute(code, gas: 100_000, hardfork: :homestead).status == :out_of_gas
-      assert EEVM.execute(code, gas: 100_000, hardfork: :tangerine_whistle).status == :stopped
+      assert run_code(code, gas: 100_000, hardfork: :homestead).status == :out_of_gas
+      assert run_code(code, gas: 100_000, hardfork: :tangerine_whistle).status == :stopped
     end
 
     test "EXP costs 10 gas per exponent byte before Spurious Dragon (EIP-160), 50 after" do

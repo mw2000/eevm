@@ -12,4 +12,4 @@ alias EEVM.Bench.Asm
 [0, 20_000, {:label, :loop}, :dup1, :dup3, :add, 3, :mul, 0xFFFF_FFFF_FFFF, :and, :swap2, :pop]
 |> Kernel.++([1, :swap1, :sub, :dup1, {:ref, :loop}, :jumpi, :stop])
 |> Asm.assemble()
-|> EEVM.execute(gas: 1_000_000_000)
+|> EEVM.Interpreter.run(gas: 1_000_000_000)

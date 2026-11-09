@@ -1,5 +1,6 @@
 defmodule EEVM.HardforkConfigTest do
   use ExUnit.Case, async: true
+  import EEVM.TestSupport.MachineHelpers
 
   alias EEVM.BlockEnv
   alias EEVM.Context.Contract
@@ -249,7 +250,7 @@ defmodule EEVM.HardforkConfigTest do
       code = <<0x5F, 0x00>>
       result = EEVM.Interpreter.run(code)
       assert result.status == :stopped
-      assert EEVM.stack_values(result) == [0]
+      assert stack_values(result) == [0]
     end
 
     test "PUSH0 is invalid before Shanghai" do
@@ -262,7 +263,7 @@ defmodule EEVM.HardforkConfigTest do
       code = <<0x5F, 0x00>>
       result = EEVM.Interpreter.run(code, hardfork: :shanghai)
       assert result.status == :stopped
-      assert EEVM.stack_values(result) == [0]
+      assert stack_values(result) == [0]
     end
   end
 
@@ -276,7 +277,7 @@ defmodule EEVM.HardforkConfigTest do
       code = <<0x60, 0x00, 0x5C, 0x00>>
       result = EEVM.Interpreter.run(code)
       assert result.status == :stopped
-      assert EEVM.stack_values(result) == [0]
+      assert stack_values(result) == [0]
     end
 
     test "TLOAD is invalid before Cancun" do
@@ -326,7 +327,7 @@ defmodule EEVM.HardforkConfigTest do
 
       result = EEVM.Interpreter.run(code)
       assert result.status == :stopped
-      assert EEVM.stack_values(result) == [0xDEAD]
+      assert stack_values(result) == [0xDEAD]
     end
 
     test "MCOPY is invalid before Cancun" do
@@ -553,7 +554,7 @@ defmodule EEVM.HardforkConfigTest do
       result = EEVM.Interpreter.run(<<0x5F, 0x00>>)
       # PUSH0 works → Cancun is active
       assert result.status == :stopped
-      assert EEVM.stack_values(result) == [0]
+      assert stack_values(result) == [0]
     end
 
     test "config.hardfork is set to Cancun by default" do

@@ -1,5 +1,6 @@
 defmodule EEVM.Interpreter.Instructions.System.EIP3541Test do
   use ExUnit.Case, async: true
+  import EEVM.TestSupport.MachineHelpers
 
   import EEVM.TestSupport.BytecodeHelpers
 
@@ -44,14 +45,14 @@ defmodule EEVM.Interpreter.Instructions.System.EIP3541Test do
       initial_gas = 300_000
 
       result =
-        EEVM.execute(code,
+        run_code(code,
           gas: initial_gas,
           db: InMemory.new(accounts: %{0 => %{balance: 10}})
         )
 
       # CREATE pushes 0 to signal failed deployment
       assert result.status == :stopped
-      assert EEVM.stack_values(result) == [0]
+      assert stack_values(result) == [0]
 
       # Gas was consumed by init code execution (rejection does not refund it)
       assert result.frame.gas < initial_gas
@@ -67,10 +68,10 @@ defmodule EEVM.Interpreter.Instructions.System.EIP3541Test do
       init_code = init_code_returning(<<0xEF, 0xBB>>)
       code = build_create_program(init_code, :create2, 0, 1)
 
-      result = EEVM.execute(code, db: InMemory.new(accounts: %{0 => %{balance: 10}}))
+      result = run_code(code, db: InMemory.new(accounts: %{0 => %{balance: 10}}))
 
       assert result.status == :stopped
-      assert EEVM.stack_values(result) == [0]
+      assert stack_values(result) == [0]
     end
 
     test "CREATE allows empty runtime code — deployment succeeds" do
@@ -78,8 +79,8 @@ defmodule EEVM.Interpreter.Instructions.System.EIP3541Test do
       init_code = <<0x60, 0x00, 0x60, 0x00, 0xF3>>
       code = build_create_program(init_code, :create, 0)
 
-      result = EEVM.execute(code, db: InMemory.new(accounts: %{0 => %{balance: 10}}))
-      [created_address] = EEVM.stack_values(result)
+      result = run_code(code, db: InMemory.new(accounts: %{0 => %{balance: 10}}))
+      [created_address] = stack_values(result)
 
       assert result.status == :stopped
       assert created_address != 0
@@ -91,8 +92,8 @@ defmodule EEVM.Interpreter.Instructions.System.EIP3541Test do
       init_code = init_code_returning(runtime_code)
       code = build_create_program(init_code, :create, 0)
 
-      result = EEVM.execute(code, db: InMemory.new(accounts: %{0 => %{balance: 10}}))
-      [created_address] = EEVM.stack_values(result)
+      result = run_code(code, db: InMemory.new(accounts: %{0 => %{balance: 10}}))
+      [created_address] = stack_values(result)
 
       assert result.status == :stopped
       assert created_address != 0
@@ -106,8 +107,8 @@ defmodule EEVM.Interpreter.Instructions.System.EIP3541Test do
       init_code = ef_using_prefix <> init_code_returning(safe_runtime)
       code = build_create_program(init_code, :create, 0)
 
-      result = EEVM.execute(code, db: InMemory.new(accounts: %{0 => %{balance: 10}}))
-      [created_address] = EEVM.stack_values(result)
+      result = run_code(code, db: InMemory.new(accounts: %{0 => %{balance: 10}}))
+      [created_address] = stack_values(result)
 
       assert result.status == :stopped
       assert created_address != 0

@@ -1,5 +1,6 @@
 defmodule EEVM.Interpreter.Instructions.LoggingTest do
   use ExUnit.Case, async: true
+  import EEVM.TestSupport.MachineHelpers
 
   alias EEVM.Context.Contract
   alias EEVM.Gas.Dynamic
@@ -9,9 +10,9 @@ defmodule EEVM.Interpreter.Instructions.LoggingTest do
 
     test "LOG0 empty data (0-byte log, no topics)" do
       code = <<0x60, 0x00, 0x60, 0x00, 0xA0, 0x00>>
-      result = EEVM.execute(code)
+      result = run_code(code)
 
-      assert EEVM.logs(result) == [%{address: 0, data: <<>>, topics: []}]
+      assert logs(result) == [%{address: 0, data: <<>>, topics: []}]
     end
 
     test "LOG0 with data reads memory bytes" do
@@ -40,29 +41,29 @@ defmodule EEVM.Interpreter.Instructions.LoggingTest do
           0x00
         >>
 
-      result = EEVM.execute(code)
-      assert EEVM.logs(result) == [%{address: 0, data: <<0xAA, 0xBB, 0xCC>>, topics: []}]
+      result = run_code(code)
+      assert logs(result) == [%{address: 0, data: <<0xAA, 0xBB, 0xCC>>, topics: []}]
     end
 
     test "LOG1 single topic" do
       code = <<0x60, 0x2A, 0x60, 0x00, 0x60, 0x00, 0xA1, 0x00>>
-      result = EEVM.execute(code)
+      result = run_code(code)
 
-      assert EEVM.logs(result) == [%{address: 0, data: <<>>, topics: [0x2A]}]
+      assert logs(result) == [%{address: 0, data: <<>>, topics: [0x2A]}]
     end
 
     test "LOG2 two topics" do
       code = <<0x60, 0x22, 0x60, 0x11, 0x60, 0x00, 0x60, 0x00, 0xA2, 0x00>>
-      result = EEVM.execute(code)
+      result = run_code(code)
 
-      assert EEVM.logs(result) == [%{address: 0, data: <<>>, topics: [0x11, 0x22]}]
+      assert logs(result) == [%{address: 0, data: <<>>, topics: [0x11, 0x22]}]
     end
 
     test "LOG3 three topics" do
       code = <<0x60, 0x03, 0x60, 0x02, 0x60, 0x01, 0x60, 0x00, 0x60, 0x00, 0xA3, 0x00>>
-      result = EEVM.execute(code)
+      result = run_code(code)
 
-      assert EEVM.logs(result) == [%{address: 0, data: <<>>, topics: [0x01, 0x02, 0x03]}]
+      assert logs(result) == [%{address: 0, data: <<>>, topics: [0x01, 0x02, 0x03]}]
     end
 
     test "LOG4 four topics" do
@@ -84,8 +85,8 @@ defmodule EEVM.Interpreter.Instructions.LoggingTest do
           0x00
         >>
 
-      result = EEVM.execute(code)
-      assert EEVM.logs(result) == [%{address: 0, data: <<>>, topics: [0x01, 0x02, 0x03, 0x04]}]
+      result = run_code(code)
+      assert logs(result) == [%{address: 0, data: <<>>, topics: [0x01, 0x02, 0x03, 0x04]}]
     end
 
     test "multiple LOGs accumulate in state.logs list" do
@@ -111,9 +112,9 @@ defmodule EEVM.Interpreter.Instructions.LoggingTest do
           0x00
         >>
 
-      result = EEVM.execute(code)
+      result = run_code(code)
 
-      assert EEVM.logs(result) == [
+      assert logs(result) == [
                %{address: 0, data: <<0xAA>>, topics: []},
                %{address: 0, data: <<>>, topics: [0x99]}
              ]
@@ -127,7 +128,7 @@ defmodule EEVM.Interpreter.Instructions.LoggingTest do
 
       # PUSH1 0, PUSH1 0, LOG0 then PUSH1 0x2A, PUSH1 3, PUSH1 0, LOG1 (memory 0..3, one word).
       code = <<0x60, 0x00, 0x60, 0x00, 0xA0, 0x60, 0x2A, 0x60, 0x03, 0x60, 0x00, 0xA1, 0x00>>
-      result = EEVM.execute(code, gas: 10_000)
+      result = run_code(code, gas: 10_000)
 
       log0 = 2 * 3 + 375
       log1 = 3 * 3 + 375 + 375 + 8 * 3 + 3
@@ -136,18 +137,18 @@ defmodule EEVM.Interpreter.Instructions.LoggingTest do
 
     test "memory expansion is triggered by LOG data reads beyond current memory" do
       code = <<0x60, 0x40, 0x60, 0x00, 0xA0, 0x00>>
-      result = EEVM.execute(code)
+      result = run_code(code)
 
       assert result.frame.memory.size == 64
-      assert [%{data: data}] = EEVM.logs(result)
+      assert [%{data: data}] = logs(result)
       assert byte_size(data) == 64
     end
 
     test "contract address is attached to emitted logs" do
       code = <<0x60, 0x00, 0x60, 0x00, 0xA0, 0x00>>
-      result = EEVM.execute(code, contract: Contract.new(address: 0xCAFE))
+      result = run_code(code, contract: Contract.new(address: 0xCAFE))
 
-      assert EEVM.logs(result) == [%{address: 0xCAFE, data: <<>>, topics: []}]
+      assert logs(result) == [%{address: 0xCAFE, data: <<>>, topics: []}]
     end
   end
 end

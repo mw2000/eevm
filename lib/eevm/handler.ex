@@ -24,11 +24,13 @@ defmodule EEVM.Handler do
   @type opts :: [
           hardfork: EEVM.HardforkConfig.spec_id(),
           config: Config.t(),
+          tracer: boolean() | EEVM.Tracer.t(),
           chain_id: non_neg_integer()
         ]
 
   @doc """
-  Execute a single transaction end-to-end.
+  Execute a single transaction end-to-end. `EEVM.transact/4` delegates here;
+  call that instead.
 
   `tx_or_bytes` may be either raw wire bytes (legacy RLP or a typed envelope
   prefix + RLP) or one of the typed `EEVM.Transaction.*` structs.
@@ -39,19 +41,21 @@ defmodule EEVM.Handler do
     sender and check EIP-7702 authorizations), and custom precompiles.
   - `:hardfork` — shorthand for `config: EEVM.Config.new(hardfork)` (default
     `:cancun`). `:config` takes precedence when both are given.
+  - `:tracer` — `true` or an `EEVM.Tracer` to record an EIP-3155 trace,
+    returned as `result.trace`.
   - `:chain_id` — deprecated; set it with `EEVM.Config.new/2`. Overrides the
     config's chain id when given.
 
   ## Returns
 
   - `{:ok, %EEVM.TransactionResult{}}` for any transaction that made it past
-    validation — including reverted ones. Inspect `result.status` to tell
-    success from revert.
+    validation, including reverted and halted ones. Inspect `result.status`
+    to tell them apart.
   - `{:error, reason}` when decoding, sender recovery, validation, or upfront
     balance charging fail. The database is returned unchanged in that case.
   """
   @spec execute(wire_tx(), BlockEnv.t(), Database.t(), opts()) ::
-          {:ok, TransactionResult.t()} | {:error, atom()}
+          {:ok, TransactionResult.t()} | {:error, EEVM.Error.reason()}
   def execute(tx_or_bytes, %BlockEnv{} = block, %Database{} = db, opts \\ []) do
     config = Validation.resolve_config(opts)
     chain_id = config.chain_id
@@ -75,7 +79,8 @@ defmodule EEVM.Handler do
           block,
           config,
           execution_gas,
-          authorization
+          authorization,
+          Validation.resolve_tracer(opts)
         )
 
       PostExecution.finalize(

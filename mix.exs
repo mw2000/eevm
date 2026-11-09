@@ -107,6 +107,7 @@ defmodule EEVM.MixProject do
       groups_for_modules: [
         "Getting started": [
           EEVM,
+          EEVM.CallResult,
           EEVM.Config,
           EEVM.Error,
           EEVM.BlockEnv,

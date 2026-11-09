@@ -1,5 +1,6 @@
 defmodule EEVM.Interpreter.Instructions.SystemTest do
   use ExUnit.Case, async: true
+  import EEVM.TestSupport.MachineHelpers
 
   import EEVM.TestSupport.BytecodeHelpers
 
@@ -37,7 +38,7 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
       code = <<0x60, 5>>
       result = EEVM.Interpreter.run(code)
       assert result.status == :stopped
-      assert EEVM.stack_values(result) == [5]
+      assert stack_values(result) == [5]
     end
   end
 
@@ -47,7 +48,7 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
       code = build_create_program(init_code, :create, 0x00)
 
       result = EEVM.Interpreter.run(code, db: InMemory.new(accounts: %{0 => %{balance: 10}}))
-      [created_address] = EEVM.stack_values(result)
+      [created_address] = stack_values(result)
 
       assert result.status == :stopped
       assert created_address != 0
@@ -60,7 +61,7 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
       code = build_create_program(init_code, :create, 0x02)
 
       result = EEVM.Interpreter.run(code, db: InMemory.new(accounts: %{0 => %{balance: 7}}))
-      [created_address] = EEVM.stack_values(result)
+      [created_address] = stack_values(result)
 
       assert Database.get_balance(result.db, 0) == 5
       assert Database.get_balance(result.db, created_address) == 2
@@ -73,8 +74,8 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
       result1 = EEVM.Interpreter.run(code, db: InMemory.new(accounts: %{0 => %{balance: 10}}))
       result2 = EEVM.Interpreter.run(code, db: InMemory.new(accounts: %{0 => %{balance: 10}}))
 
-      [address1] = EEVM.stack_values(result1)
-      [address2] = EEVM.stack_values(result2)
+      [address1] = stack_values(result1)
+      [address2] = stack_values(result2)
 
       assert address1 != 0
       assert address1 == address2
@@ -91,7 +92,7 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
       code = build_create_program(init_code, :create, 0x00)
 
       result = EEVM.Interpreter.run(code, db: InMemory.new(accounts: %{0 => %{balance: 10}}))
-      [created_address] = EEVM.stack_values(result)
+      [created_address] = stack_values(result)
 
       assert created_address != 0
       assert Database.get_nonce(result.db, created_address) == 3
@@ -105,7 +106,7 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
       code = build_create_program(init_code, :create2, 0x05, 0x00)
 
       result = EEVM.Interpreter.run(code, db: InMemory.new(accounts: %{0 => %{balance: 10}}))
-      [created_address] = EEVM.stack_values(result)
+      [created_address] = stack_values(result)
 
       assert created_address != 0
       refute Database.account_exists?(result.db, created_address)
@@ -128,7 +129,7 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
       # core/vm/evm.go create): 4x PUSH1 (12), CREATE2 32000 + 3 memory + 6 hash
       # + 2 initcode word (EIP-3860), MSIZE 2. The forwarded gas comes back.
       assert result.status == :stopped
-      assert EEVM.stack_values(result) == [32, 0]
+      assert stack_values(result) == [32, 0]
       assert result.frame.gas == 1_000_000 - 12 - 32_000 - 3 - 6 - 2 - 2
       assert Database.get_nonce(result.db, 0) == 0
     end
@@ -138,7 +139,7 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
       code = build_create_program(init_code, :create, 0x00)
 
       result = EEVM.Interpreter.run(code, db: InMemory.new(accounts: %{0 => %{balance: 10}}))
-      [created_address] = EEVM.stack_values(result)
+      [created_address] = stack_values(result)
 
       assert created_address != 0
       assert Database.get_code(result.db, created_address) == <<>>
@@ -156,7 +157,7 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
 
         result = EEVM.Interpreter.run(code, db: InMemory.new(accounts: %{0 => %{balance: 10}}))
 
-        assert [unquote(expected_size), _address] = EEVM.stack_values(result)
+        assert [unquote(expected_size), _address] = stack_values(result)
       end
     end
 
@@ -166,7 +167,7 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
 
       result = EEVM.Interpreter.run(code, db: InMemory.new(accounts: %{0 => %{balance: 1}}))
 
-      assert EEVM.stack_values(result) == [0, 0]
+      assert stack_values(result) == [0, 0]
     end
 
     # EIP-2681 / execution-specs `generic_create`: at nonce 2^64 - 1 CREATE pushes
@@ -180,7 +181,7 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
       for {nonce, created?} <- [{max, false}, {max - 1, true}] do
         world_state = InMemory.new(accounts: %{0 => %{balance: 10, nonce: nonce}})
         result = EEVM.Interpreter.run(code, db: world_state, gas: 100_000)
-        [address] = EEVM.stack_values(result)
+        [address] = stack_values(result)
 
         if created? do
           assert address != 0
@@ -200,7 +201,7 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
       result = EEVM.Interpreter.run(code, db: InMemory.new(accounts: %{0 => %{balance: 1}}))
 
       assert result.status == :stopped
-      assert EEVM.stack_values(result) == [0]
+      assert stack_values(result) == [0]
       assert Database.get_balance(result.db, 0) == 1
       # The balance check precedes the nonce bump (geth core/vm/evm.go create).
       assert Database.get_nonce(result.db, 0) == 0
@@ -235,7 +236,7 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
       result = EEVM.Interpreter.run(code, db: world_state, gas: 1_000_000)
 
       assert result.status == :stopped
-      assert EEVM.stack_values(result) == [0]
+      assert stack_values(result) == [0]
       assert Database.get_nonce(result.db, 0) == 1
       assert Database.get_code(result.db, target) == <<0xFE>>
       # PUSH1+PUSH1+MSTORE8 (12, incl. 3 memory), 4x PUSH1 (12), CREATE2 32000 +
@@ -253,7 +254,7 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
       db = InMemory.new(accounts: %{0 => %{balance: 10}}, storage: %{target => %{0 => 1}})
       result = EEVM.Interpreter.run(code, db: db)
 
-      assert EEVM.stack_values(result) == [0]
+      assert stack_values(result) == [0]
       assert Database.get_nonce(result.db, 0) == 1
       refute Database.account_exists?(result.db, target)
     end
@@ -282,7 +283,7 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
             0x61, 0xFF, 0xFF, 0xF1, 0x00>>
 
         result = EEVM.Interpreter.run(code, db: world_state)
-        assert EEVM.stack_values(result) == [1]
+        assert stack_values(result) == [1]
         result.frame.gas
       end
 
@@ -307,7 +308,7 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
       result = EEVM.Interpreter.run(code, db: world_state)
 
       assert result.status == :stopped
-      assert EEVM.stack_values(result) == [1]
+      assert stack_values(result) == [1]
       {mem, _} = Memory.read_bytes(result.frame.memory, 0, 1)
       assert mem == <<0x2A>>
     end
@@ -323,7 +324,7 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
       result = EEVM.Interpreter.run(code, db: world_state)
 
       assert result.status == :stopped
-      assert EEVM.stack_values(result) == [0]
+      assert stack_values(result) == [0]
       assert Database.get_balance(result.db, 0) == 0
       assert Database.get_balance(result.db, 1) == 0
     end
@@ -338,7 +339,7 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
 
       result = EEVM.Interpreter.run(code, db: world_state)
 
-      assert EEVM.stack_values(result) == [1]
+      assert stack_values(result) == [1]
       assert Database.get_balance(result.db, 0) == 6
       assert Database.get_balance(result.db, 1) == 3
     end
@@ -361,7 +362,7 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
       result = EEVM.Interpreter.run(code, db: world_state)
 
       assert result.status == :stopped
-      assert EEVM.stack_values(result) == [0]
+      assert stack_values(result) == [0]
       assert Database.get_balance(result.db, 0) == 8
       assert Database.get_balance(result.db, 1) == 1
       assert result.frame.return_data == <<>>
@@ -395,7 +396,7 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
           )
 
         assert result.status == :stopped
-        assert EEVM.stack_values(result) == [0]
+        assert stack_values(result) == [0]
         assert result.frame.gas == 3_123
       end
     end
@@ -417,7 +418,7 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
           accessed_addresses: MapSet.new([0, 0xAA])
         )
 
-      assert EEVM.stack_values(result) == [0]
+      assert stack_values(result) == [0]
       assert result.frame.gas == 199_880 - 6
     end
 
@@ -439,7 +440,7 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
 
         result = EEVM.Interpreter.run(code, db: world_state)
 
-        assert EEVM.stack_values(result) == [0]
+        assert stack_values(result) == [0]
       end
     end
 
@@ -461,7 +462,7 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
 
         result = EEVM.Interpreter.run(code)
 
-        assert EEVM.stack_values(result) == [64, unquote(expected_word)]
+        assert stack_values(result) == [64, unquote(expected_word)]
       end
     end
 
@@ -474,7 +475,7 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
 
       result = EEVM.Interpreter.run(code, db: InMemory.new(accounts: %{0 => %{balance: 0}}))
 
-      assert EEVM.stack_values(result) == [0]
+      assert stack_values(result) == [0]
     end
   end
 
@@ -509,7 +510,7 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
           )
 
         assert result.status == :stopped
-        assert EEVM.stack_values(result) == [0]
+        assert stack_values(result) == [0]
         # 7x PUSH1 (21) + warm access 100 + value transfer 9000 - stipend 2300.
         assert result.frame.gas == 100_000 - 21 - 100 - 9_000 + 2_300
         assert Database.get_balance(result.db, 0) == unquote(balance)
@@ -537,7 +538,7 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
       result = EEVM.Interpreter.run(code, db: world_state)
 
       assert result.status == :stopped
-      assert EEVM.stack_values(result) == [1]
+      assert stack_values(result) == [1]
       {mem, _} = Memory.read_bytes(result.frame.memory, 0, 1)
       assert mem == <<0x2A>>
     end
@@ -559,7 +560,7 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
       result = EEVM.Interpreter.run(code, db: world_state)
 
       assert result.status == :stopped
-      assert EEVM.stack_values(result) == [0]
+      assert stack_values(result) == [0]
       assert Database.storage_load(result.db, 0, 0) == 0
     end
 
@@ -580,7 +581,7 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
       result = EEVM.Interpreter.run(code, db: world_state)
 
       assert result.status == :stopped
-      assert EEVM.stack_values(result) == [0]
+      assert stack_values(result) == [0]
     end
 
     test "propagates static mode to nested calls" do
@@ -606,7 +607,7 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
       result = EEVM.Interpreter.run(code, db: world_state)
 
       assert result.status == :stopped
-      assert EEVM.stack_values(result) == [1]
+      assert stack_values(result) == [1]
       {mem, _} = Memory.read_bytes(result.frame.memory, 0, 1)
       assert mem == <<0x00>>
       assert Database.storage_load(result.db, 0, 0) == 0
@@ -634,7 +635,7 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
         )
 
       assert result.status == :stopped
-      assert EEVM.stack_values(result) == [0, 0]
+      assert stack_values(result) == [0, 0]
       assert result.frame.gas == 3_121
     end
 
@@ -654,7 +655,7 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
 
       callcode = EEVM.Interpreter.run(call_with_value.(0xF2), db: world_state, is_static: true)
       assert callcode.status == :stopped
-      assert EEVM.stack_values(callcode) == [1]
+      assert stack_values(callcode) == [1]
     end
 
     test "does not leave the caller in static mode" do
@@ -669,7 +670,7 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
       result = EEVM.Interpreter.run(code, db: world_state)
 
       assert result.status == :stopped
-      assert EEVM.stack_values(result) == [1]
+      assert stack_values(result) == [1]
       assert Database.storage_load(result.db, 0, 0) == 1
     end
 
@@ -683,7 +684,7 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
       result = EEVM.Interpreter.run(code, db: world_state)
 
       assert result.status == :stopped
-      assert EEVM.stack_values(result) == [1]
+      assert stack_values(result) == [1]
       assert Database.get_balance(result.db, 0) == 9
       assert Database.get_balance(result.db, 1) == 0
     end
@@ -707,7 +708,7 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
       contract = Contract.new(address: 0xAA, caller: 0xBEEF, callvalue: 999)
       result = EEVM.Interpreter.run(code, db: world_state, contract: contract)
 
-      assert EEVM.stack_values(result) == [1]
+      assert stack_values(result) == [1]
       assert Database.storage_load(result.db, contract.address, 0xAA) == 1
       assert Database.storage_load(result.db, contract.address, 0x01) == 0
     end
@@ -723,7 +724,7 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
       contract = Contract.new(address: 0xAA, caller: 0xBEEF, callvalue: 999)
       result = EEVM.Interpreter.run(code, db: world_state, contract: contract)
 
-      assert EEVM.stack_values(result) == [1]
+      assert stack_values(result) == [1]
       assert Database.storage_load(result.db, contract.address, 0) == 0xBEEF
     end
 
@@ -738,7 +739,7 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
       contract = Contract.new(address: 0xAA, caller: 0xBEEF, callvalue: 999)
       result = EEVM.Interpreter.run(code, db: world_state, contract: contract)
 
-      assert EEVM.stack_values(result) == [1]
+      assert stack_values(result) == [1]
       assert Database.storage_load(result.db, contract.address, 0) == 999
     end
 
@@ -753,7 +754,7 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
       contract = Contract.new(address: 0xAA, caller: 0xBEEF, callvalue: 999)
       result = EEVM.Interpreter.run(code, db: world_state, contract: contract)
 
-      assert EEVM.stack_values(result) == [1]
+      assert stack_values(result) == [1]
       assert Database.storage_load(result.db, contract.address, 0) == 0xAA
     end
 
@@ -767,7 +768,7 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
       result = EEVM.Interpreter.run(code, db: world_state)
 
       assert result.status == :stopped
-      assert EEVM.stack_values(result) == [0]
+      assert stack_values(result) == [0]
       assert result.frame.return_data == <<>>
     end
   end
@@ -784,7 +785,7 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
       contract = Contract.new(address: 0xAA, caller: 0xBEEF)
       result = EEVM.Interpreter.run(code, db: world_state, contract: contract)
 
-      assert EEVM.stack_values(result) == [1]
+      assert stack_values(result) == [1]
       assert Database.storage_load(result.db, contract.address, 0xAA) == 1
       assert Database.storage_load(result.db, contract.address, 0x01) == 0
     end
@@ -800,7 +801,7 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
       contract = Contract.new(address: 0xAAAA, caller: 0xBBBB)
       result = EEVM.Interpreter.run(code, db: world_state, contract: contract)
 
-      assert EEVM.stack_values(result) == [1]
+      assert stack_values(result) == [1]
       assert Database.storage_load(result.db, contract.address, 0) == 0xAAAA
     end
 
@@ -815,7 +816,7 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
       result = EEVM.Interpreter.run(code, db: world_state)
 
       assert result.status == :stopped
-      assert EEVM.stack_values(result) == [0]
+      assert stack_values(result) == [0]
       assert result.frame.return_data == <<>>
     end
   end

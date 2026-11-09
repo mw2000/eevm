@@ -1,5 +1,6 @@
 defmodule EEVM.Interpreter.Instructions.ContractSizeTest do
   use ExUnit.Case, async: true
+  import EEVM.TestSupport.MachineHelpers
 
   describe "Contract size limits (EIP-170 + EIP-3860)" do
     test "CREATE succeeds with initcode at max size" do
@@ -11,8 +12,8 @@ defmodule EEVM.Interpreter.Instructions.ContractSizeTest do
           <<0xF0, 0x00>>
         ])
 
-      result = EEVM.execute(code, gas: 10_000_000)
-      [addr] = EEVM.stack_values(result)
+      result = run_code(code, gas: 10_000_000)
+      [addr] = stack_values(result)
 
       assert result.status == :stopped
       assert addr != 0
@@ -24,7 +25,7 @@ defmodule EEVM.Interpreter.Instructions.ContractSizeTest do
     test "CREATE with initcode over max size (49,152 bytes) halts the caller" do
       code = IO.iodata_to_binary([push(49_153), push(0), push(0), <<0xF0, 0x00>>])
 
-      result = EEVM.execute(code, gas: 10_000_000)
+      result = run_code(code, gas: 10_000_000)
 
       assert result.status == {:error, :initcode_too_large}
       assert result.frame.gas == 0
@@ -34,7 +35,7 @@ defmodule EEVM.Interpreter.Instructions.ContractSizeTest do
     test "CREATE2 with initcode over max size halts the caller" do
       code = IO.iodata_to_binary([push(0), push(49_153), push(0), push(0), <<0xF5, 0x00>>])
 
-      result = EEVM.execute(code, gas: 10_000_000)
+      result = run_code(code, gas: 10_000_000)
 
       assert result.status == {:error, :initcode_too_large}
       assert result.frame.gas == 0
@@ -44,8 +45,8 @@ defmodule EEVM.Interpreter.Instructions.ContractSizeTest do
     test "initcode over max size is allowed before Shanghai" do
       code = IO.iodata_to_binary([push(49_153), push(0), push(0), <<0xF0, 0x00>>])
 
-      result = EEVM.execute(code, gas: 10_000_000, hardfork: :paris)
-      [addr] = EEVM.stack_values(result)
+      result = run_code(code, gas: 10_000_000, hardfork: :paris)
+      [addr] = stack_values(result)
 
       assert result.status == :stopped
       assert addr != 0
@@ -62,10 +63,10 @@ defmodule EEVM.Interpreter.Instructions.ContractSizeTest do
         ])
 
       code = create_with_initcode(initcode)
-      result = EEVM.execute(code, gas: 10_000_000)
+      result = run_code(code, gas: 10_000_000)
 
       assert result.status == :stopped
-      assert EEVM.stack_values(result) == [0]
+      assert stack_values(result) == [0]
     end
 
     test "CREATE succeeds with deployed code at exactly 24,576 bytes" do
@@ -79,18 +80,18 @@ defmodule EEVM.Interpreter.Instructions.ContractSizeTest do
         ])
 
       code = create_with_initcode(initcode)
-      result = EEVM.execute(code, gas: 100_000_000)
+      result = run_code(code, gas: 100_000_000)
 
       assert result.status == :stopped
 
-      [addr] = EEVM.stack_values(result)
+      [addr] = stack_values(result)
       assert addr != 0
     end
 
     test "initcode gas cost is charged (2 per 32-byte word)" do
       small_initcode = <<0x60, 0x00, 0x60, 0x00, 0xF3>>
       code = create_with_initcode(small_initcode)
-      result = EEVM.execute(code, gas: 1_000_000)
+      result = run_code(code, gas: 1_000_000)
 
       assert result.status == :stopped
     end

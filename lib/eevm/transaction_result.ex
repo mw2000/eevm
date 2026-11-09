@@ -1,54 +1,48 @@
 defmodule EEVM.TransactionResult do
   @moduledoc """
-  Result of running a single transaction through the end-to-end execution
-  pipeline.
+  The outcome of a transaction that passed validation, returned by
+  `EEVM.transact/4`. A transaction that fails validation returns
+  `{:error, reason}` instead, and the database is unchanged.
 
-  Bundles the outputs a caller needs after `EEVM.Handler.execute/4` returns:
-  the receipt (status, cumulative gas, logs, logs bloom), the post-state
-  database, and the top-level return data / newly created contract address.
-  Transactions that fail pre-execution validation never produce a
-  `TransactionResult` — the pipeline returns `{:error, reason}` in that case.
+  | Field | Description |
+  |-------|-------------|
+  | `status` | `:success`, `:revert`, or `{:halt, reason}` (see `t:EEVM.CallResult.status/0`) |
+  | `gas_used` | Gas the sender pays for, after the refund |
+  | `gas_refunded` | Gas left unused by execution |
+  | `sender` | The recovered sender address |
+  | `contract_address` | The deployed contract's address, for a successful creation |
+  | `return_data` | The top-level RETURN data on success, else empty |
+  | `logs` | Logs emitted, in order; empty unless `status` is `:success` |
+  | `receipt` | The `EEVM.Block.Receipt`, with `cumulative_gas_used` equal to `gas_used` |
+  | `db` | The `EEVM.Database` after the transaction, fees and refunds included |
+  | `trace` | The `EEVM.Tracer` when run with `tracer:`, else `nil` |
 
-  ### `status` values
-
-  - `:success` — top-level execution terminated with STOP or RETURN. Receipt
-    status byte is `1`.
-  - `:reverted` — execution halted via REVERT. Receipt status byte is `0` and
-    state changes are rolled back, but the sender is still charged for gas.
-  - `:failed_validation` — used internally by helpers that need to describe
-    a pre-execution failure in the same shape; the pipeline itself returns
-    `{:error, reason}` for these cases rather than a struct.
+  `post_state_db` and `logs_bloom` are deprecated copies of `db` and
+  `receipt.logs_bloom`, kept for one minor version.
   """
 
-  alias EEVM.Block.Bloom
+  alias EEVM.Block.{Bloom, Receipt}
+  alias EEVM.CallResult
   alias EEVM.Database
+  alias EEVM.Tracer
 
-  @type status :: :success | :reverted | :failed_validation
+  @type status :: CallResult.status()
 
-  @type log_entry :: %{
-          address: non_neg_integer(),
-          data: binary(),
-          topics: [non_neg_integer()]
-        }
-
-  @type receipt :: %{
-          status: 0 | 1,
-          cumulative_gas_used: non_neg_integer(),
-          logs_bloom: Bloom.t(),
-          logs: [log_entry()]
-        }
+  @type log_entry :: Bloom.log_entry()
 
   @type t :: %__MODULE__{
           status: status(),
           gas_used: non_neg_integer(),
           gas_refunded: non_neg_integer(),
           sender: non_neg_integer(),
-          logs: [log_entry()],
-          logs_bloom: Bloom.t(),
-          receipt: receipt(),
-          post_state_db: Database.t(),
+          contract_address: non_neg_integer() | nil,
           return_data: binary(),
-          contract_address: non_neg_integer() | nil
+          logs: [log_entry()],
+          receipt: Receipt.t(),
+          db: Database.t(),
+          trace: Tracer.t() | nil,
+          post_state_db: Database.t(),
+          logs_bloom: Bloom.t()
         }
 
   defstruct [
@@ -56,11 +50,13 @@ defmodule EEVM.TransactionResult do
     :gas_used,
     :gas_refunded,
     :sender,
-    :logs,
-    :logs_bloom,
-    :receipt,
-    :post_state_db,
+    :contract_address,
     :return_data,
-    :contract_address
+    :logs,
+    :receipt,
+    :db,
+    :trace,
+    :post_state_db,
+    :logs_bloom
   ]
 end

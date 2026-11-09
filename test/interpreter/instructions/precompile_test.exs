@@ -1,5 +1,6 @@
 defmodule EEVM.Interpreter.Instructions.PrecompileTest do
   use ExUnit.Case, async: true
+  import EEVM.TestSupport.MachineHelpers
 
   alias EEVM.Config
   alias EEVM.Database.InMemory
@@ -20,9 +21,9 @@ defmodule EEVM.Interpreter.Instructions.PrecompileTest do
         <<0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x0A, 0x61, 0xFF,
           0xFF, 0xF1, 0x00>>
 
-      result = EEVM.execute(code, gas: 1_000_000)
+      result = run_code(code, gas: 1_000_000)
       assert result.status == :stopped
-      assert EEVM.stack_values(result) == [0]
+      assert stack_values(result) == [0]
     end
 
     test "STATICCALL to unimplemented precompile pushes 0" do
@@ -30,9 +31,9 @@ defmodule EEVM.Interpreter.Instructions.PrecompileTest do
         <<0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x0A, 0x61, 0xFF, 0xFF, 0xFA,
           0x00>>
 
-      result = EEVM.execute(code, gas: 1_000_000)
+      result = run_code(code, gas: 1_000_000)
       assert result.status == :stopped
-      assert EEVM.stack_values(result) == [0]
+      assert stack_values(result) == [0]
     end
 
     test "CALL to non-precompile address still works normally" do
@@ -50,9 +51,9 @@ defmodule EEVM.Interpreter.Instructions.PrecompileTest do
         <<0x60, 0x01, 0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x61, 0x01, 0x00, 0x61,
           0xFF, 0xFF, 0xF1, 0x00>>
 
-      result = EEVM.execute(code, db: world_state, gas: 1_000_000)
+      result = run_code(code, db: world_state, gas: 1_000_000)
       assert result.status == :stopped
-      assert EEVM.stack_values(result) == [1]
+      assert stack_values(result) == [1]
       {mem, _} = Memory.read_bytes(result.frame.memory, 0, 1)
       assert mem == <<0x2A>>
     end
@@ -65,8 +66,8 @@ defmodule EEVM.Interpreter.Instructions.PrecompileTest do
         <<0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x61, 0x03, 0xE8, 0x60, 0x04, 0x61,
           0xFF, 0xFF, 0xF1, 0x00>>
 
-      result = EEVM.execute(code, db: world_state, gas: 1_000_000)
-      assert EEVM.stack_values(result) == [1]
+      result = run_code(code, db: world_state, gas: 1_000_000)
+      assert stack_values(result) == [1]
       assert EEVM.Database.get_balance(result.db, 0x04) == 1_000
       assert EEVM.Database.get_balance(result.db, 0) == 4_000
     end
@@ -100,9 +101,9 @@ defmodule EEVM.Interpreter.Instructions.PrecompileTest do
         <<0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x0A, 0x61, 0xFF, 0xFF, 0xF4,
           0x00>>
 
-      result = EEVM.execute(code, gas: 1_000_000)
+      result = run_code(code, gas: 1_000_000)
       assert result.status == :stopped
-      assert EEVM.stack_values(result) == [0]
+      assert stack_values(result) == [0]
     end
 
     test "custom precompile registration routes CALL and succeeds" do
@@ -112,9 +113,9 @@ defmodule EEVM.Interpreter.Instructions.PrecompileTest do
         <<0x60, 0x01, 0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x61, 0x01, 0x00, 0x61,
           0xFF, 0xFF, 0xF1, 0x00>>
 
-      result = EEVM.execute(code, config: config, gas: 1_000_000)
+      result = run_code(code, config: config, gas: 1_000_000)
       assert result.status == :stopped
-      assert EEVM.stack_values(result) == [1]
+      assert stack_values(result) == [1]
       {mem, _} = Memory.read_bytes(result.frame.memory, 0, 1)
       assert mem == <<0xAA>>
     end
@@ -133,9 +134,9 @@ defmodule EEVM.Interpreter.Instructions.PrecompileTest do
         <<0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x04, 0x61, 0xFF,
           0xFF, 0xF1, 0x00>>
 
-      result = EEVM.execute(code, gas: 1_000_000)
+      result = run_code(code, gas: 1_000_000)
       assert result.status == :stopped
-      assert EEVM.stack_values(result) == [1]
+      assert stack_values(result) == [1]
     end
   end
 end

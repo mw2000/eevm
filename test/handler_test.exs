@@ -1,11 +1,13 @@
 defmodule EEVM.HandlerTest do
   use ExUnit.Case, async: true
 
-  alias EEVM.{BlockEnv, Config, Database, Delegation, Handler, TransactionResult}
+  alias EEVM.Block.{Bloom, Receipt}
+  alias EEVM.{BlockEnv, Config, Database, Delegation, Handler, Tracer, TransactionResult}
   alias EEVM.Database.InMemory
   alias EEVM.Transaction.{Authorization, Blob, Envelope, FeeMarket, Legacy, SetCode, Signer}
 
   doctest EEVM.Handler.PreExecution
+  doctest EEVM.Handler.PostExecution
 
   @priv_key <<
     120,
@@ -67,9 +69,9 @@ defmodule EEVM.HandlerTest do
       assert result.return_data == <<>>
 
       # 1_000_000 - (21_000 * 1) - 1_000 = 978_000
-      assert Database.get_balance(result.post_state_db, sender) == 978_000
-      assert Database.get_balance(result.post_state_db, @recipient) == 1_000
-      assert Database.get_nonce(result.post_state_db, sender) == 1
+      assert Database.get_balance(result.db, sender) == 978_000
+      assert Database.get_balance(result.db, @recipient) == 1_000
+      assert Database.get_nonce(result.db, sender) == 1
     end
 
     test "intrinsic gas too low when gas_limit < 21000" do
@@ -146,7 +148,7 @@ defmodule EEVM.HandlerTest do
       db = db_with_sender(balance: starting_balance)
       block = simple_block(base_fee: 5)
 
-      assert {:ok, %TransactionResult{post_state_db: post_db, gas_used: 21_000}} =
+      assert {:ok, %TransactionResult{db: post_db, gas_used: 21_000}} =
                run(tx, db, block)
 
       # effective_price = min(10, 5 + 2) = 7
@@ -178,7 +180,7 @@ defmodule EEVM.HandlerTest do
       # Recipient stores GASPRICE in slot 0: GASPRICE PUSH1 0 SSTORE STOP.
       db = Database.put_code(db_with_sender(), @recipient, <<0x3A, 0x60, 0x00, 0x55, 0x00>>)
 
-      assert {:ok, %TransactionResult{status: :success, post_state_db: post_db}} =
+      assert {:ok, %TransactionResult{status: :success, db: post_db}} =
                run(tx, db, simple_block(base_fee: 5))
 
       # EIP-1559: min(max_fee 10, base_fee 5 + tip 2) = 7.
@@ -198,7 +200,7 @@ defmodule EEVM.HandlerTest do
     test "burns blob gas at the block's blob base fee; coinbase gets only the tip" do
       block = simple_block(base_fee: 5, blob_base_fee: 3)
 
-      assert {:ok, %TransactionResult{post_state_db: post_db, gas_used: 21_000}} =
+      assert {:ok, %TransactionResult{db: post_db, gas_used: 21_000}} =
                run(blob_tx(), db_with_sender(balance: @max_upfront), block)
 
       # gas: 21_000 * min(10, 5 + 2) = 147_000; blob: 262_144 * 3 = 786_432
@@ -248,8 +250,8 @@ defmodule EEVM.HandlerTest do
       assert {:ok, result} = run(tx, db)
       assert result.status == :success
       assert is_integer(result.contract_address)
-      assert Database.get_code(result.post_state_db, result.contract_address) == <<0x00>>
-      assert Database.get_nonce(result.post_state_db, result.contract_address) == 1
+      assert Database.get_code(result.db, result.contract_address) == <<0x00>>
+      assert Database.get_nonce(result.db, result.contract_address) == 1
     end
 
     test "initcode runs with the new contract's nonce at 1" do
@@ -263,7 +265,7 @@ defmodule EEVM.HandlerTest do
 
       assert {:ok, result} = run(tx, db_with_sender(balance: 10_000_000))
       assert result.status == :success
-      assert Database.get_nonce(result.post_state_db, result.contract_address) == 3
+      assert Database.get_nonce(result.db, result.contract_address) == 3
     end
 
     test "initcode that SELFDESTRUCTs leaves no account behind (EIP-6780)" do
@@ -274,8 +276,8 @@ defmodule EEVM.HandlerTest do
 
       assert {:ok, result} = run(tx, db_with_sender(balance: 10_000_000))
       assert result.status == :success
-      refute Database.account_exists?(result.post_state_db, result.contract_address)
-      assert Database.get_balance(result.post_state_db, 0xBB) == 5
+      refute Database.account_exists?(result.db, result.contract_address)
+      assert Database.get_balance(result.db, 0xBB) == 5
     end
 
     test "creating over an account with code fails and consumes all gas (EIP-684)" do
@@ -288,11 +290,11 @@ defmodule EEVM.HandlerTest do
       tx = create_tx(<<0x60, 0x00, 0x60, 0x00, 0x53, 0x60, 0x01, 0x60, 0x00, 0xF3>>, 0)
 
       assert {:ok, result} = run(tx, db)
-      assert result.status == :reverted
+      assert result.status == {:halt, :create_collision}
       assert result.gas_used == 200_000
       assert result.contract_address == nil
-      assert Database.get_code(result.post_state_db, target) == <<0xFE>>
-      assert Database.get_nonce(result.post_state_db, sender_address()) == 1
+      assert Database.get_code(result.db, target) == <<0xFE>>
+      assert Database.get_nonce(result.db, sender_address()) == 1
     end
 
     test "initcode that STOPs after a sub-call deploys empty code" do
@@ -306,7 +308,7 @@ defmodule EEVM.HandlerTest do
 
       assert {:ok, result} = run(create_tx(initcode, 0), db_with_sender())
       assert result.status == :success
-      assert Database.get_code(result.post_state_db, result.contract_address) == <<>>
+      assert Database.get_code(result.db, result.contract_address) == <<>>
       assert result.gas_used == 53_182 + 18 + 2 + 100 + 18 + 3
     end
   end
@@ -371,7 +373,7 @@ defmodule EEVM.HandlerTest do
       assert {:ok, result} = run(legacy_value_transfer(gas_limit: 100_000), db)
       assert result.status == :success
       assert result.gas_used == 26_272
-      assert Database.storage_load(result.post_state_db, @recipient, 1) == 3
+      assert Database.storage_load(result.db, @recipient, 1) == 3
     end
 
     test "a creation tx counts the code deposit toward the refund cap" do
@@ -415,7 +417,7 @@ defmodule EEVM.HandlerTest do
   end
 
   describe "execute/4 — REVERT" do
-    test "marks status :reverted and emits no logs" do
+    test "marks status :revert and emits no logs" do
       # PUSH1 0 PUSH1 0 REVERT
       revert_code = <<0x60, 0x00, 0x60, 0x00, 0xFD>>
 
@@ -426,11 +428,11 @@ defmodule EEVM.HandlerTest do
       tx = legacy_value_transfer(gas_limit: 50_000, value: 0)
 
       assert {:ok, result} = run(tx, db)
-      assert result.status == :reverted
+      assert result.status == :revert
       assert result.logs == []
       assert result.return_data == <<>>
       # Sender's nonce was still bumped despite the revert.
-      assert Database.get_nonce(result.post_state_db, sender_address()) == 1
+      assert Database.get_nonce(result.db, sender_address()) == 1
     end
   end
 
@@ -443,7 +445,7 @@ defmodule EEVM.HandlerTest do
       assert {:ok, result} = run_prague(set_code_tx([authorize(@delegate, 0)]), db)
 
       assert result.status == :success
-      post = result.post_state_db
+      post = result.db
       assert Database.get_code(post, authority) == Delegation.designator(@delegate)
       assert Database.get_nonce(post, authority) == 1
       assert Database.storage_load(post, authority, 0) == authority
@@ -482,10 +484,10 @@ defmodule EEVM.HandlerTest do
       assert result.status == :success
       assert result.gas_used == 21_000 + 5 * 25_000
 
-      assert Database.get_code(result.post_state_db, authority) ==
+      assert Database.get_code(result.db, authority) ==
                Delegation.designator(@delegate)
 
-      assert Database.get_nonce(result.post_state_db, authority) == 1
+      assert Database.get_nonce(result.db, authority) == 1
     end
 
     test "keeps delegations when execution reverts, and clears them for the zero address" do
@@ -494,15 +496,15 @@ defmodule EEVM.HandlerTest do
       db = db_with_sender() |> Database.put_code(@delegate, <<0x60, 0x00, 0x60, 0x00, 0xFD>>)
 
       assert {:ok, reverted} = run_prague(set_code_tx([authorize(@delegate, 0)]), db)
-      assert reverted.status == :reverted
+      assert reverted.status == :revert
 
-      assert Database.get_code(reverted.post_state_db, authority) ==
+      assert Database.get_code(reverted.db, authority) ==
                Delegation.designator(@delegate)
 
       clear = set_code_tx([authorize(0, 1)], nonce: 1)
-      assert {:ok, cleared} = run_prague(clear, reverted.post_state_db)
-      assert Database.get_code(cleared.post_state_db, authority) == <<>>
-      assert Database.get_nonce(cleared.post_state_db, authority) == 2
+      assert {:ok, cleared} = run_prague(clear, reverted.db)
+      assert Database.get_code(cleared.db, authority) == <<>>
+      assert Database.get_nonce(cleared.db, authority) == 2
     end
 
     test "decodes and executes wire bytes, but not before Prague" do
@@ -510,6 +512,80 @@ defmodule EEVM.HandlerTest do
 
       assert {:ok, %{status: :success}} = run_prague(bytes, db_with_sender())
       assert {:error, :tx_type_not_supported} = run(bytes, db_with_sender())
+    end
+  end
+
+  describe "execute/4 — result status, receipt, and trace" do
+    test "returns the receipt as an EEVM.Block.Receipt of the transaction's type" do
+      # LOG0 of one byte at memory 0: PUSH1 1 PUSH1 0 LOG0 STOP.
+      db = Database.put_code(db_with_sender(), @recipient, <<0x60, 1, 0x60, 0, 0xA0, 0x00>>)
+      config = Config.new(:cancun, chain_id: @chain_id)
+
+      {:ok, tx} =
+        Signer.sign(
+          %FeeMarket{
+            to: <<@recipient::160>>,
+            gas_limit: 50_000,
+            max_fee_per_gas: 1,
+            max_priority_fee_per_gas: 0
+          },
+          @priv_key,
+          config
+        )
+
+      assert {:ok, result} = Handler.execute(tx, simple_block(), db, config: config)
+      assert %Receipt{tx_type: :eip1559, status: 1} = result.receipt
+      assert result.receipt.cumulative_gas_used == result.gas_used
+      assert result.receipt.logs == [%{address: @recipient, topics: [], data: <<0>>}]
+      assert result.receipt.logs_bloom == Bloom.from_logs(result.logs)
+
+      assert {:ok, %{receipt: %Receipt{tx_type: :legacy}}} =
+               run(legacy_value_transfer(gas_limit: 50_000), db)
+    end
+
+    test "an exceptional halt reports its reason, consumes all gas, and fails the receipt" do
+      db = Database.put_code(db_with_sender(), @recipient, <<0xFE>>)
+
+      assert {:ok, result} = run(legacy_value_transfer(gas_limit: 50_000), db)
+      assert result.status == {:halt, :invalid_opcode}
+      assert result.gas_used == 50_000
+      assert result.receipt.status == 0
+    end
+
+    # EIP-170: deployed code may be at most 24,576 bytes. Code of exactly the
+    # limit passes the size check and then can't pay its 200-gas-per-byte
+    # deposit from 200,000 gas.
+    test "a creation over the code size limit halts with :code_size_limit_exceeded" do
+      # PUSH2 size PUSH1 0 RETURN: returns `size` zero bytes.
+      deploy = fn size -> <<0x61, size::16, 0x60, 0x00, 0xF3>> end
+
+      assert {:ok, %{status: {:halt, :code_size_limit_exceeded}, contract_address: nil}} =
+               run(create_tx(deploy.(24_577), 0), db_with_sender())
+
+      assert {:ok, %{status: {:halt, :out_of_gas}}} =
+               run(create_tx(deploy.(24_576), 0), db_with_sender())
+    end
+
+    # EIP-3541 (London): deployed code may not start with 0xEF.
+    test "a creation deploying 0xEF-prefixed code halts with :invalid_code_prefix" do
+      # PUSH1 0xEF PUSH1 0 MSTORE8 PUSH1 1 PUSH1 0 RETURN
+      initcode = <<0x60, 0xEF, 0x60, 0x00, 0x53, 0x60, 0x01, 0x60, 0x00, 0xF3>>
+
+      assert {:ok, %{status: {:halt, :invalid_code_prefix}}} =
+               run(create_tx(initcode, 0), db_with_sender())
+    end
+
+    test "tracer: true returns the trace of the top-level call; it is nil otherwise" do
+      # PUSH1 1 PUSH1 0 SSTORE STOP
+      db = Database.put_code(db_with_sender(), @recipient, <<0x60, 1, 0x60, 0, 0x55, 0x00>>)
+      tx = legacy_value_transfer(gas_limit: 50_000)
+      config = Config.new(:cancun, chain_id: @chain_id)
+
+      assert {:ok, %{trace: %Tracer{} = trace}} =
+               EEVM.transact(tx, simple_block(), db, config: config, tracer: true)
+
+      assert Enum.map(Tracer.steps(trace), & &1.op) == [:PUSH1, :PUSH1, :SSTORE, :STOP]
+      assert {:ok, %{trace: nil}} = run(tx, db)
     end
   end
 

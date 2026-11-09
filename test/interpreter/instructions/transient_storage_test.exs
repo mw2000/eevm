@@ -1,5 +1,6 @@
 defmodule EEVM.Interpreter.Instructions.TransientStorageTest do
   use ExUnit.Case, async: true
+  import EEVM.TestSupport.MachineHelpers
 
   alias EEVM.Context.Contract
   alias EEVM.Database
@@ -11,14 +12,14 @@ defmodule EEVM.Interpreter.Instructions.TransientStorageTest do
       # PUSH1 0 (key), TLOAD, STOP
       code = <<0x60, 0x00, 0x5C, 0x00>>
       result = EEVM.Interpreter.run(code)
-      assert EEVM.stack_values(result) == [0]
+      assert stack_values(result) == [0]
     end
 
     test "TSTORE then TLOAD reads back value" do
       # PUSH1 0xFF (value), PUSH1 0x01 (key), TSTORE, PUSH1 0x01 (key), TLOAD, STOP
       code = <<0x60, 0xFF, 0x60, 0x01, 0x5D, 0x60, 0x01, 0x5C, 0x00>>
       result = EEVM.Interpreter.run(code)
-      assert EEVM.stack_values(result) == [0xFF]
+      assert stack_values(result) == [0xFF]
     end
 
     test "TSTORE overwrites previous value" do
@@ -36,7 +37,7 @@ defmodule EEVM.Interpreter.Instructions.TransientStorageTest do
         ])
 
       result = EEVM.Interpreter.run(code)
-      assert EEVM.stack_values(result) == [0xBB]
+      assert stack_values(result) == [0xBB]
     end
 
     test "different keys are independent" do
@@ -55,7 +56,7 @@ defmodule EEVM.Interpreter.Instructions.TransientStorageTest do
         ])
 
       result = EEVM.Interpreter.run(code)
-      assert EEVM.stack_values(result) == [0xBB, 0xAA]
+      assert stack_values(result) == [0xBB, 0xAA]
     end
 
     test "TSTORE halts exceptionally in static context" do
@@ -69,7 +70,7 @@ defmodule EEVM.Interpreter.Instructions.TransientStorageTest do
       code = <<0x60, 0x00, 0x5C, 0x00>>
       result = EEVM.Interpreter.run(code, is_static: true)
       assert result.status == :stopped
-      assert EEVM.stack_values(result) == [0]
+      assert stack_values(result) == [0]
     end
 
     test "TLOAD costs 100 gas (warm access)" do
@@ -98,7 +99,7 @@ defmodule EEVM.Interpreter.Instructions.TransientStorageTest do
         ])
 
       result = EEVM.Interpreter.run(code)
-      assert EEVM.stack_values(result) == [0]
+      assert stack_values(result) == [0]
     end
   end
 
@@ -126,7 +127,7 @@ defmodule EEVM.Interpreter.Instructions.TransientStorageTest do
 
       # The delegatecall ran in the caller's context: it saw TSTORE(1) and its
       # TSTORE(2) is visible to the caller afterwards.
-      assert EEVM.stack_values(result) == [0x99, 1, 1]
+      assert stack_values(result) == [0x99, 1, 1]
       assert Database.storage_load(result.db, @caller, 0) == 0x43
       # The plain call ran as the callee, whose transient slot 1 is unset.
       assert Database.storage_load(result.db, @callee, 0) == 1
@@ -141,7 +142,7 @@ defmodule EEVM.Interpreter.Instructions.TransientStorageTest do
         <<0x60, 0x42, 0x60, 0x01, 0x5D, 0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60,
           @callee, 0x5A, 0xF4, 0x60, 0x01, 0x5C, 0x00>>
 
-      assert EEVM.stack_values(run(code, callee)) == [0x42, 0]
+      assert stack_values(run(code, callee)) == [0x42, 0]
     end
 
     defp run(code, callee_code) do

@@ -16,7 +16,7 @@ gas-throughput table: gas per run, runs per second (ips), and Mgas/s (gas × ips
 
 ## Workloads
 
-`bench/interpreter_bench.exs` runs complete programs through `EEVM.execute/2`, plus
+`bench/interpreter_bench.exs` runs complete programs through `EEVM.Interpreter.run/2`, plus
 one transaction through `EEVM.Handler.execute/4`. The programs are written with the
 small assembler in `bench/support/asm.exs`.
 

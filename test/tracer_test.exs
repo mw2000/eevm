@@ -1,18 +1,19 @@
 defmodule EEVM.TracerTest do
   use ExUnit.Case, async: true
+  import EEVM.TestSupport.MachineHelpers
 
   alias EEVM.Tracer
   alias EEVM.Tracer.TraceStep
 
   describe "opt-in behavior" do
     test "tracer is nil by default — no trace recorded" do
-      state = EEVM.execute(<<0x60, 0x01, 0x60, 0x02, 0x01, 0x00>>)
+      state = run_code(<<0x60, 0x01, 0x60, 0x02, 0x01, 0x00>>)
       assert state.tracer == nil
     end
 
     test "trace/2 attaches a fresh tracer and records every opcode" do
       # PUSH1 1, PUSH1 2, ADD, STOP
-      {state, tracer} = EEVM.trace(<<0x60, 0x01, 0x60, 0x02, 0x01, 0x00>>)
+      {state, tracer} = trace_code(<<0x60, 0x01, 0x60, 0x02, 0x01, 0x00>>)
       assert state.status == :stopped
 
       steps = Tracer.steps(tracer)
@@ -25,7 +26,7 @@ defmodule EEVM.TracerTest do
   describe "per-step fields" do
     # PUSH1 0x0A, PUSH1 0x14, ADD, STOP
     setup do
-      {_state, tracer} = EEVM.trace(<<0x60, 0x0A, 0x60, 0x14, 0x01, 0x00>>)
+      {_state, tracer} = trace_code(<<0x60, 0x0A, 0x60, 0x14, 0x01, 0x00>>)
       {:ok, steps: Tracer.steps(tracer)}
     end
 
@@ -72,13 +73,13 @@ defmodule EEVM.TracerTest do
     test "out-of-gas terminates with an error step" do
       # ADD with empty stack consumes static cost, then errors on pop.
       # Too little gas even for the static cost:
-      {_state, tracer} = EEVM.trace(<<0x01>>, gas: 2)
+      {_state, tracer} = trace_code(<<0x01>>, gas: 2)
       steps = Tracer.steps(tracer)
       assert [%TraceStep{op: :ADD, error: :out_of_gas}] = steps
     end
 
     test "stack underflow reports the underlying reason" do
-      {state, tracer} = EEVM.trace(<<0x01>>)
+      {state, tracer} = trace_code(<<0x01>>)
       assert match?({:error, :stack_underflow}, state.status)
       [step] = Tracer.steps(tracer)
       assert step.op == :ADD
@@ -105,7 +106,7 @@ defmodule EEVM.TracerTest do
           0xFF, 0xFA, 0x00>>
 
       {_state, tracer} =
-        EEVM.trace(caller_code,
+        trace_code(caller_code,
           db: db,
           contract: %{Contract.new() | address: 0xCA11E2}
         )
@@ -121,7 +122,7 @@ defmodule EEVM.TracerTest do
 
   describe "JSON output (EIP-3155 / geth --json)" do
     test "each line is valid JSON with geth-compatible keys" do
-      {_state, tracer} = EEVM.trace(<<0x60, 0x01, 0x00>>)
+      {_state, tracer} = trace_code(<<0x60, 0x01, 0x00>>)
       [line1, line2] = Tracer.to_json_lines(tracer)
 
       decoded1 = Jason.decode!(line1)
@@ -141,13 +142,13 @@ defmodule EEVM.TracerTest do
     end
 
     test "to_json joins lines with newlines" do
-      {_state, tracer} = EEVM.trace(<<0x60, 0x01, 0x00>>)
+      {_state, tracer} = trace_code(<<0x60, 0x01, 0x00>>)
       rendered = Tracer.to_json(tracer)
       assert length(String.split(rendered, "\n")) == 2
     end
 
     test "error steps include an error field" do
-      {_state, tracer} = EEVM.trace(<<0x01>>)
+      {_state, tracer} = trace_code(<<0x01>>)
       [line] = Tracer.to_json_lines(tracer)
       assert Jason.decode!(line)["error"] == "stack_underflow"
     end

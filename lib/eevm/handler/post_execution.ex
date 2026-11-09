@@ -16,8 +16,9 @@ defmodule EEVM.Handler.PostExecution do
     struct that callers consume.
   """
 
-  alias EEVM.Block.Bloom
+  alias EEVM.Block.Receipt
   alias EEVM.BlockEnv
+  alias EEVM.CallResult
   alias EEVM.Database
   alias EEVM.Handler.{PreExecution, Validation}
   alias EEVM.Interpreter.MachineState
@@ -53,18 +54,16 @@ defmodule EEVM.Handler.PostExecution do
     settled_db = settle_state(final_state, db_nonce_bumped, tx, gas_used, effective_price)
     coinbase_credited_db = credit_coinbase(settled_db, block, tx, gas_used, effective_price)
 
-    status = result_status(final_state.status)
-
+    status = status(final_state.status)
     logs = if status == :success, do: Enum.reverse(final_state.substate.logs), else: []
-    logs_bloom = Bloom.from_logs(logs)
-    receipt_status = if status == :success, do: 1, else: 0
 
-    receipt = %{
-      status: receipt_status,
-      cumulative_gas_used: gas_used,
-      logs_bloom: logs_bloom,
-      logs: logs
-    }
+    receipt =
+      Receipt.new(
+        tx_type: tx.type,
+        status: if(status == :success, do: 1, else: 0),
+        cumulative_gas_used: gas_used,
+        logs: logs
+      )
 
     {:ok,
      %TransactionResult{
@@ -72,14 +71,34 @@ defmodule EEVM.Handler.PostExecution do
        gas_used: gas_used,
        gas_refunded: max(final_state.frame.gas, 0),
        sender: Validation.decode_address(sender_bytes),
-       logs: logs,
-       logs_bloom: logs_bloom,
-       receipt: receipt,
-       post_state_db: coinbase_credited_db,
+       contract_address: if(status == :success, do: contract_address, else: nil),
        return_data: if(status == :success, do: final_state.frame.return_data, else: <<>>),
-       contract_address: if(status == :success, do: contract_address, else: nil)
+       logs: logs,
+       receipt: receipt,
+       db: coinbase_credited_db,
+       trace: final_state.tracer,
+       post_state_db: coinbase_credited_db,
+       logs_bloom: receipt.logs_bloom
      }}
   end
+
+  @doc """
+  Maps the interpreter's final machine status to the public status of
+  `EEVM.CallResult` and `EEVM.TransactionResult`.
+
+  ## Examples
+
+      iex> EEVM.Handler.PostExecution.status(:stopped)
+      :success
+      iex> EEVM.Handler.PostExecution.status(:invalid)
+      {:halt, :invalid_opcode}
+  """
+  @spec status(MachineState.status()) :: CallResult.status()
+  def status(:stopped), do: :success
+  def status(:reverted), do: :revert
+  def status(:invalid), do: {:halt, :invalid_opcode}
+  def status(:out_of_gas), do: {:halt, :out_of_gas}
+  def status({:error, reason}), do: {:halt, reason}
 
   defp settle_state(%MachineState{status: status}, db_nonce_bumped, tx, gas_used, effective_price)
        when status in [:reverted, :invalid, :out_of_gas] or is_tuple(status) do
@@ -111,8 +130,4 @@ defmodule EEVM.Handler.PostExecution do
     current = Database.get_balance(db, address)
     Database.set_balance(db, address, current + amount)
   end
-
-  defp result_status(:stopped), do: :success
-  defp result_status(:reverted), do: :reverted
-  defp result_status(_), do: :reverted
 end

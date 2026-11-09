@@ -1,5 +1,6 @@
 defmodule EEVM.Interpreter.Instructions.DelegationTest do
   use ExUnit.Case, async: true
+  import EEVM.TestSupport.MachineHelpers
 
   alias EEVM.Context.Contract
   alias EEVM.{Database, Delegation}
@@ -18,7 +19,7 @@ defmodule EEVM.Interpreter.Instructions.DelegationTest do
     test "CALL runs the delegate's code in the delegating account's context" do
       result = run(call(0xF1, @authority))
 
-      assert EEVM.stack_values(result) == [1]
+      assert stack_values(result) == [1]
       assert Database.storage_load(result.db, @authority, 0) == @authority
       assert Database.storage_load(result.db, @authority, 1) == @caller
       assert Database.storage_load(result.db, @delegate, 0) == 0
@@ -28,7 +29,7 @@ defmodule EEVM.Interpreter.Instructions.DelegationTest do
       for opcode <- [0xF4, 0xF2] do
         result = run(call(opcode, @authority))
 
-        assert EEVM.stack_values(result) == [1]
+        assert stack_values(result) == [1]
         assert Database.storage_load(result.db, @caller, 0) == @caller
         assert Database.storage_load(result.db, @authority, 0) == 0
       end
@@ -53,15 +54,15 @@ defmodule EEVM.Interpreter.Instructions.DelegationTest do
       # `call/3` has the callee's output written to memory at 0x20.
       returned = fn state -> state.frame.memory |> Memory.read_bytes(0x20, 1) |> elem(0) end
 
-      assert {EEVM.stack_values(direct), returned.(direct)} == {[1], <<0xAB>>}
-      assert {EEVM.stack_values(delegated), returned.(delegated)} == {[1], <<0x00>>}
+      assert {stack_values(direct), returned.(direct)} == {[1], <<0xAB>>}
+      assert {stack_values(delegated), returned.(delegated)} == {[1], <<0x00>>}
     end
 
     test "do not follow designators before Prague" do
       result = run(call(0xF1, @authority), hardfork: :cancun)
 
       # 0xEF is an undefined opcode, so the call fails.
-      assert EEVM.stack_values(result) == [0]
+      assert stack_values(result) == [0]
       assert Database.storage_load(result.db, @authority, 0) == 0
     end
   end
@@ -77,7 +78,7 @@ defmodule EEVM.Interpreter.Instructions.DelegationTest do
     result = run(code)
     <<hash::unsigned-big-256>> = ExKeccak.hash_256(designator)
 
-    assert EEVM.stack_values(result) == [hash, 23]
+    assert stack_values(result) == [hash, 23]
     assert Memory.read_bytes(result.frame.memory, 0, 23) |> elem(0) == designator
   end
 

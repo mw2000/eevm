@@ -21,6 +21,7 @@ defmodule EEVM.Block do
   recent block numbers to their hashes for BLOCKHASH. From Prague,
   `:deposit_contract_address` names the chain's EIP-6110 deposit contract
   (default: mainnet's, `EEVM.Block.Requests.mainnet_deposit_contract/0`).
+  `tracer: true` traces every transaction into `result.trace`.
 
   Errors are `{:error, reason}` with the reasons catalogued in `EEVM.Error`
   as `t:EEVM.Error.block_error/0`.
@@ -76,7 +77,8 @@ defmodule EEVM.Block do
           config: Config.t(),
           chain_id: non_neg_integer(),
           block_hashes: %{non_neg_integer() => non_neg_integer()},
-          deposit_contract_address: non_neg_integer()
+          deposit_contract_address: non_neg_integer(),
+          tracer: boolean()
         ]
 
   @type build_opts :: [
@@ -85,6 +87,7 @@ defmodule EEVM.Block do
           chain_id: non_neg_integer(),
           block_hashes: %{non_neg_integer() => non_neg_integer()},
           deposit_contract_address: non_neg_integer(),
+          tracer: boolean(),
           timestamp: non_neg_integer(),
           coinbase: non_neg_integer(),
           gas_limit: non_neg_integer(),
@@ -168,8 +171,11 @@ defmodule EEVM.Block do
   `logs_bloom`, `receipts_root`, `state_root`, and `requests_hash` against
   the result.
 
-  Returns `{:ok, %EEVM.Block.Result{}}` whose `post_state_db` is the state
-  after the block and whose `requests` are the block's requests. A
+  With `tracer: true`, each transaction is traced and `result.trace` lists
+  one `EEVM.Tracer` per transaction, in order.
+
+  Returns `{:ok, %EEVM.Block.Result{}}` whose `db` is the state after the
+  block and whose `requests` are the block's requests. A
   transaction that `EEVM.Handler` rejects, or whose gas limit exceeds the gas
   left in the block, fails the block with
   `{:error, {:tx_failed, index, reason}}`; a request that can't be collected
@@ -250,7 +256,7 @@ defmodule EEVM.Block do
 
   defp run(%__MODULE__{header: header} = block, db, %Config{} = config, opts) do
     Processor.process_block(header, block.transactions, db,
-      tx_executor: tx_executor(config),
+      tx_executor: tx_executor(config, Keyword.get(opts, :tracer, false)),
       system_calls: system_calls(header, config.hardfork),
       rewards: rewards(block, config.hardfork),
       withdrawals: block.withdrawals || [],
@@ -268,17 +274,18 @@ defmodule EEVM.Block do
     end
   end
 
-  defp tx_executor(config) do
+  defp tx_executor(config, tracer?) do
     fn tx, block_ctx, db ->
-      case Handler.execute(tx, block_ctx, db, config: config) do
+      case Handler.execute(tx, block_ctx, db, config: config, tracer: tracer?) do
         {:ok, %TransactionResult{} = result} ->
           {:ok,
            %{
-             status: if(result.status == :success, do: 1, else: 0),
+             status: result.receipt.status,
              gas_used: result.gas_used,
              logs: result.logs,
-             db: result.post_state_db,
-             tx_type: tx_type(tx)
+             db: result.db,
+             tx_type: result.receipt.tx_type,
+             trace: result.trace
            }
            |> put_receipt_state_root(config.hardfork)}
 
@@ -438,12 +445,6 @@ defmodule EEVM.Block do
   end
 
   defp enabled?(hardfork, flag), do: HardforkConfig.enabled?(hardfork, flag)
-
-  defp tx_type(%Legacy{}), do: :legacy
-  defp tx_type(%AccessList{}), do: :eip2930
-  defp tx_type(%FeeMarket{}), do: :eip1559
-  defp tx_type(%Blob{}), do: :eip4844
-  defp tx_type(%SetCode{}), do: :eip7702
 
   # ---------------------------------------------------------------------------
   # RLP

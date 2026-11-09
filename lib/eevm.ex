@@ -10,20 +10,24 @@ defmodule EEVM do
 
   ## Quick Start
 
-      iex> result = EEVM.execute(<<0x60, 2, 0x60, 3, 0x01, 0x00>>)
+      iex> {:ok, result} = EEVM.run(<<0x60, 2, 0x60, 3, 0x01, 0x60, 0, 0x52, 0x60, 32, 0x60, 0, 0xF3>>)
       iex> result.status
-      :stopped
-      iex> EEVM.stack_values(result)
-      [5]
+      :success
+      iex> :binary.decode_unsigned(result.return_data)
+      5
 
   ## Module Map
 
   The public API:
 
-  - `EEVM` — run raw bytecode (`execute/2`, `trace/2`) and disassemble it
+  - `EEVM` — run bytecode (`run/2`), execute a signed transaction
+    (`transact/4`), and disassemble bytecode
   - `EEVM.Config` — the hardfork, chain id, and custom precompiles
+  - `EEVM.BlockEnv` and `EEVM.TxEnv` — the block and transaction environment
+    code executes in
+  - `EEVM.CallResult` and `EEVM.TransactionResult` — what `run/2` and
+    `transact/4` return
   - `EEVM.Error` — every error reason
-  - `EEVM.Handler` — validate and execute one signed transaction
   - `EEVM.Transaction` and its `Envelope` and `Signer` — transaction structs,
     wire encoding, and signatures
   - `EEVM.Block` — block RLP codec, validation, building, and execution
@@ -37,56 +41,144 @@ defmodule EEVM do
   """
 
   alias EEVM.Block.Bloom
+  alias EEVM.{BlockEnv, CallResult, Database, Handler, TransactionResult}
+  alias EEVM.Context.Contract
+  alias EEVM.Database.InMemory
+  alias EEVM.Handler.{PostExecution, Validation}
   alias EEVM.Interpreter
   alias EEVM.Interpreter.{MachineState, Stack}
   alias EEVM.Tracer
 
   @execute_opts [:gas, :hardfork, :config, :db, :block, :tx, :contract]
 
+  @run_opts [
+    :config,
+    :hardfork,
+    :db,
+    :block,
+    :tx,
+    :tracer,
+    gas: 1_000_000,
+    address: 0,
+    caller: 0,
+    value: 0,
+    calldata: <<>>,
+    debug: false
+  ]
+
   @doc """
-  Executes EVM bytecode and returns the final machine state.
+  Runs `code` as a message call, with no transaction rules: no signature,
+  nonce, intrinsic gas, or fee checks.
+
+  Use it to test bytecode or to probe a contract `eth_call`-style. To run a
+  signed transaction, use `transact/4`.
 
   ## Options
 
-    - `:gas` — initial gas limit (default: 1,000,000)
-    - `:hardfork` — hardfork spec id (default `:cancun`), or `:config` for a
-      full `EEVM.Config`
-    - `:db` — the `EEVM.Database` to run against (default: an empty
-      `EEVM.Database.InMemory`)
-    - `:block` and `:tx` — the `EEVM.BlockEnv` and
-      `EEVM.TxEnv` the code sees
-    - `:contract` — the `EEVM.Context.Contract` being executed: its address,
-      caller, call value, and calldata
+    - `:config` — the `EEVM.Config` to run under, or `:hardfork` for the
+      shorthand `EEVM.Config.new(hardfork)` (default `:cancun`)
+    - `:gas` — the gas limit (default 1,000,000)
+    - `:db` — the `EEVM.Database` (default: an empty `EEVM.Database.InMemory`)
+    - `:block` and `:tx` — the `EEVM.BlockEnv` and `EEVM.TxEnv` the code sees
+    - `:address`, `:caller`, `:value`, `:calldata` — the executing account,
+      CALLER, CALLVALUE, and the call's input (defaults `0`, `0`, `0`, `<<>>`)
+    - `:tracer` — `true` or an `EEVM.Tracer` to record an EIP-3155 trace,
+      returned as `result.trace`
+    - `:debug` — `true` to return the final stack as `result.stack`
 
   Any other option raises `ArgumentError`.
 
-  ## Example
+  Returns `{:ok, %EEVM.CallResult{}}` however execution ends; check
+  `result.status`.
 
-      iex> result = EEVM.execute(<<0x60, 0x0A, 0x60, 0x14, 0x01, 0x00>>)
-      iex> EEVM.stack_values(result)
-      [30]
+  ## Examples
+
+      iex> {:ok, result} = EEVM.run(<<0x60, 0x0A, 0x60, 0x14, 0x01, 0x00>>, debug: true)
+      iex> {result.status, result.stack, result.gas_used}
+      {:success, [30], 9}
+
+      iex> {:ok, result} = EEVM.run(<<0xFE>>, gas: 100)
+      iex> {result.status, result.gas_left}
+      {{:halt, :invalid_opcode}, 0}
   """
-  @spec execute(binary(), keyword()) :: EEVM.Interpreter.MachineState.t()
+  @spec run(binary(), keyword()) :: {:ok, CallResult.t()} | {:error, EEVM.Error.reason()}
+  def run(code, opts \\ []) when is_binary(code) do
+    opts = Keyword.validate!(opts, @run_opts)
+    db = Keyword.get_lazy(opts, :db, &InMemory.new/0)
+
+    contract =
+      Contract.new(
+        address: opts[:address],
+        caller: opts[:caller],
+        callvalue: opts[:value],
+        calldata: opts[:calldata]
+      )
+
+    state =
+      Interpreter.run(
+        code,
+        [
+          gas: opts[:gas],
+          db: db,
+          config: Validation.resolve_config(opts),
+          contract: contract,
+          tracer: Validation.resolve_tracer(opts)
+        ] ++ Keyword.take(opts, [:block, :tx])
+      )
+
+    status = PostExecution.status(state.status)
+
+    {:ok,
+     %CallResult{
+       status: status,
+       return_data: state.frame.return_data,
+       gas_used: opts[:gas] - state.frame.gas,
+       gas_left: state.frame.gas,
+       logs: if(status == :success, do: Enum.reverse(state.substate.logs), else: []),
+       db: if(status == :success, do: state.db, else: db),
+       trace: state.tracer,
+       stack: if(opts[:debug], do: Stack.to_list(state.frame.stack))
+     }}
+  end
+
+  @doc """
+  Validates and executes one signed transaction against `db` in the block
+  environment `block`: decode, recover the sender, validate, charge gas,
+  execute, refund, and pay the coinbase.
+
+  `tx` is a transaction struct (see `EEVM.Transaction`) or its raw signed
+  bytes. Options are `:config` (or the `:hardfork` shorthand) and `:tracer`,
+  as for `run/2`.
+
+  Returns `{:ok, %EEVM.TransactionResult{}}` for any transaction that passes
+  validation, including reverted and halted ones, or `{:error, reason}` with
+  a reason from `EEVM.Error`, leaving `db` unchanged.
+  """
+  @spec transact(Handler.wire_tx(), BlockEnv.t(), Database.t(), Handler.opts()) ::
+          {:ok, TransactionResult.t()} | {:error, EEVM.Error.reason()}
+  defdelegate transact(tx, block, db, opts \\ []), to: Handler, as: :execute
+
+  @doc """
+  Executes EVM bytecode and returns the final machine state.
+
+  Deprecated: use `run/2`, which returns an `EEVM.CallResult`. This takes the
+  options `:gas`, `:hardfork`, `:config`, `:db`, `:block`, `:tx`, and
+  `:contract`.
+  """
+  @deprecated "Use EEVM.run/2"
+  @spec execute(binary(), keyword()) :: MachineState.t()
   def execute(bytecode, opts \\ []) do
     Interpreter.run(bytecode, Keyword.validate!(opts, @execute_opts))
   end
 
   @doc """
-  Executes bytecode with an opcode-level tracer attached.
+  Executes bytecode with an opcode-level tracer attached and returns
+  `{final_state, tracer}`.
 
-  Returns `{final_state, tracer}`. The tracer holds one `TraceStep` per
-  executed opcode (see `EEVM.Tracer`). Use `EEVM.Tracer.to_json/1` to emit
-  a trace in EIP-3155 / geth `--json` format. Takes the options of
-  `execute/2`.
-
-  ## Example
-
-      iex> {state, tracer} = EEVM.trace(<<0x60, 0x01, 0x60, 0x02, 0x01, 0x00>>)
-      iex> state.status
-      :stopped
-      iex> length(EEVM.Tracer.steps(tracer))
-      4
+  Deprecated: use `run(code, tracer: true)`, which returns the trace as
+  `result.trace`.
   """
+  @deprecated "Use EEVM.run/2 with tracer: true"
   @spec trace(binary(), keyword()) :: {MachineState.t(), Tracer.t()}
   def trace(bytecode, opts \\ []) do
     opts_with_tracer =
@@ -96,21 +188,20 @@ defmodule EEVM do
     {state, state.tracer}
   end
 
-  @doc """
-  Returns the stack contents as a list (top first).
-
-  Convenience wrapper for inspecting results.
-  """
-  @spec stack_values(EEVM.Interpreter.MachineState.t()) :: [non_neg_integer()]
+  @doc "Returns the stack contents (top first). Deprecated: use `run/2` with `debug: true`."
+  @deprecated "Use EEVM.run/2 with debug: true and read result.stack"
+  @spec stack_values(MachineState.t()) :: [non_neg_integer()]
   def stack_values(state) do
     Stack.to_list(state.frame.stack)
   end
 
-  @doc "Returns the logs emitted during execution, in emission order."
+  @doc "Returns the logs emitted, in order. Deprecated: use `run/2` and read `result.logs`."
+  @deprecated "Use EEVM.run/2 and read result.logs"
   @spec logs(MachineState.t()) :: [map()]
   def logs(%MachineState{} = state), do: Enum.reverse(state.substate.logs)
 
-  @doc "Computes the 256-byte logs bloom filter for the executed transaction."
+  @doc "Computes the logs bloom of the emitted logs. Deprecated: use `EEVM.Block.Bloom.from_logs/1`."
+  @deprecated "Use EEVM.Block.Bloom.from_logs/1"
   @spec logs_bloom(MachineState.t()) :: Bloom.t()
   def logs_bloom(%MachineState{} = state) do
     Bloom.from_logs(state.substate.logs)

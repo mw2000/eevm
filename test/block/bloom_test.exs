@@ -1,5 +1,6 @@
 defmodule EEVM.BloomTest do
   use ExUnit.Case, async: true
+  import EEVM.TestSupport.MachineHelpers
 
   alias EEVM.Block.Bloom
   alias EEVM.Context.Contract
@@ -113,17 +114,17 @@ defmodule EEVM.BloomTest do
   describe "EEVM logs_bloom/1 integration" do
     test "LOG1 execution produces non-empty bloom" do
       code = <<0x60, 0x2A, 0x60, 0x00, 0x60, 0x00, 0xA1, 0x00>>
-      result = EEVM.execute(code, contract: Contract.new(address: 0xABCD))
+      result = run_code(code, contract: Contract.new(address: 0xABCD))
 
-      assert EEVM.logs(result) != []
-      refute EEVM.logs_bloom(result) == Bloom.empty()
+      assert logs(result) != []
+      refute logs_bloom(result) == Bloom.empty()
     end
 
     test "execution with no logs produces empty bloom" do
-      result = EEVM.execute(<<0x00>>)
+      result = run_code(<<0x00>>)
 
-      assert EEVM.logs(result) == []
-      assert EEVM.logs_bloom(result) == Bloom.empty()
+      assert logs(result) == []
+      assert logs_bloom(result) == Bloom.empty()
     end
   end
 

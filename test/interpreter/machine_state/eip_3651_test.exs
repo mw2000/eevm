@@ -1,5 +1,6 @@
 defmodule EEVM.Interpreter.MachineState.EIP3651Test do
   use ExUnit.Case, async: true
+  import EEVM.TestSupport.MachineHelpers
 
   alias EEVM.BlockEnv
   alias EEVM.Config
@@ -43,7 +44,7 @@ defmodule EEVM.Interpreter.MachineState.EIP3651Test do
       world_state = InMemory.new(accounts: %{0xBEEF => %{balance: 123}})
       code = <<0x41, 0x31, 0x00>>
 
-      result = EEVM.execute(code, gas: initial_gas, block: block, db: world_state)
+      result = run_code(code, gas: initial_gas, block: block, db: world_state)
 
       assert result.frame.gas == initial_gas - 2 - 100
       refute result.frame.gas == initial_gas - 2 - 2600

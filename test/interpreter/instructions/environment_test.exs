@@ -1,5 +1,6 @@
 defmodule EEVM.Interpreter.Instructions.EnvironmentTest do
   use ExUnit.Case, async: true
+  import EEVM.TestSupport.MachineHelpers
 
   alias EEVM.BlockEnv
   alias EEVM.Context.Contract
@@ -13,41 +14,41 @@ defmodule EEVM.Interpreter.Instructions.EnvironmentTest do
       # ADDRESS, STOP
       code = <<0x30, 0x00>>
       result = EEVM.Interpreter.run(code, contract: contract)
-      assert EEVM.stack_values(result) == [0xCAFE]
+      assert stack_values(result) == [0xCAFE]
     end
 
     test "CALLER pushes msg.sender" do
       contract = Contract.new(caller: 0xDEAD)
       code = <<0x33, 0x00>>
       result = EEVM.Interpreter.run(code, contract: contract)
-      assert EEVM.stack_values(result) == [0xDEAD]
+      assert stack_values(result) == [0xDEAD]
     end
 
     test "ORIGIN pushes tx.origin" do
       tx = TxEnv.new(origin: 0xBEEF)
       code = <<0x32, 0x00>>
       result = EEVM.Interpreter.run(code, tx: tx)
-      assert EEVM.stack_values(result) == [0xBEEF]
+      assert stack_values(result) == [0xBEEF]
     end
 
     test "CALLVALUE pushes msg.value" do
       contract = Contract.new(callvalue: 1_000_000)
       code = <<0x34, 0x00>>
       result = EEVM.Interpreter.run(code, contract: contract)
-      assert EEVM.stack_values(result) == [1_000_000]
+      assert stack_values(result) == [1_000_000]
     end
 
     test "CALLDATASIZE pushes length of calldata" do
       contract = Contract.new(calldata: <<1, 2, 3, 4>>)
       code = <<0x36, 0x00>>
       result = EEVM.Interpreter.run(code, contract: contract)
-      assert EEVM.stack_values(result) == [4]
+      assert stack_values(result) == [4]
     end
 
     test "CALLDATASIZE is 0 with no calldata" do
       code = <<0x36, 0x00>>
       result = EEVM.Interpreter.run(code)
-      assert EEVM.stack_values(result) == [0]
+      assert stack_values(result) == [0]
     end
 
     test "CALLDATALOAD reads 32 bytes from calldata" do
@@ -57,7 +58,7 @@ defmodule EEVM.Interpreter.Instructions.EnvironmentTest do
       # PUSH1 0, CALLDATALOAD, STOP
       code = <<0x60, 0, 0x35, 0x00>>
       result = EEVM.Interpreter.run(code, contract: contract)
-      assert EEVM.stack_values(result) == [42]
+      assert stack_values(result) == [42]
     end
 
     test "CALLDATALOAD pads with zeros past end" do
@@ -67,14 +68,14 @@ defmodule EEVM.Interpreter.Instructions.EnvironmentTest do
       code = <<0x60, 0, 0x35, 0x00>>
       result = EEVM.Interpreter.run(code, contract: contract)
       expected = 0xFFFFFFFF00000000000000000000000000000000000000000000000000000000
-      assert EEVM.stack_values(result) == [expected]
+      assert stack_values(result) == [expected]
     end
 
     test "CALLDATALOAD beyond calldata returns 0" do
       contract = Contract.new(calldata: <<1, 2>>)
       code = <<0x60, 100, 0x35, 0x00>>
       result = EEVM.Interpreter.run(code, contract: contract)
-      assert EEVM.stack_values(result) == [0]
+      assert stack_values(result) == [0]
     end
 
     test "CALLDATACOPY copies calldata to memory" do
@@ -86,7 +87,7 @@ defmodule EEVM.Interpreter.Instructions.EnvironmentTest do
       result = EEVM.Interpreter.run(code, contract: contract)
       # Memory word at 0: 0xAABBCCDD followed by 28 zero bytes
       expected = 0xAABBCCDD00000000000000000000000000000000000000000000000000000000
-      assert EEVM.stack_values(result) == [expected]
+      assert stack_values(result) == [expected]
     end
 
     test "CALLDATACOPY gas includes static, per-word copy, and memory expansion" do
@@ -103,74 +104,74 @@ defmodule EEVM.Interpreter.Instructions.EnvironmentTest do
       # CODESIZE, STOP — 2 bytes of code
       code = <<0x38, 0x00>>
       result = EEVM.Interpreter.run(code)
-      assert EEVM.stack_values(result) == [2]
+      assert stack_values(result) == [2]
     end
 
     test "GASPRICE pushes tx gas price" do
       tx = TxEnv.new(gas_price: 20_000_000_000)
       code = <<0x3A, 0x00>>
       result = EEVM.Interpreter.run(code, tx: tx)
-      assert EEVM.stack_values(result) == [20_000_000_000]
+      assert stack_values(result) == [20_000_000_000]
     end
 
     test "RETURNDATASIZE pushes 0 with no prior return" do
       code = <<0x3D, 0x00>>
       result = EEVM.Interpreter.run(code)
-      assert EEVM.stack_values(result) == [0]
+      assert stack_values(result) == [0]
     end
 
     test "COINBASE pushes block producer address" do
       block = BlockEnv.new(coinbase: 0xABC)
       code = <<0x41, 0x00>>
       result = EEVM.Interpreter.run(code, block: block)
-      assert EEVM.stack_values(result) == [0xABC]
+      assert stack_values(result) == [0xABC]
     end
 
     test "TIMESTAMP pushes block timestamp" do
       block = BlockEnv.new(timestamp: 1_700_000_000)
       code = <<0x42, 0x00>>
       result = EEVM.Interpreter.run(code, block: block)
-      assert EEVM.stack_values(result) == [1_700_000_000]
+      assert stack_values(result) == [1_700_000_000]
     end
 
     test "NUMBER pushes block number" do
       block = BlockEnv.new(number: 18_000_000)
       code = <<0x43, 0x00>>
       result = EEVM.Interpreter.run(code, block: block)
-      assert EEVM.stack_values(result) == [18_000_000]
+      assert stack_values(result) == [18_000_000]
     end
 
     test "PREVRANDAO pushes previous block randao" do
       block = BlockEnv.new(prev_randao: 0xDEADBEEF)
       code = <<0x44, 0x00>>
       result = EEVM.Interpreter.run(code, block: block)
-      assert EEVM.stack_values(result) == [0xDEADBEEF]
+      assert stack_values(result) == [0xDEADBEEF]
     end
 
     test "GASLIMIT pushes block gas limit" do
       block = BlockEnv.new(gas_limit: 30_000_000)
       code = <<0x45, 0x00>>
       result = EEVM.Interpreter.run(code, block: block)
-      assert EEVM.stack_values(result) == [30_000_000]
+      assert stack_values(result) == [30_000_000]
     end
 
     test "CHAINID pushes chain ID (default 1 = mainnet)" do
       code = <<0x46, 0x00>>
       result = EEVM.Interpreter.run(code)
-      assert EEVM.stack_values(result) == [1]
+      assert stack_values(result) == [1]
     end
 
     test "CHAINID with custom chain ID" do
       code = <<0x46, 0x00>>
       result = EEVM.Interpreter.run(code, config: EEVM.Config.new(:cancun, chain_id: 137))
-      assert EEVM.stack_values(result) == [137]
+      assert stack_values(result) == [137]
     end
 
     test "BASEFEE pushes block base fee" do
       block = BlockEnv.new(base_fee: 30_000_000_000)
       code = <<0x48, 0x00>>
       result = EEVM.Interpreter.run(code, block: block)
-      assert EEVM.stack_values(result) == [30_000_000_000]
+      assert stack_values(result) == [30_000_000_000]
     end
 
     test "BALANCE looks up address balance" do
@@ -178,20 +179,20 @@ defmodule EEVM.Interpreter.Instructions.EnvironmentTest do
       # PUSH2 0xDEAD, BALANCE, STOP
       code = <<0x61, 0xDE, 0xAD, 0x31, 0x00>>
       result = EEVM.Interpreter.run(code, contract: contract)
-      assert EEVM.stack_values(result) == [5_000_000]
+      assert stack_values(result) == [5_000_000]
     end
 
     test "BALANCE returns 0 for unknown address" do
       code = <<0x61, 0xDE, 0xAD, 0x31, 0x00>>
       result = EEVM.Interpreter.run(code)
-      assert EEVM.stack_values(result) == [0]
+      assert stack_values(result) == [0]
     end
 
     test "SELFBALANCE pushes own contract balance" do
       contract = Contract.new(address: 0xCAFE, balances: %{0xCAFE => 999})
       code = <<0x47, 0x00>>
       result = EEVM.Interpreter.run(code, contract: contract)
-      assert EEVM.stack_values(result) == [999]
+      assert stack_values(result) == [999]
     end
 
     test "BLOCKHASH returns hash for recent block" do
@@ -204,7 +205,7 @@ defmodule EEVM.Interpreter.Instructions.EnvironmentTest do
       # PUSH1 99, BLOCKHASH, STOP
       code = <<0x60, 99, 0x40, 0x00>>
       result = EEVM.Interpreter.run(code, block: block)
-      assert EEVM.stack_values(result) == [0xAAAA]
+      assert stack_values(result) == [0xAAAA]
     end
 
     test "BLOCKHASH returns 0 for current or future block" do
@@ -212,7 +213,7 @@ defmodule EEVM.Interpreter.Instructions.EnvironmentTest do
       # PUSH1 100, BLOCKHASH, STOP (current block → 0)
       code = <<0x60, 100, 0x40, 0x00>>
       result = EEVM.Interpreter.run(code, block: block)
-      assert EEVM.stack_values(result) == [0]
+      assert stack_values(result) == [0]
     end
 
     test "GAS pushes remaining gas after deducting for GAS opcode" do
@@ -223,7 +224,7 @@ defmodule EEVM.Interpreter.Instructions.EnvironmentTest do
       code = <<0x5A, 0x00>>
       result = EEVM.Interpreter.run(code, gas: 1000)
       # GAS pushes remaining gas (1000-2=998), then STOP costs 0
-      assert EEVM.stack_values(result) == [998]
+      assert stack_values(result) == [998]
       assert result.frame.gas == 998
     end
 
@@ -255,7 +256,7 @@ defmodule EEVM.Interpreter.Instructions.EnvironmentTest do
       result = EEVM.Interpreter.run(code)
 
       expected = 0xAABBCCDD00000000000000000000000000000000000000000000000000000000
-      assert EEVM.stack_values(result) == [expected]
+      assert stack_values(result) == [expected]
     end
 
     test "zero-pads when reading beyond code length" do
@@ -264,7 +265,7 @@ defmodule EEVM.Interpreter.Instructions.EnvironmentTest do
       result = EEVM.Interpreter.run(code)
 
       expected = :binary.decode_unsigned(<<0xCC, 0xDD, 0x00, 0x00, 0::224>>)
-      assert EEVM.stack_values(result) == [expected]
+      assert stack_values(result) == [expected]
     end
 
     test "zero-length copy is a no-op" do
@@ -273,7 +274,7 @@ defmodule EEVM.Interpreter.Instructions.EnvironmentTest do
       result = EEVM.Interpreter.run(code)
 
       assert result.status == :stopped
-      assert EEVM.stack_values(result) == [0]
+      assert stack_values(result) == [0]
     end
 
     test "gas calculation includes static, copy, and memory expansion" do
@@ -301,7 +302,7 @@ defmodule EEVM.Interpreter.Instructions.EnvironmentTest do
       result = EEVM.Interpreter.run(code, return_data: return_data)
 
       expected = 0xAABBCCDD00000000000000000000000000000000000000000000000000000000
-      assert EEVM.stack_values(result) == [expected]
+      assert stack_values(result) == [expected]
     end
 
     test "out-of-bounds read halts exceptionally and burns all gas" do
@@ -321,7 +322,7 @@ defmodule EEVM.Interpreter.Instructions.EnvironmentTest do
 
       result = EEVM.Interpreter.run(copy_at.(2), return_data: return_data)
       assert result.status == :stopped
-      assert EEVM.stack_values(result) == [0]
+      assert stack_values(result) == [0]
 
       # EIP-211 bounds-checks offset + size even when size is 0.
       result = EEVM.Interpreter.run(copy_at.(3), return_data: return_data)
@@ -336,7 +337,7 @@ defmodule EEVM.Interpreter.Instructions.EnvironmentTest do
       result = EEVM.Interpreter.run(code, return_data: return_data)
 
       expected = :binary.decode_unsigned(<<0x33, 0x44, 0::240>>)
-      assert EEVM.stack_values(result) == [expected]
+      assert stack_values(result) == [expected]
     end
 
     test "gas calculation includes static, copy, and memory expansion" do
@@ -363,7 +364,7 @@ defmodule EEVM.Interpreter.Instructions.EnvironmentTest do
       result = EEVM.Interpreter.run(code, return_data: return_data)
 
       expected = :binary.decode_unsigned(<<0x00, 0xAA, 0xBB, 0::232>>)
-      assert EEVM.stack_values(result) == [expected]
+      assert stack_values(result) == [expected]
     end
   end
 
@@ -374,14 +375,14 @@ defmodule EEVM.Interpreter.Instructions.EnvironmentTest do
 
       result = EEVM.Interpreter.run(code, db: world_state)
 
-      assert EEVM.stack_values(result) == [4]
+      assert stack_values(result) == [4]
     end
 
     test "EXTCODESIZE returns 0 for non-existent account" do
       code = <<0x60, 9, 0x3B, 0x00>>
       result = EEVM.Interpreter.run(code)
 
-      assert EEVM.stack_values(result) == [0]
+      assert stack_values(result) == [0]
     end
 
     test "EXTCODECOPY copies external code to memory" do
@@ -391,7 +392,7 @@ defmodule EEVM.Interpreter.Instructions.EnvironmentTest do
       result = EEVM.Interpreter.run(code, db: world_state)
 
       expected = 0xAABBCCDD00000000000000000000000000000000000000000000000000000000
-      assert EEVM.stack_values(result) == [expected]
+      assert stack_values(result) == [expected]
     end
 
     test "EXTCODECOPY zero-pads beyond code length" do
@@ -401,7 +402,7 @@ defmodule EEVM.Interpreter.Instructions.EnvironmentTest do
       result = EEVM.Interpreter.run(code, db: world_state)
 
       expected = :binary.decode_unsigned(<<0xCC, 0xDD, 0x00, 0x00, 0::224>>)
-      assert EEVM.stack_values(result) == [expected]
+      assert stack_values(result) == [expected]
     end
 
     test "EXTCODECOPY gas includes static, copy, and memory expansion" do
@@ -426,7 +427,7 @@ defmodule EEVM.Interpreter.Instructions.EnvironmentTest do
       code = <<0x60, 2, 0x3F, 0x00>>
       result = EEVM.Interpreter.run(code)
 
-      assert EEVM.stack_values(result) == [0]
+      assert stack_values(result) == [0]
     end
 
     test "EXTCODEHASH returns keccak256 of empty code for existing empty account" do
@@ -436,7 +437,7 @@ defmodule EEVM.Interpreter.Instructions.EnvironmentTest do
       result = EEVM.Interpreter.run(code, db: world_state)
 
       <<expected::unsigned-big-256>> = ExKeccak.hash_256(<<>>)
-      assert EEVM.stack_values(result) == [expected]
+      assert stack_values(result) == [expected]
     end
 
     test "EXTCODEHASH returns keccak256 of account code" do
@@ -446,7 +447,7 @@ defmodule EEVM.Interpreter.Instructions.EnvironmentTest do
       result = EEVM.Interpreter.run(code, db: world_state)
 
       <<expected::unsigned-big-256>> = ExKeccak.hash_256(<<0xAA, 0xBB, 0xCC>>)
-      assert EEVM.stack_values(result) == [expected]
+      assert stack_values(result) == [expected]
     end
   end
 end

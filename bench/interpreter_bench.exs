@@ -22,7 +22,7 @@ contract = 0xC0DE
 callee = 0xCA11
 
 execute = fn code, opts ->
-  EEVM.execute(code, [gas: gas, contract: Contract.new(address: contract)] ++ opts)
+  EEVM.Interpreter.run(code, [gas: gas, contract: Contract.new(address: contract)] ++ opts)
 end
 
 # --- Compute -----------------------------------------------------------------------

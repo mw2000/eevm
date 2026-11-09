@@ -1,5 +1,6 @@
 defmodule EEVM.Interpreter.Instructions.SstoreGasTest do
   use ExUnit.Case, async: true
+  import EEVM.TestSupport.MachineHelpers
 
   alias EEVM.Context.Contract
   alias EEVM.Database.InMemory
@@ -157,7 +158,7 @@ defmodule EEVM.Interpreter.Instructions.SstoreGasTest do
         )
 
       {state, tracer} =
-        EEVM.trace(code, db: db, contract: Contract.new(address: 0xA, caller: 0xCA11E2))
+        trace_code(code, db: db, contract: Contract.new(address: 0xA, caller: 0xCA11E2))
 
       assert state.status == :stopped
       assert sstore_costs_at_depth(tracer, 1) == [100]
@@ -182,7 +183,7 @@ defmodule EEVM.Interpreter.Instructions.SstoreGasTest do
         )
 
       {state, tracer} =
-        EEVM.trace(a_code, db: db, contract: Contract.new(address: 0xA, caller: 0xCA11E2))
+        trace_code(a_code, db: db, contract: Contract.new(address: 0xA, caller: 0xCA11E2))
 
       assert state.status == :stopped
       assert sstore_costs_at_depth(tracer, 1) == [5_000]

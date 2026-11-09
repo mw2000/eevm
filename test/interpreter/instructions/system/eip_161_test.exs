@@ -1,5 +1,6 @@
 defmodule EEVM.Interpreter.Instructions.System.EIP161Test do
   use ExUnit.Case, async: true
+  import EEVM.TestSupport.MachineHelpers
 
   alias EEVM.Database
   alias EEVM.Database.InMemory
@@ -11,10 +12,10 @@ defmodule EEVM.Interpreter.Instructions.System.EIP161Test do
       <<0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0xAA, 0x61, 0xFF, 0xFF,
         0xF1, 0x00>>
 
-    result = EEVM.execute(code, db: world_state, gas: 1_000_000)
+    result = run_code(code, db: world_state, gas: 1_000_000)
 
     assert result.status == :stopped
-    assert EEVM.stack_values(result) == [1]
+    assert stack_values(result) == [1]
     assert Database.get_account(result.db, 0xAA) == nil
   end
 
@@ -25,10 +26,10 @@ defmodule EEVM.Interpreter.Instructions.System.EIP161Test do
       <<0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0xAA, 0x61, 0xFF, 0xFF,
         0xF1, 0x00>>
 
-    result = EEVM.execute(code, db: world_state, gas: 1_000_000)
+    result = run_code(code, db: world_state, gas: 1_000_000)
 
     assert result.status == :stopped
-    assert EEVM.stack_values(result) == [1]
+    assert stack_values(result) == [1]
     assert Database.get_account(result.db, 0xAA) == %{nonce: 1}
   end
 
@@ -43,10 +44,10 @@ defmodule EEVM.Interpreter.Instructions.System.EIP161Test do
       <<0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x10, 0x61, 0xFF, 0xFF,
         0xF1, 0x00>>
 
-    result = EEVM.execute(parent_code, db: world_state, gas: 1_000_000)
+    result = run_code(parent_code, db: world_state, gas: 1_000_000)
 
     assert result.status == :stopped
-    assert EEVM.stack_values(result) == [0]
+    assert stack_values(result) == [0]
     assert Database.get_account(result.db, 0xAA) == %{}
   end
 
@@ -54,7 +55,7 @@ defmodule EEVM.Interpreter.Instructions.System.EIP161Test do
     world_state = InMemory.new(accounts: %{0xAA => %{}})
     code = <<0x60, 0xAA, 0xFF>>
 
-    result = EEVM.execute(code, db: world_state, gas: 1_000_000)
+    result = run_code(code, db: world_state, gas: 1_000_000)
 
     assert result.status == :stopped
     assert Database.get_account(result.db, 0xAA) == nil

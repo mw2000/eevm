@@ -131,8 +131,7 @@ defmodule EEVM.TestSupport.BlockchainTestRunner do
          config = block_config(test, header, parent_td),
          {:ok, result} <- Block.execute(block, parent, db, config: config, block_hashes: hashes) do
       {:ok,
-       {result.post_state_db, header,
-        Map.put(hashes, header.number, :binary.decode_unsigned(header.hash)),
+       {result.db, header, Map.put(hashes, header.number, :binary.decode_unsigned(header.hash)),
         parent_td + header.difficulty}}
     end
   end

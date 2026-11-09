@@ -1,5 +1,6 @@
 defmodule EEVM.Interpreter.Instructions.ExhaustivenessTest do
   use ExUnit.Case, async: true
+  import EEVM.TestSupport.MachineHelpers
 
   alias EEVM.Interpreter.Instructions.Registry
 
@@ -24,7 +25,7 @@ defmodule EEVM.Interpreter.Instructions.ExhaustivenessTest do
         # For PUSH opcodes, pad with enough zero bytes
         bytecode = build_bytecode(opcode)
 
-        result = EEVM.execute(bytecode, gas: 1_000_000)
+        result = run_code(bytecode, gas: 1_000_000)
 
         assert result.status in [
                  :stopped,
@@ -95,7 +96,7 @@ defmodule EEVM.Interpreter.Instructions.ExhaustivenessTest do
 
       for opcode <- unassigned do
         bytecode = <<opcode, 0x00>>
-        result = EEVM.execute(bytecode, gas: 1_000_000)
+        result = run_code(bytecode, gas: 1_000_000)
 
         assert result.status == :invalid,
                "Unassigned opcode 0x#{Integer.to_string(opcode, 16)} should halt as :invalid, got: #{inspect(result.status)}"
@@ -105,7 +106,7 @@ defmodule EEVM.Interpreter.Instructions.ExhaustivenessTest do
 
   defp run_at_depth(opcode, depth) do
     code = :binary.copy(<<0x5F>>, depth) <> build_bytecode(opcode)
-    EEVM.execute(code, gas: 1_000_000, hardfork: :osaka)
+    run_code(code, gas: 1_000_000, hardfork: :osaka)
   end
 
   defp hex(opcode), do: "opcode 0x#{Integer.to_string(opcode, 16)}"

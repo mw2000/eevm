@@ -1,5 +1,6 @@
 defmodule EEVM.Interpreter.Instructions.StackMemoryTest do
   use ExUnit.Case, async: true
+  import EEVM.TestSupport.MachineHelpers
 
   alias EEVM.Gas.{Dynamic, Memory, Static}
 
@@ -7,15 +8,15 @@ defmodule EEVM.Interpreter.Instructions.StackMemoryTest do
     test "MSTORE and MLOAD" do
       # PUSH1 0xFF, PUSH1 0, MSTORE, PUSH1 0, MLOAD, STOP
       code = <<0x60, 0xFF, 0x60, 0, 0x52, 0x60, 0, 0x51, 0x00>>
-      result = EEVM.execute(code)
-      assert EEVM.stack_values(result) == [0xFF]
+      result = run_code(code)
+      assert stack_values(result) == [0xFF]
     end
 
     test "MSIZE" do
       # PUSH1 1, PUSH1 0, MSTORE, MSIZE, STOP
       code = <<0x60, 1, 0x60, 0, 0x52, 0x59, 0x00>>
-      result = EEVM.execute(code)
-      assert EEVM.stack_values(result) == [32]
+      result = run_code(code)
+      assert stack_values(result) == [32]
     end
   end
 
@@ -33,8 +34,8 @@ defmodule EEVM.Interpreter.Instructions.StackMemoryTest do
           <<0x00>>
         ])
 
-      result = EEVM.execute(code)
-      [word] = EEVM.stack_values(result)
+      result = run_code(code)
+      [word] = stack_values(result)
 
       assert bytes32(word) |> Enum.take(4) == [0xAA, 0xBB, 0xCC, 0xDD]
     end
@@ -51,8 +52,8 @@ defmodule EEVM.Interpreter.Instructions.StackMemoryTest do
           <<0x00>>
         ])
 
-      result = EEVM.execute(code)
-      [word] = EEVM.stack_values(result)
+      result = run_code(code)
+      [word] = stack_values(result)
 
       assert bytes32(word) |> Enum.take(4) == [0x11, 0x11, 0x22, 0x33]
     end
@@ -69,8 +70,8 @@ defmodule EEVM.Interpreter.Instructions.StackMemoryTest do
           <<0x00>>
         ])
 
-      result = EEVM.execute(code)
-      [word] = EEVM.stack_values(result)
+      result = run_code(code)
+      [word] = stack_values(result)
 
       assert bytes32(word) |> Enum.take(4) == [0x22, 0x33, 0x44, 0x44]
     end
@@ -84,13 +85,13 @@ defmodule EEVM.Interpreter.Instructions.StackMemoryTest do
           <<0x59, 0x00>>
         ])
 
-      result = EEVM.execute(code)
-      assert EEVM.stack_values(result) == [32, 32]
+      result = run_code(code)
+      assert stack_values(result) == [32, 32]
     end
 
     test "gas calculation includes static, copy words, and memory expansion" do
       code = IO.iodata_to_binary([mcopy(64, 0, 33), <<0x00>>])
-      result = EEVM.execute(code, gas: 100_000)
+      result = run_code(code, gas: 100_000)
 
       expected =
         3 + 3 + 3 + Static.static_cost(0x5E) + Dynamic.copy_cost(33) +
@@ -102,8 +103,8 @@ defmodule EEVM.Interpreter.Instructions.StackMemoryTest do
 
     test "memory expansion covers both src and dst ranges" do
       code = IO.iodata_to_binary([mcopy(0, 96, 32), <<0x59, 0x00>>])
-      result = EEVM.execute(code)
-      assert EEVM.stack_values(result) == [128]
+      result = run_code(code)
+      assert stack_values(result) == [128]
     end
 
     test "large copy across word boundaries" do
@@ -121,8 +122,8 @@ defmodule EEVM.Interpreter.Instructions.StackMemoryTest do
           <<0x00>>
         ])
 
-      result = EEVM.execute(code)
-      [word1, word2] = EEVM.stack_values(result)
+      result = run_code(code)
+      [word1, word2] = stack_values(result)
 
       assert bytes32(word1) == Enum.to_list(1..32)
       assert bytes32(word2) |> Enum.take(8) == Enum.to_list(33..40)

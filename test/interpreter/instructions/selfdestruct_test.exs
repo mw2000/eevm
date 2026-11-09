@@ -1,5 +1,6 @@
 defmodule EEVM.Interpreter.Instructions.SelfdestructTest do
   use ExUnit.Case, async: true
+  import EEVM.TestSupport.MachineHelpers
 
   alias EEVM.Context.Contract
   alias EEVM.Database
@@ -36,7 +37,7 @@ defmodule EEVM.Interpreter.Instructions.SelfdestructTest do
       result = EEVM.Interpreter.run(code, db: world_state, contract: contract, gas: 1_000_000)
 
       assert result.status == :stopped
-      assert EEVM.stack_values(result) == []
+      assert stack_values(result) == []
     end
 
     test "halts exceptionally in static context" do
@@ -242,7 +243,7 @@ defmodule EEVM.Interpreter.Instructions.SelfdestructTest do
 
       result = EEVM.Interpreter.run(code, db: world_state, hardfork: :shanghai)
 
-      assert EEVM.stack_values(result) == [3]
+      assert stack_values(result) == [3]
       refute Database.account_exists?(result.db, 0xAA)
       assert Database.get_balance(result.db, 0xBB) == 10
     end

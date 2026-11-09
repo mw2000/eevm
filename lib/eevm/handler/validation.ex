@@ -13,7 +13,7 @@ defmodule EEVM.Handler.Validation do
   `{:error, reason}` for any failure.
   """
 
-  alias EEVM.{BlockEnv, Config, Database, HardforkConfig, TxEnv}
+  alias EEVM.{BlockEnv, Config, Database, HardforkConfig, Tracer, TxEnv}
 
   alias EEVM.Transaction.{
     AccessList,
@@ -48,6 +48,19 @@ defmodule EEVM.Handler.Validation do
     case Keyword.fetch(opts, :chain_id) do
       {:ok, chain_id} -> %{config | chain_id: chain_id}
       :error -> config
+    end
+  end
+
+  @doc """
+  The `EEVM.Tracer` that `opts[:tracer]` asks for: a new one for `true`, the
+  given one, or `nil` (no tracing) when absent or `false`.
+  """
+  @spec resolve_tracer(keyword()) :: Tracer.t() | nil
+  def resolve_tracer(opts) do
+    case Keyword.get(opts, :tracer) do
+      true -> Tracer.new()
+      %Tracer{} = tracer -> tracer
+      off when off in [nil, false] -> nil
     end
   end
 

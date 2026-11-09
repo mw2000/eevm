@@ -78,8 +78,8 @@ defmodule EEVM.Block.ProcessorTest do
         run(header, [], db, system_calls: [hook_a, hook_b])
 
       assert Agent.get(call_log, &Enum.reverse(&1)) == [:a, :b]
-      assert Database.get_balance(result.post_state_db, 0xA) == 1
-      assert Database.get_balance(result.post_state_db, 0xB) == 2
+      assert Database.get_balance(result.db, 0xA) == 1
+      assert Database.get_balance(result.db, 0xB) == 2
 
       # No transactions → receipts/transactions roots are the empty-trie hash.
       empty_root = Trie.root_hash([])
@@ -89,7 +89,7 @@ defmodule EEVM.Block.ProcessorTest do
       assert result.receipts == []
       assert result.gas_used == 0
 
-      assert result.state_root == StateRoot.compute_state_root(result.post_state_db)
+      assert result.state_root == StateRoot.compute_state_root(result.db)
     end
   end
 
@@ -200,7 +200,7 @@ defmodule EEVM.Block.ProcessorTest do
 
       {:ok, result} = run(header, [], db, system_calls: [seed_balance])
 
-      assert Database.get_balance(result.post_state_db, 0xBEEF) == 123
+      assert Database.get_balance(result.db, 0xBEEF) == 123
     end
 
     test "transactions see the post-system-call database" do
@@ -227,7 +227,7 @@ defmodule EEVM.Block.ProcessorTest do
           system_calls: [seed]
         )
 
-      assert Database.get_balance(result.post_state_db, 0xCAFE) == 1_000
+      assert Database.get_balance(result.db, 0xCAFE) == 1_000
     end
   end
 
@@ -245,7 +245,7 @@ defmodule EEVM.Block.ProcessorTest do
         run(header, [tx(id: 1, gas_limit: 100_000, mutate: {0x42, 9_999})], db)
 
       assert result.state_root != pre_root
-      assert result.state_root == StateRoot.compute_state_root(result.post_state_db)
+      assert result.state_root == StateRoot.compute_state_root(result.db)
     end
 
     test "stays stable when no transaction mutates state" do
@@ -310,8 +310,8 @@ defmodule EEVM.Block.ProcessorTest do
 
       {:ok, result} = run(header, [], db, withdrawals: withdrawals)
 
-      assert Database.get_balance(result.post_state_db, 0xAAAA) == 5_000_000_000
-      assert Database.get_balance(result.post_state_db, 0xBBBB) == 7_000_000_000
+      assert Database.get_balance(result.db, 0xAAAA) == 5_000_000_000
+      assert Database.get_balance(result.db, 0xBBBB) == 7_000_000_000
     end
 
     test "state_root reflects withdrawals (applied before commitments)" do
@@ -325,7 +325,7 @@ defmodule EEVM.Block.ProcessorTest do
         )
 
       assert result.state_root != pre_root
-      assert result.state_root == StateRoot.compute_state_root(result.post_state_db)
+      assert result.state_root == StateRoot.compute_state_root(result.db)
     end
 
     test "applies after the transaction fold so txs cannot observe the credit" do
@@ -349,8 +349,8 @@ defmodule EEVM.Block.ProcessorTest do
         )
 
       # The tx ran *before* the withdrawal landed, so it observed a zero balance.
-      assert Database.get_balance(result.post_state_db, 0xCAFE_BABE) == 0
-      assert Database.get_balance(result.post_state_db, 0xCAFE) == 1_000_000_000
+      assert Database.get_balance(result.db, 0xCAFE_BABE) == 0
+      assert Database.get_balance(result.db, 0xCAFE) == 1_000_000_000
     end
 
     test "empty withdrawals list is a no-op" do

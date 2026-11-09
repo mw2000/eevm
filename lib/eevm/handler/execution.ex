@@ -42,6 +42,8 @@ defmodule EEVM.Handler.Execution do
   its authorities start warm and its refund is added to the transaction's
   refund counter even if execution fails.
 
+  `tracer` is the `EEVM.Tracer` to record into, or `nil` to not trace.
+
   Returns the final machine state and the deployed contract address, or `nil`
   for a message call or a failed deployment.
   """
@@ -51,11 +53,20 @@ defmodule EEVM.Handler.Execution do
           BlockEnv.t(),
           Config.t(),
           non_neg_integer(),
-          PreExecution.authorization_outcome()
+          PreExecution.authorization_outcome(),
+          EEVM.Tracer.t() | nil
         ) :: {MachineState.t(), non_neg_integer() | nil}
-  def run_top_level(tx, db, block, config, execution_gas, authorization \\ @no_authorizations)
+  def run_top_level(
+        tx,
+        db,
+        block,
+        config,
+        execution_gas,
+        authorization \\ @no_authorizations,
+        tracer \\ nil
+      )
 
-  def run_top_level(%TxEnv{to: to} = tx, db, block, config, execution_gas, authorization)
+  def run_top_level(%TxEnv{to: to} = tx, db, block, config, execution_gas, authorization, tracer)
       when is_integer(to) do
     db_after_value = transfer_value(db, tx.origin, to, tx.value)
     {code, delegate} = resolve_code(db_after_value, to, config)
@@ -97,13 +108,22 @@ defmodule EEVM.Handler.Execution do
           |> MapSet.union(authorization.authorities)
           |> MapSet.union(MapSet.new(List.wrap(delegate))),
         accessed_storage_keys: PreExecution.initial_accessed_storage_keys(tx),
-        authorization_refund: authorization.refund
+        authorization_refund: authorization.refund,
+        tracer: tracer
       )
 
     {apply_precompile_result(final_state, precompile_result), nil}
   end
 
-  def run_top_level(%TxEnv{to: nil} = tx, db, block, config, execution_gas, _authorization) do
+  def run_top_level(
+        %TxEnv{to: nil} = tx,
+        db,
+        block,
+        config,
+        execution_gas,
+        _authorization,
+        tracer
+      ) do
     creator = tx.origin
     pre_nonce = max(Database.get_nonce(db, creator) - 1, 0)
     new_address = derive_create_address(creator, pre_nonce)
@@ -111,9 +131,10 @@ defmodule EEVM.Handler.Execution do
     if Creation.address_collision?(db, new_address) do
       # EIP-684: creating over an existing account fails and consumes all of
       # the transaction's execution gas; the sender's nonce bump stands.
-      {zero_gas_revert(MachineState.new(<<>>, db: db, tx: tx, block: block, config: config)), nil}
+      state = MachineState.new(<<>>, db: db, tx: tx, block: block, config: config, tracer: tracer)
+      {MachineState.halt(state, {:error, :create_collision}), nil}
     else
-      run_initcode(tx, db, block, config, execution_gas, new_address)
+      run_initcode(tx, db, block, config, execution_gas, new_address, tracer)
     end
   end
 
@@ -129,7 +150,7 @@ defmodule EEVM.Handler.Execution do
   defp apply_precompile_result(state, {:error, reason}),
     do: MachineState.halt(state, {:error, reason})
 
-  defp run_initcode(tx, db, block, config, execution_gas, new_address) do
+  defp run_initcode(tx, db, block, config, execution_gas, new_address, tracer) do
     creator = tx.origin
 
     # The new account exists before its initcode runs, with nonce 1 from
@@ -165,7 +186,8 @@ defmodule EEVM.Handler.Execution do
         accessed_addresses:
           PreExecution.initial_accessed_addresses(tx, config, contract_ctx, block),
         accessed_storage_keys: PreExecution.initial_accessed_storage_keys(tx),
-        created_addresses: MapSet.new([new_address])
+        created_addresses: MapSet.new([new_address]),
+        tracer: tracer
       )
       |> Interpreter.run_loop()
       |> deploy_runtime_code(new_address)
@@ -196,14 +218,14 @@ defmodule EEVM.Handler.Execution do
 
     cond do
       size > @max_code_size ->
-        {:error, zero_gas_revert(state)}
+        {:error, MachineState.halt(state, {:error, :code_size_limit_exceeded})}
 
       state.frame.gas < deposit_cost ->
-        {:error, zero_gas_revert(state)}
+        {:error, MachineState.halt(state, :out_of_gas)}
 
       size > 0 and :binary.first(runtime_code) == 0xEF and
           HardforkConfig.enabled?(state.env.config.hardfork, :eip_3541) ->
-        {:error, zero_gas_revert(state)}
+        {:error, MachineState.halt(state, {:error, :invalid_code_prefix})}
 
       true ->
         # If the initcode SELFDESTRUCTed, Interpreter.finalize/3 still deletes
@@ -216,12 +238,6 @@ defmodule EEVM.Handler.Execution do
   end
 
   defp deploy_runtime_code(state, _new_address), do: {:error, state}
-
-  defp zero_gas_revert(state) do
-    state
-    |> MachineState.update_frame(&%{&1 | gas: 0})
-    |> Map.put(:status, :reverted)
-  end
 
   defp transfer_value(%Database{} = db, _from, _to, 0), do: db
 

@@ -26,6 +26,10 @@ defmodule EEVM.Error do
   | `:return_data_out_of_bounds` | `EEVM.Interpreter.Instructions.Environment.Data` | RETURNDATACOPY reads past the end of the return data buffer |
   | `:initcode_too_large` | `EEVM.Interpreter.Instructions.System.Creation` | CREATE/CREATE2 initcode exceeds 49,152 bytes (EIP-3860) |
   | `:insufficient_balance` | `EEVM.Database.transfer/4` | Transfer amount exceeds account balance |
+  | `:invalid_opcode` | `EEVM.Interpreter` | INVALID (0xFE) or an opcode the fork doesn't define |
+  | `:create_collision` | `EEVM.Handler.Execution` | A creation transaction targets an address that already has code, a nonce, or storage (EIP-684, EIP-7610) |
+  | `:code_size_limit_exceeded` | `EEVM.Handler.Execution` | Deployed code is over 24,576 bytes (EIP-170) |
+  | `:invalid_code_prefix` | `EEVM.Handler.Execution` | Deployed code starts with 0xEF (EIP-3541, from London) |
 
   ## Precompile Errors
 
@@ -139,16 +143,16 @@ defmodule EEVM.Error do
   |-------|--------|---------|
   | `:unknown_opcode` | `EEVM.Interpreter.Instructions.Registry` | Opcode byte has no known metadata |
 
-  ## Machine State Status Values
+  ## Execution status
 
-  The `MachineState.status` field uses these atoms (not errors, but related):
+  `EEVM.CallResult` and `EEVM.TransactionResult` report how execution ended
+  in `status`, which is not an error:
 
-  - `:running` — execution in progress
-  - `:stopped` — normal termination (STOP or RETURN)
-  - `:reverted` — controlled failure (REVERT)
-  - `:invalid` — INVALID opcode or unknown opcode executed
-  - `:out_of_gas` — gas exhausted
-  - `{:error, reason}` — wrapped error from opcode execution
+  - `:success` — STOP or RETURN
+  - `:revert` — REVERT; the call's state changes are undone and unused gas
+    is returned
+  - `{:halt, reason}` — an exceptional halt that consumes all the call's
+    gas, with an execution or precompile error from this module as `reason`
   """
 
   @type execution_error ::
@@ -160,6 +164,10 @@ defmodule EEVM.Error do
           | :return_data_out_of_bounds
           | :initcode_too_large
           | :insufficient_balance
+          | :invalid_opcode
+          | :create_collision
+          | :code_size_limit_exceeded
+          | :invalid_code_prefix
 
   @type precompile_error ::
           :out_of_gas
@@ -235,6 +243,9 @@ defmodule EEVM.Error do
           | :system_contract_call_failed
           | :invalid_requests_hash
 
+  @typedoc "Why execution halted exceptionally: the `reason` in `{:halt, reason}`."
+  @type halt_reason :: execution_error() | precompile_error()
+
   @typedoc "Every error reason eevm returns."
   @type reason ::
           execution_error()
@@ -253,6 +264,10 @@ defmodule EEVM.Error do
     return_data_out_of_bounds: "read past the end of the return data",
     initcode_too_large: "initcode larger than 49152 bytes",
     insufficient_balance: "insufficient balance",
+    invalid_opcode: "invalid opcode",
+    create_collision: "contract address already in use",
+    code_size_limit_exceeded: "deployed code larger than 24576 bytes",
+    invalid_code_prefix: "deployed code starts with 0xEF",
     invalid_input: "invalid precompile input",
     invalid_point: "point not on the curve",
     invalid_versioned_hash: "invalid blob versioned hash",

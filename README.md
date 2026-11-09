@@ -46,38 +46,46 @@ Requirements:
 
 ## Quick start
 
-### Execute bytecode
+### Run bytecode
+
+`EEVM.run/2` runs code as a message call with no transaction rules, which suits
+tests and `eth_call`-style probes. It returns `{:ok, %EEVM.CallResult{}}` with a
+`status` of `:success`, `:revert`, or `{:halt, reason}`.
 
 ```elixir
-# PUSH1 10, PUSH1 20, ADD, STOP
-iex> EEVM.execute(<<0x60, 10, 0x60, 20, 0x01, 0x00>>) |> EEVM.stack_values()
+# PUSH1 42, PUSH1 0, MSTORE, PUSH1 32, PUSH1 0, RETURN
+iex> {:ok, result} = EEVM.run(<<0x60, 42, 0x60, 0, 0x52, 0x60, 32, 0x60, 0, 0xF3>>, gas: 100_000)
+iex> {result.status, :binary.decode_unsigned(result.return_data), result.gas_used}
+{:success, 42, 18}
+
+# PUSH1 10, PUSH1 20, ADD, STOP; debug: true returns the final stack
+iex> {:ok, result} = EEVM.run(<<0x60, 10, 0x60, 20, 0x01, 0x00>>, debug: true)
+iex> result.stack
 [30]
 
-# PUSH1 42, PUSH1 0, MSTORE, PUSH1 32, PUSH1 0, RETURN
-iex> state = EEVM.execute(<<0x60, 42, 0x60, 0, 0x52, 0x60, 32, 0x60, 0, 0xF3>>, gas: 100_000)
-iex> :binary.decode_unsigned(state.frame.return_data)
-42
-iex> 100_000 - state.frame.gas
-18
+iex> EEVM.run(<<0xFE>>) |> elem(1) |> Map.fetch!(:status)
+{:halt, :invalid_opcode}
 
 iex> EEVM.disassemble(<<0x60, 0x01, 0x60, 0x02, 0x01, 0x00>>)
 [{0, "PUSH1", "0x01"}, {2, "PUSH1", "0x02"}, {4, "ADD", nil}, {5, "STOP", nil}]
 ```
 
-`EEVM.trace/2` runs the same code with an opcode-level tracer, and
-`EEVM.Tracer.to_json/1` renders it in the EIP-3155 format that geth and other
-clients use, so traces can be diffed against them.
+`:address`, `:caller`, `:value`, and `:calldata` set up the call, and `:db`,
+`:block`, and `:tx` its environment. With `tracer: true`, `result.trace` holds
+an opcode-level `EEVM.Tracer`, and `EEVM.Tracer.to_json/1` renders it in the
+EIP-3155 format that geth and other clients use, so traces can be diffed
+against them. `EEVM.transact/4` and `EEVM.Block.execute/4` take `tracer: true`
+too.
 
 ### Execute a transaction
 
-`EEVM.Handler.execute/4` runs a signed transaction end to end: decode, recover
-the sender, validate, charge gas, execute, refund, and pay the coinbase. It
-returns `{:ok, %EEVM.TransactionResult{}}` for any transaction that passes
-validation, including reverted ones, and `{:error, reason}` otherwise.
+`EEVM.transact/4` runs a signed transaction end to end: decode, recover the
+sender, validate, charge gas, execute, refund, and pay the coinbase. It returns
+`{:ok, %EEVM.TransactionResult{}}` for any transaction that passes validation,
+including reverted and halted ones, and `{:error, reason}` otherwise.
 
 ```elixir
-alias EEVM.{Config, Database}
-alias EEVM.BlockEnv
+alias EEVM.{BlockEnv, Config, Database}
 alias EEVM.Database.InMemory
 alias EEVM.Transaction.{FeeMarket, Signer}
 
@@ -95,20 +103,20 @@ config = Config.new(:cancun, chain_id: 1)
              to: <<recipient::160>>, value: 1_000}
   |> Signer.sign(private_key, config)
 
-{:ok, result} = EEVM.Handler.execute(tx, block, db, config: config)
+{:ok, result} = EEVM.transact(tx, block, db, config: config)
 
 result.status
 #=> :success
-result.gas_used
-#=> 21000
-Database.get_balance(result.post_state_db, recipient)
+result.receipt
+#=> %EEVM.Block.Receipt{tx_type: :eip1559, status: 1, cumulative_gas_used: 21000, ...}
+Database.get_balance(result.db, recipient)
 #=> 1000
-EEVM.StateRoot.compute_state_root(result.post_state_db) |> Base.encode16(case: :lower)
+EEVM.StateRoot.compute_state_root(result.db) |> Base.encode16(case: :lower)
 #=> "7b838becc60c5d28adc4a332cd44cf603b4ef0e590f50a268de2457cbc78fa09"
 ```
 
 Addresses are integers in the database API and 20-byte binaries in transaction
-structs, matching their wire encoding. `EEVM.Handler.execute/4` also accepts raw
+structs, matching their wire encoding. `EEVM.transact/4` also accepts raw
 signed transaction bytes.
 
 ### Build, encode, and execute a block
@@ -120,7 +128,7 @@ RLP. `execute/4` validates a block against its parent (including the EIP-7934
 size limit from Osaka), applies the system calls, transactions, withdrawals,
 and from Prague the EIP-7685 requests, and checks the header's commitments.
 Both take the same `:config` (or `:hardfork` shorthand) option as
-`EEVM.Handler.execute/4`, and errors are listed in `EEVM.Error`.
+`EEVM.transact/4`, and errors are listed in `EEVM.Error`.
 
 ```elixir
 iex> alias EEVM.Block
@@ -137,7 +145,7 @@ iex> parent = EEVM.Block.Header.new(gas_limit: 30_000_000, base_fee_per_gas: 7, 
 iex> {:ok, block, _result} = Block.build(parent, [tx], db, config: config, timestamp: 12)
 iex> {:ok, decoded} = block |> Block.encode() |> Block.decode()
 iex> {:ok, result} = Block.execute(decoded, parent, db, config: config)
-iex> {result.gas_used, EEVM.Database.get_balance(result.post_state_db, 0xB0B)}
+iex> {result.gas_used, EEVM.Database.get_balance(result.db, 0xB0B)}
 {21000, 1000}
 ```
 

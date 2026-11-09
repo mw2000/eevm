@@ -1,5 +1,6 @@
 defmodule EEVM.Interpreter.JournalTest do
   use ExUnit.Case, async: true
+  import EEVM.TestSupport.MachineHelpers
 
   alias EEVM.Database.InMemory
   alias EEVM.Interpreter.{Journal, MachineState}
@@ -48,7 +49,7 @@ defmodule EEVM.Interpreter.JournalTest do
 
       merged = Journal.merge_child_result(parent, child)
 
-      assert EEVM.logs(merged) == [parent_log, child_log_1, child_log_2]
+      assert logs(merged) == [parent_log, child_log_1, child_log_2]
     end
   end
 

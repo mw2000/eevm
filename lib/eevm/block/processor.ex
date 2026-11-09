@@ -23,9 +23,10 @@ defmodule EEVM.Block.Processor do
     database after all prior transactions and system calls have been
     applied. The returned `tx_result` is a map with keys `:status`,
     `:gas_used`, `:logs`, and `:db`, plus an optional `:tx_type` (default
-    `:legacy`) that selects the EIP-2718 receipt encoding and an optional
+    `:legacy`) that selects the EIP-2718 receipt encoding, an optional
     `:state_root` that the receipt carries in place of its status (before
-    Byzantium, EIP-658).
+    Byzantium, EIP-658), and an optional `:trace` (an `EEVM.Tracer`); when
+    any transaction returns one, `result.trace` lists them in order.
   - `:system_calls` — list of hooks, each `(%Database{}, %EEVM.BlockEnv{})
     -> %Database{}`. Executed in order, strictly before any transaction.
     The default is `[]`.
@@ -64,7 +65,8 @@ defmodule EEVM.Block.Processor do
           required(:logs) => [Bloom.log_entry()],
           required(:db) => Database.t(),
           optional(:tx_type) => Receipt.tx_type(),
-          optional(:state_root) => binary()
+          optional(:state_root) => binary(),
+          optional(:trace) => EEVM.Tracer.t() | nil
         }
 
   @type tx_executor :: (term(), BlockEnv.t(), Database.t() ->
@@ -117,7 +119,7 @@ defmodule EEVM.Block.Processor do
     block_ctx = Keyword.get_lazy(opts, :block_context, fn -> to_block_ctx(header) end)
     db_after_system = apply_system_calls(pre_state_db, block_ctx, system_calls)
 
-    with {:ok, receipts, post_tx_db, gas_used} <-
+    with {:ok, receipts, traces, post_tx_db, gas_used} <-
            execute_transactions(transactions, block_ctx, db_after_system, tx_executor, header),
          post_rewards_db = apply_rewards(post_tx_db, Keyword.get(opts, :rewards, [])),
          post_withdrawals_db = apply_withdrawals(post_rewards_db, withdrawals),
@@ -129,7 +131,7 @@ defmodule EEVM.Block.Processor do
              receipts
            ) do
       result = build_result(post_db, receipts, transactions, gas_used, tx_encoder)
-      {:ok, %{result | requests: requests}}
+      {:ok, %{result | requests: requests, trace: if(Enum.any?(traces), do: traces)}}
     end
   end
 
@@ -156,13 +158,13 @@ defmodule EEVM.Block.Processor do
   # ---------------------------------------------------------------------------
 
   @spec execute_transactions([term()], BlockEnv.t(), Database.t(), tx_executor(), Header.t()) ::
-          {:ok, [Receipt.t()], Database.t(), non_neg_integer()}
+          {:ok, [Receipt.t()], [EEVM.Tracer.t() | nil], Database.t(), non_neg_integer()}
           | {:error, {:tx_failed, non_neg_integer(), term()}}
   defp execute_transactions(transactions, block_ctx, db, tx_executor, %Header{} = header) do
-    initial = {[], db, 0, 0}
+    initial = {[], [], db, 0, 0}
 
     transactions
-    |> Enum.reduce_while(initial, fn tx, {receipts, db_acc, cumulative_gas, index} ->
+    |> Enum.reduce_while(initial, fn tx, {receipts, traces, db_acc, cumulative_gas, index} ->
       # A transaction may only claim the gas still left in the block.
       if tx_gas_limit(tx) > header.gas_limit - cumulative_gas do
         {:halt, {:error, {:tx_failed, index, :gas_allowance_exceeded}}}
@@ -180,7 +182,8 @@ defmodule EEVM.Block.Processor do
               logs_bloom: Bloom.from_logs(logs)
             }
 
-            {:cont, {[receipt | receipts], new_db, new_cumulative, index + 1}}
+            trace = Map.get(tx_result, :trace)
+            {:cont, {[receipt | receipts], [trace | traces], new_db, new_cumulative, index + 1}}
 
           {:error, reason} ->
             {:halt, {:error, {:tx_failed, index, reason}}}
@@ -191,8 +194,8 @@ defmodule EEVM.Block.Processor do
       {:error, _} = error ->
         error
 
-      {receipts, post_db, cumulative_gas, _index} ->
-        {:ok, Enum.reverse(receipts), post_db, cumulative_gas}
+      {receipts, traces, post_db, cumulative_gas, _index} ->
+        {:ok, Enum.reverse(receipts), Enum.reverse(traces), post_db, cumulative_gas}
     end
   end
 
@@ -242,6 +245,7 @@ defmodule EEVM.Block.Processor do
         ) :: Result.t()
   defp build_result(post_db, receipts, transactions, gas_used, tx_encoder) do
     %Result{
+      db: post_db,
       post_state_db: post_db,
       receipts: receipts,
       state_root: StateRoot.compute_state_root(post_db),
