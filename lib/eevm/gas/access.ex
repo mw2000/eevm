@@ -18,6 +18,10 @@ defmodule EEVM.Gas.Access do
   the appropriate cost. The state's `accessed_addresses` and `accessed_storage_keys`
   MapSets are updated on each cold access.
 
+  Before Berlin there is no warm/cold distinction: the opcodes' flat static
+  costs (`EEVM.Gas.Static.static_cost/2`) cover the access, so these functions
+  charge nothing.
+
   ## References
 
   - [EIP-2929: Gas cost increases for state access opcodes](https://eips.ethereum.org/EIPS/eip-2929)
@@ -46,9 +50,26 @@ defmodule EEVM.Gas.Access do
         {@cold_account_access_cost, %{state | substate: new_sub}}
       end
     else
-      # Pre-EIP-2929 (pre-Berlin): flat warm cost — the static cost table already
-      # encodes the pre-Berlin prices for most opcodes; access.ex adds nothing extra.
-      {@warm_storage_read_cost, state}
+      # Pre-Berlin the opcode's flat static cost (Gas.Static.static_cost/2) is the
+      # whole access price.
+      {0, state}
+    end
+  end
+
+  @doc """
+  Extra access cost of a CALL-family target. Their static cost already
+  includes the warm price (100), so from Berlin a cold target adds 2,500.
+  Marks `address` warm.
+  """
+  @spec call_access_cost(MachineState.t(), non_neg_integer()) ::
+          {non_neg_integer(), MachineState.t()}
+  def call_access_cost(state, address) do
+    case address_access_cost(state, address) do
+      {@cold_account_access_cost, state} ->
+        {@cold_account_access_cost - @warm_storage_read_cost, state}
+
+      {_warm_or_pre_berlin, state} ->
+        {0, state}
     end
   end
 
@@ -66,8 +87,8 @@ defmodule EEVM.Gas.Access do
         {@cold_sload_cost, %{state | substate: new_sub}}
       end
     else
-      # Pre-EIP-2929: flat warm cost (pre-Berlin SLOAD was 800, but our static costs
-      # already reflect post-Berlin values, so we return 0 to avoid double-counting).
+      # Pre-Berlin SLOAD's flat static cost (Gas.Static.static_cost/2) is the
+      # whole access price.
       {0, state}
     end
   end

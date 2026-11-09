@@ -397,11 +397,45 @@ defmodule EEVM.HardforkConfigTest do
       berlin_gas_used = 100_000 - berlin_result.frame.gas
       assert berlin_gas_used == 3 + 2100
 
-      # Pre-Berlin: no cold/warm distinction — storage_access_cost returns {0, state}
+      # Pre-Berlin: no cold/warm distinction, only SLOAD's flat EIP-1884 price
       istanbul_result = EEVM.execute(code, hardfork: :istanbul, gas: 100_000)
       istanbul_gas_used = 100_000 - istanbul_result.frame.gas
-      # PUSH1(3) + SLOAD(0 extra, no cold/warm penalty) = 3
-      assert istanbul_gas_used == 3
+      assert istanbul_gas_used == 3 + 800
+    end
+  end
+
+  # ---------------------------------------------------------------------------
+  # Pre-Berlin static gas schedule (EIP-150, EIP-1884)
+  # ---------------------------------------------------------------------------
+
+  describe "pre-Berlin static gas schedule" do
+    # Gas used by `PUSH1 0xAB, <opcode>, STOP` on each fork, minus the PUSH1.
+    # 0xAB is a cold address and a cold slot.
+    defp access_opcode_cost(opcode, fork) do
+      result = EEVM.execute(<<0x60, 0xAB, opcode, 0x00>>, hardfork: fork, gas: 100_000)
+      100_000 - result.frame.gas - 3
+    end
+
+    test "SLOAD: 50 on Frontier, 200 from EIP-150, 800 from EIP-1884, cold 2100 from Berlin" do
+      assert access_opcode_cost(0x54, :homestead) == 50
+      assert access_opcode_cost(0x54, :tangerine_whistle) == 200
+      assert access_opcode_cost(0x54, :constantinople) == 200
+      assert access_opcode_cost(0x54, :istanbul) == 800
+      assert access_opcode_cost(0x54, :berlin) == 2100
+    end
+
+    test "BALANCE: 20 on Frontier, 400 from EIP-150, 700 from EIP-1884, cold 2600 from Berlin" do
+      assert access_opcode_cost(0x31, :frontier) == 20
+      assert access_opcode_cost(0x31, :spurious_dragon) == 400
+      assert access_opcode_cost(0x31, :istanbul) == 700
+      assert access_opcode_cost(0x31, :berlin) == 2600
+    end
+
+    test "EXTCODESIZE and EXTCODEHASH follow EIP-150 and EIP-1884" do
+      assert access_opcode_cost(0x3B, :frontier) == 20
+      assert access_opcode_cost(0x3B, :istanbul) == 700
+      assert access_opcode_cost(0x3F, :constantinople) == 400
+      assert access_opcode_cost(0x3F, :istanbul) == 700
     end
   end
 

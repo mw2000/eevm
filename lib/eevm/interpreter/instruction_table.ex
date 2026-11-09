@@ -35,15 +35,7 @@ defmodule EEVM.Interpreter.InstructionTable do
 
   @invalid 0xFE
 
-  @doc """
-  Returns the dispatch table for `spec_id`.
-
-  ## Example
-
-      iex> table = EEVM.Interpreter.InstructionTable.for_spec(:cancun)
-      iex> elem(table, 0x01)
-      {3, EEVM.Interpreter.Instructions.Arithmetic, 0x01, false}
-  """
+  @doc "Returns the dispatch table for `spec_id`."
   @spec for_spec(HardforkConfig.spec_id()) :: t()
   def for_spec(spec_id)
 
@@ -51,7 +43,7 @@ defmodule EEVM.Interpreter.InstructionTable do
     hardfork = HardforkConfig.new(spec_id)
 
     entry = fn opcode, info ->
-      {Static.static_cost(opcode), info.module, opcode, info.inputs,
+      {Static.static_cost(opcode, spec_id), info.module, opcode, info.inputs,
        Stack.max_depth() - info.outputs + info.inputs, Map.get(info, :state_mutating, false)}
     end
 

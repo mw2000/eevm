@@ -3,6 +3,8 @@ defmodule EEVM.GasTest do
 
   alias EEVM.Gas.{Dynamic, Memory, Static}
 
+  doctest Static
+
   describe "Gas Metering" do
     test "gas is consumed by arithmetic opcodes" do
       # PUSH1 2, PUSH1 3, ADD, STOP

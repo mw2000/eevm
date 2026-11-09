@@ -18,8 +18,9 @@ defmodule EEVM.Interpreter.Instructions.System.Calls do
 
   ## Target access and EIP-7702 delegation
 
-  Each call charges EIP-2929 cold access for its target on top of the warm
-  cost in the static table. From Prague, a target whose code is a delegation
+  From Berlin, each call charges EIP-2929 cold access for its target on top
+  of the warm cost in the static table; before, the static cost is the whole
+  access price. From Prague, a target whose code is a delegation
   designator (`0xef0100 || delegate`) runs the delegate's code, charges the
   delegate's cold or warm access as well, and never dispatches to a
   precompile, even when the delegate is one.
@@ -34,8 +35,6 @@ defmodule EEVM.Interpreter.Instructions.System.Calls do
   alias EEVM.Interpreter.{Journal, MachineState, Memory, Stack}
   alias EEVM.Precompiles
 
-  # Warm access is already charged as the static cost of every call opcode.
-  @warm_access_cost 100
   @max_call_depth 1024
 
   @doc "Execute CALL (0xF1), CALLCODE (0xF2), DELEGATECALL (0xF4), or STATICCALL (0xFA)."
@@ -505,17 +504,16 @@ defmodule EEVM.Interpreter.Instructions.System.Calls do
   # target (and delegate) warmed, the code to run, and whether the target
   # delegates.
   defp access_target(state, address) do
-    {target_cost, state} = Access.address_access_cost(state, address)
+    {target_cost, state} = Access.call_access_cost(state, address)
     code = Database.get_code(state.db, address)
 
     with true <- HardforkConfig.enabled?(state.env.config.hardfork, :eip_7702),
          {:ok, delegate} <- Delegation.delegated_address(code) do
       {delegate_cost, state} = Access.address_access_cost(state, delegate)
 
-      {target_cost - @warm_access_cost + delegate_cost, state,
-       Database.get_code(state.db, delegate), true}
+      {target_cost + delegate_cost, state, Database.get_code(state.db, delegate), true}
     else
-      _ -> {target_cost - @warm_access_cost, state, code, false}
+      _ -> {target_cost, state, code, false}
     end
   end
 

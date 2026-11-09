@@ -20,11 +20,30 @@ defmodule EEVM.Gas.Static do
   Some opcodes have a static cost of 0 because their full cost is computed dynamically
   (e.g., BALANCE, EXTCODESIZE, SLOAD, SSTORE use EIP-2929 access costs instead).
 
+  ## Pre-Berlin schedule
+
+  `static_cost/1` is the Berlin-onward schedule. Before EIP-2929, the
+  state-access opcodes carried flat static prices instead, which
+  `static_cost/2` applies by hardfork:
+
+  | Opcode | Frontier | EIP-150 (Tangerine Whistle) | EIP-1884 (Istanbul) |
+  |--------|----------|-----------------------------|---------------------|
+  | BALANCE | 20 | 400 | 700 |
+  | EXTCODESIZE, EXTCODECOPY | 20 | 700 | 700 |
+  | EXTCODEHASH | — | 400 (EIP-1052) | 700 |
+  | SLOAD | 50 | 200 | 800 |
+  | CALL, CALLCODE, DELEGATECALL, STATICCALL | 40 | 700 | 700 |
+  | SELFDESTRUCT | 0 | 5000 | 5000 |
+
   ## References
 
   - [Ethereum Yellow Paper, Appendix G](https://ethereum.github.io/yellowpaper/paper.pdf)
+  - [EIP-150: Gas cost changes for IO-heavy operations](https://eips.ethereum.org/EIPS/eip-150)
+  - [EIP-1884: Repricing for trie-size-dependent opcodes](https://eips.ethereum.org/EIPS/eip-1884)
   - [EIP-2929: Gas cost increases for state access opcodes](https://eips.ethereum.org/EIPS/eip-2929)
   """
+
+  alias EEVM.HardforkConfig
 
   # Yellow Paper Appendix G — gas cost tiers
   @gas_zero 0
@@ -46,8 +65,71 @@ defmodule EEVM.Gas.Static do
   @gas_create 32_000
   @gas_selfdestruct 5000
 
+  # Frontier prices of the opcodes EIP-150 later repriced.
+  @frontier_costs %{
+    0x31 => 20,
+    0x3B => 20,
+    0x3C => 20,
+    0x54 => 50,
+    0xF1 => 40,
+    0xF2 => 40,
+    0xF4 => 40,
+    0xFF => 0
+  }
+
+  # EIP-150 (Tangerine Whistle) prices, also used for EXTCODEHASH (EIP-1052)
+  # and STATICCALL (EIP-214), which arrived later at these prices.
+  @eip_150_costs %{
+    0x31 => 400,
+    0x3B => 700,
+    0x3C => 700,
+    0x3F => 400,
+    0x54 => 200,
+    0xF1 => 700,
+    0xF2 => 700,
+    0xF4 => 700,
+    0xFA => 700,
+    0xFF => @gas_selfdestruct
+  }
+
+  # EIP-1884 (Istanbul) repricing of trie-size-dependent opcodes.
+  @eip_1884_costs Map.merge(@eip_150_costs, %{0x31 => 700, 0x3F => 700, 0x54 => 800})
+
   @doc """
-  Returns the static gas cost for the given opcode byte.
+  Returns the static gas cost of `opcode` under hardfork `spec_id`.
+
+  From Berlin on this is `static_cost/1`; earlier forks price the
+  state-access opcodes with the flat schedules in the module docs.
+
+  ## Examples
+
+      iex> EEVM.Gas.Static.static_cost(0x54, :frontier)
+      50
+
+      iex> EEVM.Gas.Static.static_cost(0x54, :istanbul)
+      800
+
+      iex> EEVM.Gas.Static.static_cost(0x54, :berlin)
+      0
+  """
+  @spec static_cost(non_neg_integer(), HardforkConfig.spec_id()) :: non_neg_integer()
+  def static_cost(opcode, spec_id) do
+    hardfork = HardforkConfig.new(spec_id)
+
+    repriced =
+      cond do
+        HardforkConfig.enabled?(hardfork, :eip_2929) -> %{}
+        HardforkConfig.enabled?(hardfork, :eip_1884) -> @eip_1884_costs
+        HardforkConfig.enabled?(hardfork, :eip_150) -> @eip_150_costs
+        true -> @frontier_costs
+      end
+
+    Map.get_lazy(repriced, opcode, fn -> static_cost(opcode) end)
+  end
+
+  @doc """
+  Returns the static gas cost for the given opcode byte under the
+  Berlin-onward schedule. See `static_cost/2` for earlier hardforks.
 
   This cost is charged by the executor before dispatching to the opcode handler.
   Dynamic costs (memory expansion, storage access, etc.) are charged separately
