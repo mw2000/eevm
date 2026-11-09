@@ -33,12 +33,13 @@ defmodule EEVM.Interpreter.Instructions.Environment.Data do
       if length == 0 do
         {:ok, state |> MachineState.update_frame(&%{&1 | stack: s3}) |> MachineState.advance_pc()}
       else
-        expansion_cost =
-          GasMemory.memory_expansion_cost(Memory.size(state.frame.memory), dest_offset, length)
+        dynamic_cost =
+          Dynamic.copy_cost(length) +
+            GasMemory.memory_expansion_cost(Memory.size(state.frame.memory), dest_offset, length)
 
         case MachineState.consume_gas(
                MachineState.update_frame(state, &%{&1 | stack: s3}),
-               expansion_cost
+               dynamic_cost
              ) do
           {:ok, state_after_gas} ->
             calldata = state_after_gas.frame.contract.calldata

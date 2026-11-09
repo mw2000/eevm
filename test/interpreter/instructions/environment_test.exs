@@ -87,6 +87,16 @@ defmodule EEVM.Interpreter.Instructions.EnvironmentTest do
       assert EEVM.stack_values(result) == [expected]
     end
 
+    test "CALLDATACOPY gas includes static, per-word copy, and memory expansion" do
+      contract = Contract.new(calldata: :binary.copy(<<0xAB>>, 40))
+      # PUSH1 40 (length), PUSH1 0 (data_offset), PUSH1 0 (dest_offset), CALLDATACOPY, STOP
+      code = <<0x60, 40, 0x60, 0, 0x60, 0, 0x37, 0x00>>
+      result = EEVM.execute(code, gas: 1_000, contract: contract)
+
+      # 3 × PUSH1 (9) + CALLDATACOPY static (3) + 2 words copied (6) + 2 words of memory (6)
+      assert result.frame.gas == 1_000 - 24
+    end
+
     test "CODESIZE pushes bytecode length" do
       # CODESIZE, STOP — 2 bytes of code
       code = <<0x38, 0x00>>
