@@ -41,14 +41,28 @@ defmodule EEVM.TestSupport.BlockchainTestFixture do
     @type t :: %__MODULE__{
             name: String.t(),
             network: EEVM.HardforkConfig.spec_id(),
+            transition: EEVM.TestSupport.BlockchainTestFixture.transition() | nil,
             pre: %{non_neg_integer() => Account.t()},
             post: %{non_neg_integer() => Account.t()},
             genesis_rlp: binary(),
             blocks: [Block.t()]
           }
 
-    defstruct [:name, :network, :pre, :post, :genesis_rlp, blocks: []]
+    defstruct [:name, :network, :transition, :pre, :post, :genesis_rlp, blocks: []]
   end
+
+  @typedoc """
+  A mid-chain fork switch from a synthetic network name such as
+  `PragueToOsakaAtTime15k`: blocks before `at` run on `from`, the rest on the
+  case's `network`. `:merge` (from `...AtDiff...` names) activates on the first
+  block with zero difficulty.
+  """
+  @type transition :: %{
+          from: EEVM.HardforkConfig.spec_id(),
+          at: {:block, non_neg_integer()} | {:timestamp, non_neg_integer()} | :merge
+        }
+
+  @transition_network ~r/^(?<from>\w+?)To(?<to>\w+?)At(?<kind>Time|Diff)?(?<value>\w+)$/
 
   @spec load_file!(binary()) :: [Case.t()]
   def load_file!(path) do
@@ -56,9 +70,12 @@ defmodule EEVM.TestSupport.BlockchainTestFixture do
     |> File.read!()
     |> Jason.decode!()
     |> Enum.map(fn {name, payload} ->
+      {network, transition} = parse_network!(Map.fetch!(payload, "network"))
+
       %Case{
         name: name,
-        network: parse_network!(Map.fetch!(payload, "network")),
+        network: network,
+        transition: transition,
         pre: parse_accounts(Map.fetch!(payload, "pre")),
         post: parse_accounts(Map.get(payload, "postState", %{})),
         genesis_rlp: parse_bytes!(Map.fetch!(payload, "genesisRLP")),
@@ -93,38 +110,47 @@ defmodule EEVM.TestSupport.BlockchainTestFixture do
     end)
   end
 
-  defp parse_network!("Frontier"), do: :frontier
-  defp parse_network!("Homestead"), do: :homestead
-  defp parse_network!("Dao"), do: :homestead
-  defp parse_network!("EIP150"), do: :tangerine_whistle
-  defp parse_network!("EIP158"), do: :spurious_dragon
-  defp parse_network!("Byzantium"), do: :byzantium
-  defp parse_network!("Constantinople"), do: :constantinople
-  defp parse_network!("ConstantinopleFix"), do: :constantinople
-  defp parse_network!("Istanbul"), do: :istanbul
-  defp parse_network!("Berlin"), do: :berlin
-  defp parse_network!("London"), do: :london
-  defp parse_network!("Paris"), do: :paris
-  defp parse_network!("Merge"), do: :paris
-  defp parse_network!("Shanghai"), do: :shanghai
-  defp parse_network!("Cancun"), do: :cancun
-  defp parse_network!("Prague"), do: :prague
-  defp parse_network!("Osaka"), do: :osaka
+  defp parse_network!(name) do
+    case Regex.named_captures(@transition_network, name) do
+      nil ->
+        {parse_fork!(name), nil}
 
-  defp parse_network!(other) when is_binary(other) do
-    # Synthetic transition names look like "<From>To<To>At<...>". The runner
-    # cannot model mid-chain fork switching, so we surface the destination
-    # fork and let problem cases land in skip.txt.
-    head =
-      other
-      |> String.split("At", parts: 2)
-      |> hd()
-
-    case String.split(head, "To") do
-      [_, to_fork] when to_fork != "" -> parse_network!(to_fork)
-      _ -> raise ArgumentError, "unsupported network #{inspect(other)}"
+      %{"from" => from, "to" => to, "kind" => kind, "value" => value} ->
+        {parse_fork!(to), %{from: parse_fork!(from), at: parse_activation!(kind, value)}}
     end
   end
+
+  defp parse_activation!("", value), do: {:block, String.to_integer(value)}
+  defp parse_activation!("Time", value), do: {:timestamp, parse_thousands!(value)}
+  defp parse_activation!("Diff", _total_difficulty), do: :merge
+
+  defp parse_thousands!(value) do
+    case Integer.parse(value) do
+      {n, "k"} -> n * 1_000
+      {n, ""} -> n
+    end
+  end
+
+  defp parse_fork!("Frontier"), do: :frontier
+  defp parse_fork!("Homestead"), do: :homestead
+  defp parse_fork!("Dao"), do: :homestead
+  defp parse_fork!("EIP150"), do: :tangerine_whistle
+  defp parse_fork!("EIP158"), do: :spurious_dragon
+  defp parse_fork!("Byzantium"), do: :byzantium
+  defp parse_fork!("Constantinople"), do: :constantinople
+  defp parse_fork!("ConstantinopleFix"), do: :constantinople
+  defp parse_fork!("Istanbul"), do: :istanbul
+  defp parse_fork!("Berlin"), do: :berlin
+  defp parse_fork!("London"), do: :london
+  # Arrow Glacier only delays the difficulty bomb; execution matches London.
+  defp parse_fork!("ArrowGlacier"), do: :london
+  defp parse_fork!("Paris"), do: :paris
+  defp parse_fork!("Merge"), do: :paris
+  defp parse_fork!("Shanghai"), do: :shanghai
+  defp parse_fork!("Cancun"), do: :cancun
+  defp parse_fork!("Prague"), do: :prague
+  defp parse_fork!("Osaka"), do: :osaka
+  defp parse_fork!(other), do: raise(ArgumentError, "unsupported network #{inspect(other)}")
 
   defp parse_address!(value) do
     value

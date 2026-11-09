@@ -7,7 +7,8 @@ defmodule EEVM.TestSupport.BlockchainTestRunner do
   2. Decode the genesis block and each block from its canonical `rlp` with
      `EEVM.Block.decode/1`, and apply it with `EEVM.Block.execute/4` on top
      of the previous valid block. BLOCKHASH sees the hashes of every block
-     applied so far.
+     applied so far. Transition networks such as `CancunToPragueAtTime15k`
+     pick the fork for each block from its header.
   3. After every block, verify the final database matches the fixture's
      `postState`.
 
@@ -26,11 +27,9 @@ defmodule EEVM.TestSupport.BlockchainTestRunner do
 
   @spec run_case(Case.t()) :: :ok | {:error, term()}
   def run_case(%Case{} = test) do
-    config = Config.new(test.network)
-    db = build_pre_state(test.pre, config)
-
     with {:ok, %Block{header: genesis}} <- Block.decode(test.genesis_rlp),
-         {:ok, final_db} <- run_blocks(test.blocks, db, genesis, config) do
+         db = build_pre_state(test.pre, block_config(test, genesis)),
+         {:ok, final_db} <- run_blocks(test.blocks, db, genesis, test) do
       verify_post_state(final_db, test.post)
     end
   end
@@ -52,11 +51,11 @@ defmodule EEVM.TestSupport.BlockchainTestRunner do
     |> BlockHashes.install_if_enabled(config.hardfork)
   end
 
-  defp run_blocks(blocks, db, %Header{} = genesis, config) do
+  defp run_blocks(blocks, db, %Header{} = genesis, test) do
     initial = {db, genesis, %{genesis.number => :binary.decode_unsigned(genesis.hash)}}
 
     Enum.reduce_while(blocks, {:ok, initial}, fn block, {:ok, chain} ->
-      case attempt_block(block, chain, config) do
+      case attempt_block(block, chain, test) do
         {:ok, chain} -> {:cont, {:ok, chain}}
         {:error, _} = error -> {:halt, error}
       end
@@ -70,8 +69,8 @@ defmodule EEVM.TestSupport.BlockchainTestRunner do
   # `expectException` semantics: a declared exception means the block must
   # be rejected, and the chain continues from the previous block. Without
   # one, any rejection fails the case.
-  defp attempt_block(%FixtureBlock{expect_exception: exception} = block, chain, config) do
-    case {apply_block(block, chain, config), exception} do
+  defp attempt_block(%FixtureBlock{expect_exception: exception} = block, chain, test) do
+    case {apply_block(block, chain, test), exception} do
       {{:ok, chain}, nil} -> {:ok, chain}
       {{:error, reason}, nil} -> {:error, {:block_failed, block.block_number, reason}}
       {{:ok, _}, _} -> {:error, {:expected_exception_not_raised, block.block_number, exception}}
@@ -79,14 +78,26 @@ defmodule EEVM.TestSupport.BlockchainTestRunner do
     end
   end
 
-  defp apply_block(%FixtureBlock{rlp: rlp}, {db, parent, hashes}, %Config{} = config) do
+  defp apply_block(%FixtureBlock{rlp: rlp}, {db, parent, hashes}, test) do
     with {:ok, %Block{header: header} = block} <- Block.decode(rlp),
+         config = block_config(test, header),
          {:ok, result} <- Block.execute(block, parent, db, config: config, block_hashes: hashes) do
       {:ok,
        {result.post_state_db, header,
         Map.put(hashes, header.number, :binary.decode_unsigned(header.hash))}}
     end
   end
+
+  # Transition fixtures (e.g. `PragueToOsakaAtTime15k`) switch forks mid-chain.
+  defp block_config(%Case{transition: nil, network: fork}, _header), do: Config.new(fork)
+
+  defp block_config(%Case{transition: %{from: from, at: at}, network: to}, header) do
+    Config.new(if activated?(at, header), do: to, else: from)
+  end
+
+  defp activated?({:block, number}, header), do: header.number >= number
+  defp activated?({:timestamp, timestamp}, header), do: header.timestamp >= timestamp
+  defp activated?(:merge, header), do: header.difficulty == 0
 
   defp verify_post_state(db, post) do
     Enum.find_value(post, :ok, fn {addr, %Account{} = expected} ->
