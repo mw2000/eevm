@@ -121,12 +121,14 @@ defmodule EEVM.Interpreter.Instructions.Environment.Data do
          {:ok, data_offset, s2} <- Stack.pop(s1),
          {:ok, length, s3} <- Stack.pop(s2) do
       cond do
+        # EIP-211: reading past the end of the return data is an exceptional
+        # halt, even for a zero-length copy.
+        data_offset + length > byte_size(state.frame.return_data) ->
+          {:error, :return_data_out_of_bounds, state}
+
         length == 0 ->
           {:ok,
            state |> MachineState.update_frame(&%{&1 | stack: s3}) |> MachineState.advance_pc()}
-
-        data_offset + length > byte_size(state.frame.return_data) ->
-          {:error, :return_data_out_of_bounds, state}
 
         true ->
           dynamic_cost =

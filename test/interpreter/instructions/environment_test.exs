@@ -313,14 +313,19 @@ defmodule EEVM.Interpreter.Instructions.EnvironmentTest do
       assert result.frame.gas == 0
     end
 
-    test "zero-length copy is a no-op" do
+    test "zero-length copy is a no-op up to the end of the return data, a halt past it" do
       return_data = <<0xAA, 0xBB>>
-      code = <<0x60, 0, 0x60, 250, 0x60, 10, 0x3E, 0x59, 0x00>>
+      # RETURNDATACOPY(dest 10, offset, size 0); MSIZE
+      copy_at = fn offset -> <<0x60, 0, 0x60, offset, 0x60, 10, 0x3E, 0x59, 0x00>> end
 
-      result = EEVM.execute(code, return_data: return_data)
-
+      result = EEVM.execute(copy_at.(2), return_data: return_data)
       assert result.status == :stopped
       assert EEVM.stack_values(result) == [0]
+
+      # EIP-211 bounds-checks offset + size even when size is 0.
+      result = EEVM.execute(copy_at.(3), return_data: return_data)
+      assert result.status == {:error, :return_data_out_of_bounds}
+      assert result.frame.gas == 0
     end
 
     test "copies from middle of return data" do
