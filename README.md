@@ -210,7 +210,9 @@ The fixtures come from two sources:
 
 - [execution-spec-tests](https://github.com/ethereum/execution-spec-tests)
   (EEST), a pinned release fetched by `test/fixtures/eest/fetch.sh`. It is the
-  authoritative suite for current forks, including Prague and Osaka.
+  authoritative suite for current forks: `fixtures_stable` covers mainnet forks
+  through Prague, and the Osaka cases of `fixtures_develop`
+  (`fetch.sh develop`, run with `--fork osaka`) cover Osaka.
 - [`ethereum/tests`](https://github.com/ethereum/tests), a pinned submodule kept
   as the legacy suite. Its Prague BlockchainTests predate the final
   EIP-7002/EIP-7251 rule that the request contracts must have code; they are
@@ -221,6 +223,9 @@ The fixtures come from two sources:
 test/fixtures/eest/fetch.sh
 mix eevm.state_tests 'test/fixtures/eest/fixtures/state_tests/**/*.json'
 mix eevm.blockchain_tests 'test/fixtures/eest/fixtures/blockchain_tests/prague/**/*.json'
+
+test/fixtures/eest/fetch.sh develop
+mix eevm.blockchain_tests 'test/fixtures/eest/fixtures_develop/blockchain_tests/**/*.json' --fork osaka
 
 git submodule update --init --depth 1 test/fixtures/state_tests/ethereum-tests
 mix eevm.state_tests

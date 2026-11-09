@@ -154,21 +154,44 @@ jobs:
         path: '*_tests.json'
 
   conformance-eest:
-    name: Conformance (EEST ${{ matrix.suite }} tests)
+    name: Conformance (EEST ${{ matrix.name }})
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
-    # One job per suite: together they take about 8 minutes on 4 cores.
-    # Timeouts are several times the slowest passing case (12 s for state
-    # tests, 58 s for test_block_hashes_history_at_transition).
+    # One job per suite and release. fixtures_stable covers mainnet forks
+    # through Prague; fixtures_develop adds Osaka, of which only the Osaka
+    # cases run (--fork osaka). Timeouts are several times the slowest passing
+    # case (12 s for state tests, 58 s for test_block_hashes_history_at_transition).
     strategy:
       fail-fast: false
       matrix:
         include:
-          - suite: state
+          - name: state tests
+            suite: state
+            release: stable
+            fixtures: fixtures
+            known_failures: known_failures_state.txt
             timeout: 180000
-          - suite: blockchain
+          - name: blockchain tests
+            suite: blockchain
+            release: stable
+            fixtures: fixtures
+            known_failures: known_failures_blockchain.txt
             timeout: 300000
+          - name: Osaka state tests
+            suite: state
+            release: develop
+            fixtures: fixtures_develop
+            known_failures: known_failures_osaka_state.txt
+            timeout: 180000
+            fork: --fork osaka
+          - name: Osaka blockchain tests
+            suite: blockchain
+            release: develop
+            fixtures: fixtures_develop
+            known_failures: known_failures_osaka_blockchain.txt
+            timeout: 300000
+            fork: --fork osaka
 
     steps:
     - uses: actions/checkout@v4
@@ -192,8 +215,8 @@ jobs:
           native/eevm_bls/target
         key: ${{ runner.os }}-build-${{ hashFiles('**/mix.lock', 'native/**/Cargo.lock', 'native/**/Cargo.toml', 'native/**/src/**') }}
         restore-keys: ${{ runner.os }}-build-
-    # The release tarball (257 MB) is cached by its pinned version, so only a
-    # version bump in fetch.sh downloads it again.
+    # Release tarballs (257 MB stable, 423 MB develop) are cached by asset and
+    # pinned version, so only a version bump in fetch.sh downloads them again.
     - name: Read pinned EEST version
       id: eest
       run: echo "version=$(sed -n 's/^EEST_VERSION="\(.*\)"$/\1/p' test/fixtures/eest/fetch.sh)" >> "$GITHUB_OUTPUT"
@@ -201,24 +224,25 @@ jobs:
       uses: actions/cache@v4
       with:
         path: ~/.cache/eevm/eest
-        key: eest-fixtures-stable-${{ steps.eest.outputs.version }}
+        key: eest-fixtures-${{ matrix.release }}-${{ steps.eest.outputs.version }}
     - name: Fetch EEST fixtures
-      run: test/fixtures/eest/fetch.sh
+      run: test/fixtures/eest/fetch.sh ${{ matrix.release }}
     - name: Install dependencies
       run: mix deps.get
-    - name: EEST ${{ matrix.suite }} tests
+    - name: EEST ${{ matrix.name }}
       run: >-
         mix eevm.${{ matrix.suite }}_tests
-        'test/fixtures/eest/fixtures/${{ matrix.suite }}_tests/**/*.json'
-        --known-failures test/fixtures/eest/known_failures_${{ matrix.suite }}.txt
+        'test/fixtures/eest/${{ matrix.fixtures }}/${{ matrix.suite }}_tests/**/*.json'
+        ${{ matrix.fork }}
+        --known-failures test/fixtures/eest/${{ matrix.known_failures }}
         --timeout ${{ matrix.timeout }}
-        --report eest_${{ matrix.suite }}_tests.json
+        --report eest_${{ matrix.release }}_${{ matrix.suite }}_tests.json
     - name: Upload report
       if: ${{ !cancelled() }}
       uses: actions/upload-artifact@v4
       with:
-        name: eest-${{ matrix.suite }}-tests-report
-        path: eest_${{ matrix.suite }}_tests.json
+        name: eest-${{ matrix.release }}-${{ matrix.suite }}-tests-report
+        path: eest_${{ matrix.release }}_${{ matrix.suite }}_tests.json
 
   docs:
     name: Docs

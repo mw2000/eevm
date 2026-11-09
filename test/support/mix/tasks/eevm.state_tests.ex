@@ -16,7 +16,9 @@ defmodule Mix.Tasks.Eevm.StateTests do
 
   To run the pinned execution-spec-tests release instead, fetch it with
   `test/fixtures/eest/fetch.sh` and pass a glob such as
-  `'test/fixtures/eest/fixtures/state_tests/**/*.json'`.
+  `'test/fixtures/eest/fixtures/state_tests/**/*.json'`. For Osaka, fetch
+  `fixtures_develop` with `fetch.sh develop` and add `--fork osaka` to run only
+  its Osaka cases.
   """
 
   use Mix.Task

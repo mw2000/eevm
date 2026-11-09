@@ -31,3 +31,4 @@ eevm_tmp-*.tar
 
 # execution-spec-tests fixtures, fetched by test/fixtures/eest/fetch.sh.
 /test/fixtures/eest/fixtures/
+/test/fixtures/eest/fixtures_develop/

@@ -15,7 +15,9 @@ defmodule Mix.Tasks.Eevm.BlockchainTests do
 
   To run the pinned execution-spec-tests release instead, fetch it with
   `test/fixtures/eest/fetch.sh` and pass a glob such as
-  `'test/fixtures/eest/fixtures/blockchain_tests/**/*.json'`.
+  `'test/fixtures/eest/fixtures/blockchain_tests/**/*.json'`. For Osaka, fetch
+  `fixtures_develop` with `fetch.sh develop` and add `--fork osaka` to run only
+  its Osaka cases.
 
   `--stale-fixtures` defaults to `test/fixtures/blockchain_tests/stale_fixtures.txt`:
   cases of the pinned snapshot filled before a rule eevm implements, reported

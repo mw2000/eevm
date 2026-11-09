@@ -113,6 +113,8 @@ commit's CI run passes.
   ```bash
   test/fixtures/eest/fetch.sh
   mix eevm.state_tests 'test/fixtures/eest/fixtures/state_tests/prague/**/*.json'
+  test/fixtures/eest/fetch.sh develop   # Osaka: run with --fork osaka
+  mix eevm.state_tests 'test/fixtures/eest/fixtures_develop/state_tests/osaka/**/*.json' --fork osaka
   git submodule update --init --depth 1 test/fixtures/state_tests/ethereum-tests
   mix eevm.state_tests 'test/fixtures/state_tests/ethereum-tests/GeneralStateTests/stExample/*.json'
   mix eevm.blockchain_tests 'test/fixtures/state_tests/ethereum-tests/BlockchainTests/ValidBlocks/**/*.json'
