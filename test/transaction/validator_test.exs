@@ -45,6 +45,25 @@ defmodule EEVM.Transaction.ValidatorTest do
       assert {:error, :gas_limit_exceeds_block} = Validator.validate(tx, db_for_sender(), block)
     end
 
+    test "Osaka caps transaction gas limit at 2^24 (EIP-7825)" do
+      block = valid_block(gaslimit: 60_000_000)
+      db = db_for_sender(balance: 100_000_000)
+      osaka = HardforkConfig.new(:osaka)
+
+      assert :ok = Validator.validate(valid_tx(gas_limit: 16_777_216), db, block, osaka)
+
+      assert {:error, :gas_limit_exceeds_cap} =
+               Validator.validate(valid_tx(gas_limit: 16_777_217), db, block, osaka)
+    end
+
+    test "pre-Osaka transactions above 2^24 gas are bounded only by the block" do
+      block = valid_block(gaslimit: 60_000_000)
+      db = db_for_sender(balance: 100_000_000)
+      tx = valid_tx(gas_limit: 16_777_217)
+
+      assert :ok = Validator.validate(tx, db, block, HardforkConfig.new(:prague))
+    end
+
     test "returns nonce too low" do
       tx = valid_tx(nonce: 4)
       db = db_for_sender(nonce: 5)

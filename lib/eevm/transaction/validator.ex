@@ -13,6 +13,8 @@ defmodule EEVM.Transaction.Validator do
 
   @blob_gas_per_blob 131_072
   @max_initcode_size 49_152
+  # EIP-7825: per-transaction gas limit cap (2^24), independent of the block gas limit.
+  @max_tx_gas_limit 16_777_216
 
   @spec validate(Transaction.t(), Database.t(), Block.t()) :: :ok | {:error, atom()}
   def validate(%Transaction{} = tx, %Database{} = db, %Block{} = block) do
@@ -28,6 +30,7 @@ defmodule EEVM.Transaction.Validator do
         %HardforkConfig{} = hardfork
       ) do
     with :ok <- validate_intrinsic_gas(tx, hardfork),
+         :ok <- validate_gas_limit_cap(tx, hardfork),
          :ok <- validate_gas_limit_vs_block(tx, block),
          :ok <- validate_nonce(tx, db),
          :ok <- validate_eip1559_fees(tx, block),
@@ -42,6 +45,12 @@ defmodule EEVM.Transaction.Validator do
     if tx.gas_limit >= IntrinsicGas.minimum_gas_limit(tx, hardfork),
       do: :ok,
       else: {:error, :intrinsic_gas_too_low}
+  end
+
+  defp validate_gas_limit_cap(%Transaction{} = tx, %HardforkConfig{} = hardfork) do
+    if tx.gas_limit > @max_tx_gas_limit and HardforkConfig.enabled?(hardfork, :eip_7825),
+      do: {:error, :gas_limit_exceeds_cap},
+      else: :ok
   end
 
   defp validate_gas_limit_vs_block(%Transaction{} = tx, %Block{} = block) do

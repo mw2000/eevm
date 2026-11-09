@@ -319,6 +319,7 @@ defmodule EEVM.TestSupport.BlockchainTestFixture do
   defp parse_network!("Shanghai"), do: :shanghai
   defp parse_network!("Cancun"), do: :cancun
   defp parse_network!("Prague"), do: :prague
+  defp parse_network!("Osaka"), do: :osaka
 
   defp parse_network!(other) when is_binary(other) do
     # Synthetic transition names look like "<From>To<To>At<...>". The runner

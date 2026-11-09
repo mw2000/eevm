@@ -295,6 +295,7 @@ defmodule EEVM.TestSupport.StateTestFixture do
   defp parse_hardfork!("Shanghai"), do: :shanghai
   defp parse_hardfork!("Cancun"), do: :cancun
   defp parse_hardfork!("Prague"), do: :prague
+  defp parse_hardfork!("Osaka"), do: :osaka
   defp parse_hardfork!(other), do: raise(ArgumentError, "unsupported hardfork #{inspect(other)}")
 
   defp parse_optional_address(""), do: nil

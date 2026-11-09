@@ -22,6 +22,7 @@ defmodule EEVM.HardforkConfig do
   | `:shanghai`      | EIP-3651 (COINBASE pre-warm), EIP-3855 (PUSH0), EIP-3860 (initcode limit) |
   | `:cancun`        | EIP-1153 (TLOAD/TSTORE), EIP-4844 (blobs), EIP-5656 (MCOPY), EIP-6780 (SELFDESTRUCT) |
    | `:prague`        | EIP-2537 (BLS12-381 precompiles), EIP-7623 (calldata floor), EIP-7702 (set-code) |
+  | `:osaka`         | EIP-7825 (tx gas limit cap) |
   """
 
   @type spec_id ::
@@ -38,6 +39,7 @@ defmodule EEVM.HardforkConfig do
           | :shanghai
           | :cancun
           | :prague
+          | :osaka
 
   @type t :: %__MODULE__{
           spec_id: spec_id()
@@ -60,7 +62,8 @@ defmodule EEVM.HardforkConfig do
     paris: 9,
     shanghai: 10,
     cancun: 11,
-    prague: 12
+    prague: 12,
+    osaka: 13
   }
 
   # Maps each EIP feature flag to the first hardfork that activates it.
@@ -102,7 +105,9 @@ defmodule EEVM.HardforkConfig do
     # EIP-7623 (Prague): calldata floor pricing
     eip_7623: :prague,
     # EIP-2935 (Prague): historical block hashes system contract at 0x0000F908...2935
-    eip_2935: :prague
+    eip_2935: :prague,
+    # EIP-7825 (Osaka): per-transaction gas limit cap of 2^24
+    eip_7825: :osaka
   }
 
   @doc """
