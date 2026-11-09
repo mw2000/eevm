@@ -211,6 +211,18 @@ defmodule EEVM.HandlerTest do
       assert result.status == :success
       assert Database.get_nonce(result.post_state_db, result.contract_address) == 3
     end
+
+    test "initcode that SELFDESTRUCTs leaves no account behind (EIP-6780)" do
+      # PUSH1 0xBB SELFDESTRUCT. EIP-6780: a contract created in the same
+      # transaction is deleted (ethereum/tests
+      # stCreate2/CREATE2_ContractSuicideDuringInit_ThenStoreThenReturn).
+      tx = create_tx(<<0x60, 0xBB, 0xFF>>, 5)
+
+      assert {:ok, result} = run(tx, db_with_sender(balance: 10_000_000))
+      assert result.status == :success
+      refute Database.account_exists?(result.post_state_db, result.contract_address)
+      assert Database.get_balance(result.post_state_db, 0xBB) == 5
+    end
   end
 
   describe "execute/4 — REVERT" do

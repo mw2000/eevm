@@ -68,7 +68,7 @@ defmodule EEVM.Handler.Execution do
 
     # The new account exists before its initcode runs, with nonce 1 from
     # EIP-161 on, so CREATEs issued by the initcode derive addresses from
-    # nonce 1.
+    # nonce 1. It counts as created in this transaction for EIP-6780.
     db_before_init =
       db
       |> transfer_value(creator, new_address, tx.value)
@@ -95,7 +95,8 @@ defmodule EEVM.Handler.Execution do
         config: config,
         accessed_addresses:
           PreExecution.initial_accessed_addresses(tx, config, contract_ctx, block),
-        accessed_storage_keys: PreExecution.initial_accessed_storage_keys(tx)
+        accessed_storage_keys: PreExecution.initial_accessed_storage_keys(tx),
+        created_addresses: MapSet.new([new_address])
       )
 
     case deploy_runtime_code(final_state, new_address) do
@@ -121,7 +122,12 @@ defmodule EEVM.Handler.Execution do
         {:error, zero_gas_revert(state)}
 
       true ->
-        updated_db = Database.put_code(state.db, new_address, runtime_code)
+        # An account that SELFDESTRUCTed during its own init is gone;
+        # depositing code would resurrect it.
+        updated_db =
+          if Database.account_exists?(state.db, new_address),
+            do: Database.put_code(state.db, new_address, runtime_code),
+            else: state.db
 
         deducted = MachineState.update_frame(state, &%{&1 | gas: &1.gas - deposit_cost})
         {:ok, %{deducted | db: updated_db}}

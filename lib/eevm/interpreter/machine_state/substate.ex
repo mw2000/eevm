@@ -9,7 +9,9 @@ defmodule EEVM.Interpreter.MachineState.Substate do
   - `accessed_addresses` / `accessed_storage_keys` — EIP-2929 access lists
     powering cold/warm gas pricing.
   - `created_addresses` — EIP-6780 set of contracts created in this tx;
-    only these can be fully deleted by `SELFDESTRUCT` post-Cancun.
+    only these can be fully deleted by `SELFDESTRUCT` post-Cancun. An
+    address joins the set before its initcode runs, so a `SELFDESTRUCT`
+    during init deletes it, and leaves the set if that creation fails.
   - `original_storage` — per-tx snapshot of the first-observed value of
     each storage slot, used by EIP-2200 `SSTORE` accounting.
   - `transient_storage` — EIP-1153 per-tx key/value store cleared at tx end.
@@ -44,6 +46,10 @@ defmodule EEVM.Interpreter.MachineState.Substate do
             transient_storage: %{},
             logs: []
 
+  @doc """
+  Builds a substate, taking each field from the option of the same name and
+  defaulting to an empty set, map, or list.
+  """
   @spec new(keyword()) :: t()
   def new(opts \\ []) do
     %__MODULE__{

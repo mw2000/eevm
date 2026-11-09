@@ -125,7 +125,9 @@ defmodule EEVM.Interpreter.Instructions.System.Creation do
 
                     # The new account exists before its initcode runs, with nonce 1
                     # from EIP-161 on, so CREATEs issued by the initcode derive
-                    # addresses from nonce 1.
+                    # addresses from nonce 1. Registering the address as created
+                    # before the initcode runs lets a SELFDESTRUCT during init
+                    # fully delete it (EIP-6780).
                     child_db =
                       Database.set_nonce(
                         db_after_transfer,
@@ -153,7 +155,8 @@ defmodule EEVM.Interpreter.Instructions.System.Creation do
                         touched_addresses: state_after_touch.substate.touched_addresses,
                         accessed_addresses: state_after_touch.substate.accessed_addresses,
                         accessed_storage_keys: state_after_touch.substate.accessed_storage_keys,
-                        created_addresses: state_after_touch.substate.created_addresses,
+                        created_addresses:
+                          MapSet.put(state_after_touch.substate.created_addresses, new_address),
                         is_static: state_after_touch.frame.is_static,
                         depth: state_after_touch.frame.depth + 1,
                         tracer: state_after_touch.tracer
@@ -191,19 +194,17 @@ defmodule EEVM.Interpreter.Instructions.System.Creation do
                           deposit_cost = Dynamic.code_deposit_cost(byte_size(runtime_code))
 
                           if child_result.frame.gas >= deposit_cost do
+                            # An account that SELFDESTRUCTed during its own init is
+                            # gone; depositing code would resurrect it.
                             db_after_deploy =
-                              Database.put_code(child_result.db, new_address, runtime_code)
+                              if Database.account_exists?(child_result.db, new_address),
+                                do: Database.put_code(child_result.db, new_address, runtime_code),
+                                else: child_result.db
 
                             {:ok, stack_after_create} = Stack.push(stack, new_address)
 
                             merged =
                               Journal.merge_child_result(state_after_initcode_cost, child_result)
-
-                            merged_substate = %{
-                              merged.substate
-                              | created_addresses:
-                                  MapSet.put(merged.substate.created_addresses, new_address)
-                            }
 
                             {:ok,
                              merged
@@ -217,7 +218,6 @@ defmodule EEVM.Interpreter.Instructions.System.Creation do
                                }
                              )
                              |> Map.put(:db, db_after_deploy)
-                             |> Map.put(:substate, merged_substate)
                              |> MachineState.advance_pc()}
                           else
                             create_failed(post_child_fail_state, stack)

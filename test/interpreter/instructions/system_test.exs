@@ -92,6 +92,22 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
       assert Database.get_nonce(result.db, created_address) == 3
     end
 
+    test "CREATE2 whose initcode SELFDESTRUCTs leaves no account behind (EIP-6780)" do
+      # PUSH1 0xBB SELFDESTRUCT. EIP-6780: a contract created in the same
+      # transaction is deleted (ethereum/tests
+      # stCreate2/CREATE2_ContractSuicideDuringInit_ThenStoreThenReturn).
+      init_code = <<0x60, 0xBB, 0xFF>>
+      code = build_create_program(init_code, :create2, 0x05, 0x00)
+
+      result = EEVM.execute(code, world_state: WorldState.new(%{0 => %{balance: 10}}))
+      [created_address] = EEVM.stack_values(result)
+
+      assert created_address != 0
+      refute Database.account_exists?(result.db, created_address)
+      assert Database.get_balance(result.db, 0xBB) == 5
+      assert Database.get_balance(result.db, 0) == 5
+    end
+
     test "CREATE fails and pushes zero when balance is insufficient" do
       init_code = <<0x60, 0x00, 0x60, 0x00, 0xF3>>
       code = build_create_program(init_code, :create, 0x09)
