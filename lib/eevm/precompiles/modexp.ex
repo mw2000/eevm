@@ -32,8 +32,14 @@ defmodule EEVM.Precompiles.ModExp do
   - `iteration_count` is computed as above, except the per-byte multiplier for
     exponents longer than 32 bytes is `16` instead of `8`.
 
-  `execute/2` applies EIP-2565 pricing; `EEVM.Precompiles` routes `0x05` to
-  `EEVM.Precompiles.ModExpEIP7883` once `:eip_7883` is active.
+  ### Input bounds (EIP-7823, Osaka onward)
+
+  If `base_length`, `exp_length`, or `mod_length` exceeds 1024 bytes, the call
+  fails with `{:error, :invalid_input}`, consuming all gas it was given.
+
+  `execute/2` applies the EIP-2565 rules; `EEVM.Precompiles` routes `0x05` to
+  `EEVM.Precompiles.ModExpEIP7883` once `:eip_7883` is active. The `:eip_7883`
+  rules also enforce the EIP-7823 bounds, which activate in the same fork.
 
   Gas is charged from the 96-byte header and at most the first 32 exponent
   bytes before any operand is read, so oversized declared lengths fail with
@@ -58,6 +64,9 @@ defmodule EEVM.Precompiles.ModExp do
 
   @type pricing :: :eip_2565 | :eip_7883
 
+  # EIP-7823: maximum base, exponent, and modulus length in bytes.
+  @max_input_length 1024
+
   @doc """
   Executes the ModExp precompile with EIP-2565 pricing.
   """
@@ -67,23 +76,28 @@ defmodule EEVM.Precompiles.ModExp do
   def execute(input, gas_limit), do: execute(input, gas_limit, :eip_2565)
 
   @doc """
-  Executes the ModExp precompile with the given gas `pricing` rules.
+  Executes the ModExp precompile with the given `pricing` rules
+  (`:eip_7883` also applies the EIP-7823 input bounds).
   """
   @spec execute(binary(), non_neg_integer(), pricing()) ::
-          {:ok, binary(), non_neg_integer()} | {:error, :out_of_gas}
+          {:ok, binary(), non_neg_integer()} | {:error, :out_of_gas | :invalid_input}
   def execute(input, gas_limit, pricing) do
     <<base_length::unsigned-size(256), exp_length::unsigned-size(256),
       mod_length::unsigned-size(256)>> = slice_with_right_padding(input, 0, 96)
 
-    # Gas depends only on the header and the exponent's first 32 bytes, so
-    # charge it before touching operands whose declared lengths may be huge.
-    exp_head = exponent_head(input, base_length, exp_length)
-    cost = gas_cost(pricing, base_length, exp_length, mod_length, exp_head)
-
-    if cost > gas_limit do
-      {:error, :out_of_gas}
+    if pricing == :eip_7883 and max(base_length, max(exp_length, mod_length)) > @max_input_length do
+      {:error, :invalid_input}
     else
-      {:ok, modexp(input, base_length, exp_length, mod_length), cost}
+      # Gas depends only on the header and the exponent's first 32 bytes, so
+      # charge it before touching operands whose declared lengths may be huge.
+      exp_head = exponent_head(input, base_length, exp_length)
+      cost = gas_cost(pricing, base_length, exp_length, mod_length, exp_head)
+
+      if cost > gas_limit do
+        {:error, :out_of_gas}
+      else
+        {:ok, modexp(input, base_length, exp_length, mod_length), cost}
+      end
     end
   end
 

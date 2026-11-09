@@ -23,7 +23,7 @@ defmodule EEVM.HardforkConfig do
   | `:cancun`        | EIP-1153 (TLOAD/TSTORE), EIP-4844 (blobs), EIP-5656 (MCOPY), EIP-6780 (SELFDESTRUCT) |
    | `:prague`        | EIP-2537 (BLS12-381 precompiles), EIP-7623 (calldata floor), EIP-7702 (set-code) |
   | `:osaka`         | EIP-7825 (tx gas limit cap), EIP-7918 (blob base fee floor), EIP-7934 (block RLP size limit), EIP-7939 (CLZ) |
-  |                  | EIP-7883 (ModExp repricing), EIP-7951 (P256VERIFY precompile) |
+  |                  | EIP-7823 (ModExp bounds), EIP-7883 (ModExp repricing), EIP-7951 (P256VERIFY precompile) |
   """
 
   @type spec_id ::
@@ -117,7 +117,8 @@ defmodule EEVM.HardforkConfig do
     eip_7702: :prague,
     # EIP-7825 (Osaka): per-transaction gas limit cap of 2^24
     eip_7825: :osaka,
-    # EIP-7883 (Osaka): ModExp precompile gas cost increase
+    # EIP-7883 (Osaka): ModExp precompile gas cost increase; its rules in
+    # `EEVM.Precompiles.ModExp` also carry the EIP-7823 1024-byte input bounds
     eip_7883: :osaka,
     # EIP-7918 (Osaka): blob base fee bounded below by execution cost
     eip_7918: :osaka,

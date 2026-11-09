@@ -156,6 +156,23 @@ defmodule EEVM.Precompiles.ModExpTest do
     end
   end
 
+  describe "EIP-7823 input bounds" do
+    # Lengths may be at most 1024 bytes from Osaka; longer inputs fail, consuming all gas.
+    for {field, index} <- [base: 0, exponent: 1, modulus: 2] do
+      test "#{field} length 1024 is accepted and 1025 is rejected" do
+        at_limit = header_with_length(unquote(index), 1024)
+        over_limit = header_with_length(unquote(index), 1025)
+
+        assert {:ok, _out, _gas} = ModExpEIP7883.execute(at_limit, 100_000_000)
+        assert {:error, :invalid_input} = ModExpEIP7883.execute(over_limit, 100_000_000)
+      end
+    end
+
+    test "do not apply before Osaka" do
+      assert {:ok, _out, _gas} = ModExp.execute(header_with_length(0, 1025), 100_000_000)
+    end
+  end
+
   describe "EEVM.Precompiles dispatcher" do
     test "routes address 0x05 to ModExp" do
       input = encode_modexp(2, 10, 1000)
@@ -181,6 +198,12 @@ defmodule EEVM.Precompiles.ModExpTest do
 
     <<byte_size(base_bytes)::256, byte_size(exp_bytes)::256, byte_size(mod_bytes)::256,
       base_bytes::binary, exp_bytes::binary, mod_bytes::binary>>
+  end
+
+  # Header declaring `length` bytes for one field (0 = base, 1 = exponent, 2 = modulus)
+  # and 1 byte for the others; operands are implicitly zero-padded.
+  defp header_with_length(index, length) do
+    for i <- 0..2, into: <<>>, do: <<if(i == index, do: length, else: 1)::256>>
   end
 
   defp encode_modexp_bytes(base_bytes, exp_bytes, mod_bytes) do

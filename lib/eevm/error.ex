@@ -29,7 +29,7 @@ defmodule EEVM.Error do
   | Error | Source | Meaning |
   |-------|--------|---------|
   | `:out_of_gas` | All precompiles | Gas limit insufficient for the operation |
-  | `:invalid_input` | BN256, Blake2F, KZG | Input data has wrong length or format |
+  | `:invalid_input` | BN256, Blake2F, KZG, ModExp (EIP-7823) | Input data has wrong length or format |
   | `:invalid_point` | BN256 | Elliptic curve point not on the alt_bn128 curve |
   | `:invalid_versioned_hash` | KZG | Versioned hash doesn't match expected format |
   | `:invalid_field_element` | KZG | Field element is not in the valid range |
