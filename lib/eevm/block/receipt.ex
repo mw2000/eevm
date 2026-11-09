@@ -10,6 +10,8 @@ defmodule EEVM.Block.Receipt do
     block's `gas_used`.
   - `logs` — every log entry emitted by this transaction, in emission order.
     Each log is a map matching `t:EEVM.Block.Bloom.log_entry/0`.
+  - `tx_type` — the type of the transaction this receipt belongs to; it
+    selects the EIP-2718 encoding (default `:legacy`).
   - `logs_bloom` — the 2048-bit bloom filter over this receipt's logs
     (`EEVM.Block.Bloom.from_logs(logs)`); stored pre-computed so block-level
     aggregation is a fast bytewise OR.
@@ -18,7 +20,7 @@ defmodule EEVM.Block.Receipt do
 
   - **Legacy** (type-0) receipts encode as a plain RLP list:
     `RLP([status, cumulative_gas_used, logs_bloom, logs])`.
-  - **Typed** receipts (EIP-2930 / 1559 / 4844) prepend a single type byte to
+  - **Typed** receipts (EIP-2930 / 1559 / 4844 / 7702) prepend a single type byte to
     the same RLP list, e.g. `<<0x02>> <> RLP([...])` for EIP-1559.
 
   Each log encodes as `[address, [topic, ...], data]`, with the address as a
@@ -29,16 +31,18 @@ defmodule EEVM.Block.Receipt do
 
   @type log :: Bloom.log_entry()
 
-  @type tx_type :: :legacy | :eip2930 | :eip1559 | :eip4844 | non_neg_integer()
+  @type tx_type :: :legacy | :eip2930 | :eip1559 | :eip4844 | :eip7702 | non_neg_integer()
 
   @type t :: %__MODULE__{
+          tx_type: tx_type(),
           status: 0 | 1,
           cumulative_gas_used: non_neg_integer(),
           logs: [log()],
           logs_bloom: Bloom.t()
         }
 
-  defstruct status: 1,
+  defstruct tx_type: :legacy,
+            status: 1,
             cumulative_gas_used: 0,
             logs: [],
             logs_bloom: <<0::2048>>
@@ -46,6 +50,7 @@ defmodule EEVM.Block.Receipt do
   @type_access_list 0x01
   @type_fee_market 0x02
   @type_blob 0x03
+  @type_set_code 0x04
 
   @doc "Returns a successful receipt with no logs and zero cumulative gas."
   @spec new() :: t()
@@ -72,15 +77,15 @@ defmodule EEVM.Block.Receipt do
   @doc """
   Encode a receipt to its wire (RLP) form.
 
-  Pass `tx_type:` to produce a typed (EIP-2718) receipt. The accepted values
-  are `:legacy` (default), `:eip2930`, `:eip1559`, `:eip4844`, or the raw
-  integer type byte.
+  The receipt's `tx_type` selects the EIP-2718 form; pass `tx_type:` to
+  override it. The accepted values are `:legacy`, `:eip2930`, `:eip1559`,
+  `:eip4844`, `:eip7702`, or the raw integer type byte.
   """
   @spec encode(t(), keyword()) :: binary()
   def encode(%__MODULE__{} = receipt, opts \\ []) do
     payload = ExRLP.encode(rlp_fields(receipt))
 
-    case type_byte(Keyword.get(opts, :tx_type, :legacy)) do
+    case type_byte(Keyword.get(opts, :tx_type, receipt.tx_type)) do
       nil -> payload
       type_byte -> <<type_byte>> <> payload
     end
@@ -113,5 +118,6 @@ defmodule EEVM.Block.Receipt do
   defp type_byte(:eip2930), do: @type_access_list
   defp type_byte(:eip1559), do: @type_fee_market
   defp type_byte(:eip4844), do: @type_blob
+  defp type_byte(:eip7702), do: @type_set_code
   defp type_byte(byte) when is_integer(byte) and byte >= 0 and byte <= 0x7F, do: byte
 end

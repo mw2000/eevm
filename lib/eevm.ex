@@ -22,7 +22,8 @@ defmodule EEVM do
   - `EEVM.Interpreter.MachineState` — frame-local state (pc, stack, memory, gas)
   - `EEVM.Precompiles` — registered precompiles (`0x01`–`0x11`, `0x100`)
   - `EEVM.Transaction` — envelope decoding, validation, signing, intrinsic gas
-  - `EEVM.Block.Processor` — end-to-end transaction-to-receipt pipeline
+  - `EEVM.Handler` — one signed transaction end to end
+  - `EEVM.Block` — block RLP codec, validation, building, and execution
   - `EEVM.Database`, `EEVM.WorldState`, `EEVM.Storage` — account and storage state
   - `EEVM.MPT.Trie` + `EEVM.StateRoot` — Merkle-Patricia trie and state-root hash
   - `EEVM.HardforkConfig` — per-hardfork EIP activation flags

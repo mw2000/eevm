@@ -1,50 +1,37 @@
 defmodule EEVM.TestSupport.BlockchainTestRunner do
   @moduledoc """
-  Executes a single BlockchainTest case end-to-end.
-
-  Steps:
+  Executes a single BlockchainTest case through the public block path.
 
   1. Build the pre-state database from the fixture's `pre` map and install
-     any system contracts the active hardfork mandates.
-  2. For each block, construct an `EEVM.Block.Header` and a list of
-     `EEVM.Context.Transaction` from the parsed JSON, then run the block
-     through `EEVM.Block.Processor.process_block/4` with a transaction
-     executor closure that mirrors `EEVM.TestSupport.StateTestRunner` (validate
-     → bump nonce → run interpreter → settle fees).
-  3. Verify the resulting `state_root` matches the block's header.
-  4. After every block applies cleanly, verify the final database matches
-     the fixture's `postState`.
+     the system contracts the hardfork mandates (the fixtures' genesis state).
+  2. Decode the genesis block and each block from its canonical `rlp` with
+     `EEVM.Block.decode/1`, and apply it with `EEVM.Block.execute/4` on top
+     of the previous valid block. BLOCKHASH sees the hashes of every block
+     applied so far.
+  3. After every block, verify the final database matches the fixture's
+     `postState`.
 
-  Before a block runs, its fixture RLP is checked against the EIP-7934 size
-  limit and its header is checked against the parent with
-  `EEVM.Block.HeaderValidator`. EIP-1559 basefee header rules aren't
-  checked yet.
+  A block with `expectException` must fail to decode or execute; the chain
+  then continues from the previous block. A block without one must apply.
   """
 
-  alias EEVM.Block.{Header, HeaderValidator, Processor, Withdrawal}
+  alias EEVM.Block
+  alias EEVM.Block.Header
   alias EEVM.Config
-  alias EEVM.Context.{Block, Transaction}
   alias EEVM.Database
   alias EEVM.Database.InMemory
-  alias EEVM.Gas.Blob
-  alias EEVM.HardforkConfig
   alias EEVM.SystemContracts.{BeaconRoots, BlockHashes}
-  alias EEVM.TestSupport.BlockchainTestFixture.{Account, Case, TransactionFields}
+  alias EEVM.TestSupport.BlockchainTestFixture.{Account, Case}
   alias EEVM.TestSupport.BlockchainTestFixture.Block, as: FixtureBlock
-  alias EEVM.TestSupport.BlockchainTestFixture.Withdrawal, as: FixtureWithdrawal
-  alias EEVM.TestSupport.TxExecutor
-
-  # EIP-7934: MAX_BLOCK_SIZE (10 MiB) minus a 2 MiB beacon-block SAFETY_MARGIN.
-  @max_rlp_block_size 10_485_760 - 2_097_152
 
   @spec run_case(Case.t()) :: :ok | {:error, term()}
   def run_case(%Case{} = test) do
     config = Config.new(test.network)
     db = build_pre_state(test.pre, config)
 
-    case run_blocks(test.blocks, db, config, test.genesis_header) do
-      {:ok, final_db} -> verify_post_state(final_db, test.post)
-      {:error, _} = error -> error
+    with {:ok, %Block{header: genesis}} <- Block.decode(test.genesis_rlp),
+         {:ok, final_db} <- run_blocks(test.blocks, db, genesis, config) do
+      verify_post_state(final_db, test.post)
     end
   end
 
@@ -59,212 +46,46 @@ defmodule EEVM.TestSupport.BlockchainTestRunner do
         if map_size(slots) == 0, do: acc, else: Map.put(acc, addr, slots)
       end)
 
-    db = InMemory.new(accounts: accounts, storage: storage)
-
-    db
+    [accounts: accounts, storage: storage]
+    |> InMemory.new()
     |> BeaconRoots.install_if_enabled(config.hardfork)
     |> BlockHashes.install_if_enabled(config.hardfork)
   end
 
-  defp run_blocks(blocks, db, config, genesis_header) do
-    Enum.reduce_while(blocks, {:ok, db, to_eevm_header(genesis_header)}, fn block,
-                                                                            {:ok, db_acc, parent} ->
-      case attempt_block(block, db_acc, parent, config) do
-        {:ok, new_db, new_parent} -> {:cont, {:ok, new_db, new_parent}}
-        {:halt, reason} -> {:halt, {:error, reason}}
+  defp run_blocks(blocks, db, %Header{} = genesis, config) do
+    initial = {db, genesis, %{genesis.number => :binary.decode_unsigned(genesis.hash)}}
+
+    Enum.reduce_while(blocks, {:ok, initial}, fn block, {:ok, chain} ->
+      case attempt_block(block, chain, config) do
+        {:ok, chain} -> {:cont, {:ok, chain}}
+        {:error, _} = error -> {:halt, error}
       end
     end)
     |> case do
-      {:ok, db, _parent} -> {:ok, db}
+      {:ok, {db, _parent, _hashes}} -> {:ok, db}
       {:error, _} = error -> error
     end
   end
 
-  # `parent` is always an `EEVM.Block.Header` built from the previous applied
-  # block's fixture header (or the genesis header).
-  #
-  # Wraps run_block with `expect_exception` semantics: when a block declares an
-  # exception, an error from run_block is the expected outcome (we move on with
-  # the same db/parent), and a successful application is itself the test
-  # failure. When no exception is expected, errors are reported as block_failed.
-  defp attempt_block(%FixtureBlock{expect_exception: nil} = block, db, parent, config) do
-    case run_block(block, db, parent, config) do
-      {:ok, new_db} ->
-        {:ok, new_db, to_eevm_header(block.header)}
-
-      {:error, reason} ->
-        {:halt, {:block_failed, block.block_number, reason}}
+  # `expectException` semantics: a declared exception means the block must
+  # be rejected, and the chain continues from the previous block. Without
+  # one, any rejection fails the case.
+  defp attempt_block(%FixtureBlock{expect_exception: exception} = block, chain, config) do
+    case {apply_block(block, chain, config), exception} do
+      {{:ok, chain}, nil} -> {:ok, chain}
+      {{:error, reason}, nil} -> {:error, {:block_failed, block.block_number, reason}}
+      {{:ok, _}, _} -> {:error, {:expected_exception_not_raised, block.block_number, exception}}
+      {{:error, _}, _} -> {:ok, chain}
     end
   end
 
-  defp attempt_block(%FixtureBlock{expect_exception: exception} = block, db, parent, config)
-       when is_binary(exception) do
-    case run_block(block, db, parent, config) do
-      {:ok, _} ->
-        {:halt, {:expected_exception_not_raised, block.block_number, exception}}
-
-      {:error, _reason} ->
-        {:ok, db, parent}
+  defp apply_block(%FixtureBlock{rlp: rlp}, {db, parent, hashes}, %Config{} = config) do
+    with {:ok, %Block{header: header} = block} <- Block.decode(rlp),
+         {:ok, result} <- Block.execute(block, parent, db, config: config, block_hashes: hashes) do
+      {:ok,
+       {result.post_state_db, header,
+        Map.put(hashes, header.number, :binary.decode_unsigned(header.hash))}}
     end
-  end
-
-  defp run_block(%FixtureBlock{decode_error: reason}, _db, _parent, _config)
-       when is_binary(reason),
-       do: {:error, {:invalid_block_encoding, reason}}
-
-  defp run_block(%FixtureBlock{header: nil}, _db, _parent, _config),
-    do: {:error, :missing_block_header}
-
-  defp run_block(%FixtureBlock{header: header} = block, db, parent, config) do
-    eevm_header = to_eevm_header(header)
-
-    with :ok <- check_rlp_block_size(block, config),
-         :ok <- HeaderValidator.validate(eevm_header, parent, config.hardfork) do
-      do_run_block(block, eevm_header, db, config)
-    end
-  end
-
-  defp check_rlp_block_size(%FixtureBlock{rlp: rlp}, %Config{} = config) do
-    if byte_size(rlp) > @max_rlp_block_size and
-         HardforkConfig.enabled?(config.hardfork, :eip_7934),
-       do: {:error, :rlp_block_size_exceeded},
-       else: :ok
-  end
-
-  defp do_run_block(%FixtureBlock{header: header} = block, eevm_header, db, config) do
-    transactions = Enum.map(block.transactions, &to_context_transaction/1)
-
-    opts = [
-      tx_executor: tx_executor(config, header),
-      tx_encoder: fn _tx -> <<>> end,
-      system_calls: system_calls(header, config),
-      withdrawals: Enum.map(block.withdrawals, &to_eevm_withdrawal/1)
-    ]
-
-    case Processor.process_block(eevm_header, transactions, db, opts) do
-      {:ok, result} ->
-        verify_post_block(result, header)
-
-      {:error, _} = error ->
-        error
-    end
-  end
-
-  defp verify_post_block(result, header) do
-    cond do
-      result.gas_used != header.gas_used ->
-        {:error, {:invalid_gas_used, expected: header.gas_used, actual: result.gas_used}}
-
-      result.logs_bloom != header.logs_bloom ->
-        {:error, :invalid_logs_bloom}
-
-      result.state_root != header.state_root ->
-        {:error, {:state_root_mismatch, expected: header.state_root, actual: result.state_root}}
-
-      true ->
-        {:ok, result.post_state_db}
-    end
-  end
-
-  defp to_eevm_withdrawal(%FixtureWithdrawal{} = w) do
-    %Withdrawal{
-      index: w.index,
-      validator_index: w.validator_index,
-      address: w.address,
-      amount: w.amount
-    }
-  end
-
-  defp to_eevm_header(header) do
-    Header.new(
-      number: header.number,
-      parent_hash: header.parent_hash,
-      timestamp: header.timestamp,
-      coinbase: header.coinbase,
-      gas_limit: header.gas_limit,
-      base_fee_per_gas: header.base_fee_per_gas,
-      prev_randao: header.mix_hash,
-      parent_beacon_block_root: header.parent_beacon_block_root || 0,
-      state_root: header.state_root,
-      receipts_root: header.receipts_root,
-      transactions_root: header.transactions_root,
-      logs_bloom: header.logs_bloom,
-      gas_used: header.gas_used,
-      extra_data: header.extra_data,
-      difficulty: header.difficulty,
-      hash: header.hash,
-      nonce: header.nonce,
-      ommers_hash: header.ommers_hash,
-      blob_gas_used: header.blob_gas_used,
-      excess_blob_gas: header.excess_blob_gas
-    )
-  end
-
-  defp to_context_transaction(%TransactionFields{} = tx) do
-    Transaction.new(
-      origin: tx.sender,
-      nonce: tx.nonce,
-      gas_limit: tx.gas_limit,
-      to: tx.to,
-      value: tx.value,
-      data: tx.data,
-      gasprice: tx.gas_price,
-      max_fee_per_gas: tx.max_fee_per_gas,
-      max_priority_fee_per_gas: tx.max_priority_fee_per_gas,
-      max_fee_per_blob_gas: tx.max_fee_per_blob_gas,
-      access_list: tx.access_list,
-      blob_hashes: tx.blob_hashes,
-      authorization_list: tx.authorization_list,
-      type: tx.type
-    )
-  end
-
-  defp system_calls(header, %Config{} = config) do
-    enabled_4788? = HardforkConfig.enabled?(config.hardfork, :eip_4788)
-    enabled_2935? = HardforkConfig.enabled?(config.hardfork, :eip_2935)
-
-    []
-    |> maybe_append(enabled_4788?, fn db, block_ctx ->
-      unwrap_system_call(BeaconRoots.commit(db, block_ctx, header.parent_beacon_block_root || 0))
-    end)
-    |> maybe_append(enabled_2935?, fn db, block_ctx ->
-      unwrap_system_call(BlockHashes.commit(db, block_ctx, header.parent_hash))
-    end)
-  end
-
-  defp unwrap_system_call({:ok, %Database{} = db}), do: db
-  defp unwrap_system_call({:error, _reason, %Database{} = db}), do: db
-
-  defp maybe_append(list, false, _fun), do: list
-  defp maybe_append(list, true, fun), do: list ++ [fun]
-
-  defp tx_executor(%Config{} = config, header) do
-    fn %Transaction{} = tx, %Block{} = block_ctx, db ->
-      block_ctx_with_blob = put_blob_base_fee(block_ctx, header, config.hardfork)
-
-      case TxExecutor.execute(tx, db, block_ctx_with_blob, config) do
-        {:ok, %{db: db, machine: machine, gas_used: gas_used, failed?: failed?}} ->
-          {:ok,
-           %{
-             status: if(failed?, do: 0, else: 1),
-             gas_used: gas_used,
-             logs: if(failed?, do: [], else: machine.substate.logs),
-             db: db
-           }}
-
-        {:error, _} = err ->
-          err
-      end
-    end
-  end
-
-  # Derive blob_base_fee from the header's excess_blob_gas; pre-Cancun headers
-  # carry no blob fields and leave it at 0.
-  defp put_blob_base_fee(%Block{} = block_ctx, %{excess_blob_gas: nil}, _hardfork),
-    do: block_ctx
-
-  defp put_blob_base_fee(%Block{} = block_ctx, header, hardfork) do
-    %{block_ctx | blob_base_fee: Blob.base_fee_per_blob_gas(header.excess_blob_gas, hardfork)}
   end
 
   defp verify_post_state(db, post) do

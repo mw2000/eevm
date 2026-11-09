@@ -89,6 +89,8 @@ defmodule EEVM.HardforkConfig do
     eip_3541: :london,
     # EIP-3675 (Paris): proof of stake; difficulty, nonce, and ommers are fixed to empty values
     eip_3675: :paris,
+    # EIP-4895 (Shanghai): beacon-chain withdrawals; header withdrawals_root
+    eip_4895: :shanghai,
     # EIP-3651 (Shanghai): COINBASE pre-warmed at tx start
     eip_3651: :shanghai,
     # EIP-3855 (Shanghai): PUSH0 opcode
@@ -113,6 +115,8 @@ defmodule EEVM.HardforkConfig do
     eip_2935: :prague,
     # EIP-7691 (Prague): blob schedule raised to target 6 / max 9 blobs per block
     eip_7691: :prague,
+    # EIP-7685 (Prague): general execution-layer requests; header requests_hash
+    eip_7685: :prague,
     # EIP-7702 (Prague): set-code transactions and delegation designators
     eip_7702: :prague,
     # EIP-7825 (Osaka): per-transaction gas limit cap of 2^24

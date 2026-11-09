@@ -1,13 +1,13 @@
 defmodule EEVM.TestSupport.TxExecutor do
   @moduledoc """
-  Shared transaction-execution pipeline for the StateTest and BlockchainTest
-  runners.
+  Transaction-execution pipeline for the StateTest runner, which builds
+  unsigned `EEVM.Context.Transaction`s from a fixture's secret key and so
+  can't go through `EEVM.Handler`.
 
   Performs the steps a real client folds into block processing:
   validate → burn the EIP-4844 blob gas fee and bump nonce → apply EIP-7702
   authorizations → run the interpreter top-level → settle gas fees (sender
-  debit, coinbase credit). Each runner wraps the result for its own
-  post-state assertions.
+  debit, coinbase credit).
   """
 
   alias EEVM.{Config, Database}

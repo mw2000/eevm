@@ -8,29 +8,45 @@ defmodule EEVM.Block.HeaderValidatorTest do
 
   # Parent gas limit 1_024_000 gives an elasticity bound of exactly 1_000 and
   # an EIP-1559 gas target of 512_000. Headers default to valid Cancun headers
-  # (the default fork): zero base fee, post-Merge fields, and empty blob fields.
+  # (the default fork): zero base fee, post-Merge fields, and every field up to
+  # Cancun present.
+  @cancun_fields [
+    base_fee_per_gas: 0,
+    withdrawals_root: <<0::256>>,
+    blob_gas_used: 0,
+    excess_blob_gas: 0,
+    parent_beacon_block_root: 0
+  ]
+
   @parent Header.new(
-            number: 7,
-            timestamp: 100,
-            gas_limit: 1_024_000,
-            gas_used: 512_000,
-            hash: <<0xAB::256>>,
-            blob_gas_used: 0,
-            excess_blob_gas: 0
+            [
+              number: 7,
+              timestamp: 100,
+              gas_limit: 1_024_000,
+              gas_used: 512_000,
+              hash: <<0xAB::256>>
+            ] ++
+              @cancun_fields
           )
 
   defp child(overrides) do
     Header.new(
-      [
-        number: 8,
-        timestamp: 112,
-        gas_limit: 1_024_000,
-        parent_hash: <<0xAB::256>>,
-        blob_gas_used: 0,
-        excess_blob_gas: 0
-      ] ++ overrides
+      [number: 8, timestamp: 112, gas_limit: 1_024_000, parent_hash: <<0xAB::256>>] ++
+        @cancun_fields ++ overrides
     )
   end
+
+  # Clears the fields a fork earlier than Cancun doesn't define.
+  defp before(%Header{} = header, :shanghai),
+    do: %{header | blob_gas_used: nil, excess_blob_gas: nil, parent_beacon_block_root: nil}
+
+  defp before(%Header{} = header, :london),
+    do: %{before(header, :shanghai) | withdrawals_root: nil}
+
+  defp before(%Header{} = header, :berlin), do: %{before(header, :london) | base_fee_per_gas: nil}
+
+  # Prague adds requests_hash (EIP-7685).
+  defp prague(%Header{} = header), do: %{header | requests_hash: <<0::256>>}
 
   test "accepts a valid successor" do
     assert :ok = HeaderValidator.validate(child([]), @parent)
@@ -88,28 +104,28 @@ defmodule EEVM.Block.HeaderValidatorTest do
 
     assert :ok =
              HeaderValidator.validate(
-               child(base_fee_per_gas: 17, excess_blob_gas: 262_144),
+               prague(child(base_fee_per_gas: 17, excess_blob_gas: 262_144)),
                blob_parent,
                osaka
              )
 
     assert :ok =
              HeaderValidator.validate(
-               child(base_fee_per_gas: 17, excess_blob_gas: 0),
+               prague(child(base_fee_per_gas: 17, excess_blob_gas: 0)),
                blob_parent,
                prague
              )
 
     assert {:error, :invalid_excess_blob_gas} =
              HeaderValidator.validate(
-               child(base_fee_per_gas: 17, excess_blob_gas: 0),
+               prague(child(base_fee_per_gas: 17, excess_blob_gas: 0)),
                blob_parent,
                osaka
              )
 
     assert {:error, :invalid_excess_blob_gas} =
              HeaderValidator.validate(
-               child(base_fee_per_gas: 17, excess_blob_gas: 262_144),
+               prague(child(base_fee_per_gas: 17, excess_blob_gas: 262_144)),
                blob_parent,
                prague
              )
@@ -152,11 +168,15 @@ defmodule EEVM.Block.HeaderValidatorTest do
                HeaderValidator.validate(child(base_fee_per_gas: 7), busy)
     end
 
-    test "isn't checked before London" do
-      berlin = %{@parent | blob_gas_used: nil, excess_blob_gas: nil}
-      header = child(base_fee_per_gas: 123, blob_gas_used: nil, excess_blob_gas: nil)
+    test "is absent before London" do
+      berlin = HardforkConfig.new(:berlin)
+      parent = before(@parent, :berlin)
+      header = before(child([]), :berlin)
 
-      assert :ok = HeaderValidator.validate(header, berlin, HardforkConfig.new(:berlin))
+      assert :ok = HeaderValidator.validate(header, parent, berlin)
+
+      assert {:error, :unexpected_header_fields} =
+               HeaderValidator.validate(%{header | base_fee_per_gas: 0}, parent, berlin)
     end
   end
 
@@ -172,37 +192,44 @@ defmodule EEVM.Block.HeaderValidatorTest do
     end
 
     test "allows proof-of-work fields before Paris" do
-      london_parent = %{@parent | blob_gas_used: nil, excess_blob_gas: nil}
+      london_parent = before(@parent, :london)
 
       header =
-        child(
-          difficulty: 131_072,
-          nonce: <<1::64>>,
-          ommers_hash: <<1::256>>,
-          blob_gas_used: nil,
-          excess_blob_gas: nil
-        )
+        before(child(difficulty: 131_072, nonce: <<1::64>>, ommers_hash: <<1::256>>), :london)
 
       assert :ok = HeaderValidator.validate(header, london_parent, HardforkConfig.new(:london))
     end
   end
 
   describe "blob gas fields (EIP-4844)" do
-    test "are required from Cancun and rejected before" do
+    test "fork fields are required from their fork and rejected before it" do
       shanghai = HardforkConfig.new(:shanghai)
-      pre_cancun_parent = %{@parent | blob_gas_used: nil, excess_blob_gas: nil}
+      prague = HardforkConfig.new(:prague)
+      pre_cancun_parent = before(@parent, :shanghai)
 
-      assert {:error, :missing_blob_fields} =
-               HeaderValidator.validate(child(blob_gas_used: nil), @parent)
+      for field <- [
+            :blob_gas_used,
+            :excess_blob_gas,
+            :parent_beacon_block_root,
+            :withdrawals_root
+          ] do
+        assert {:error, :missing_header_fields} =
+                 HeaderValidator.validate(child([{field, nil}]), @parent)
+      end
 
-      assert {:error, :missing_blob_fields} =
-               HeaderValidator.validate(child(excess_blob_gas: nil), @parent)
-
-      assert {:error, :unexpected_blob_fields} =
+      assert {:error, :unexpected_header_fields} =
                HeaderValidator.validate(child([]), pre_cancun_parent, shanghai)
 
-      header = child(blob_gas_used: nil, excess_blob_gas: nil)
-      assert :ok = HeaderValidator.validate(header, pre_cancun_parent, shanghai)
+      assert :ok =
+               HeaderValidator.validate(before(child([]), :shanghai), pre_cancun_parent, shanghai)
+
+      assert {:error, :unexpected_header_fields} =
+               HeaderValidator.validate(prague(child([])), @parent)
+
+      assert {:error, :missing_header_fields} =
+               HeaderValidator.validate(child([]), @parent, prague)
+
+      assert :ok = HeaderValidator.validate(prague(child([])), @parent, prague)
     end
 
     test "blob_gas_used is a whole number of blobs within the fork's maximum" do
@@ -217,10 +244,19 @@ defmodule EEVM.Block.HeaderValidatorTest do
       assert {:error, :invalid_blob_gas_used} =
                HeaderValidator.validate(child(blob_gas_used: 7 * 131_072), @parent)
 
-      assert :ok = HeaderValidator.validate(child(blob_gas_used: 9 * 131_072), @parent, prague)
+      assert :ok =
+               HeaderValidator.validate(
+                 prague(child(blob_gas_used: 9 * 131_072)),
+                 @parent,
+                 prague
+               )
 
       assert {:error, :invalid_blob_gas_used} =
-               HeaderValidator.validate(child(blob_gas_used: 10 * 131_072), @parent, prague)
+               HeaderValidator.validate(
+                 prague(child(blob_gas_used: 10 * 131_072)),
+                 @parent,
+                 prague
+               )
     end
   end
 end

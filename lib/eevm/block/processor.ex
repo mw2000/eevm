@@ -1,8 +1,12 @@
 defmodule EEVM.Block.Processor do
   @moduledoc """
-  Execute a block end-to-end: system calls, then transactions in order, then
-  beacon-chain withdrawals, then the commitments a consensus-level verifier
-  will check.
+  Lower-level block engine with an injectable transaction executor: system
+  calls, then transactions in order, then beacon-chain withdrawals, then the
+  commitments a consensus-level verifier will check.
+
+  Most callers want `EEVM.Block.execute/4`, which validates the block, runs
+  each transaction through `EEVM.Handler`, and checks the commitments against
+  the header. Use this module directly to plug in a custom executor.
 
   If any transaction fails (the injected executor returns an `{:error, _}`)
   the processor halts and reports the failing index. The post-state database
@@ -17,7 +21,8 @@ defmodule EEVM.Block.Processor do
     {:ok, tx_result} | {:error, reason}`. Each call receives the *current*
     database after all prior transactions and system calls have been
     applied. The returned `tx_result` is a map with keys `:status`,
-    `:gas_used`, `:logs`, and `:db`.
+    `:gas_used`, `:logs`, and `:db`, plus an optional `:tx_type` (default
+    `:legacy`) that selects the EIP-2718 receipt encoding.
   - `:system_calls` — list of hooks, each `(%Database{}, %Context.Block{})
     -> %Database{}`. Executed in order, strictly before any transaction.
     The default is `[]`.
@@ -29,8 +34,8 @@ defmodule EEVM.Block.Processor do
     Applied as flat balance credits after the transaction fold and before
     the state root is computed, so the returned `state_root` already
     reflects them. Defaults to `[]`.
-  - `:hardfork` — optional atom, purely informational today; the real
-    executor will consume it once wired in.
+  - `:block_context` — the `EEVM.Context.Block` handed to system calls and
+    the executor. Defaults to one derived from the header's fields.
   """
 
   alias EEVM.Block.{Bloom, Header, Receipt, Result, Withdrawal}
@@ -46,7 +51,8 @@ defmodule EEVM.Block.Processor do
           required(:status) => 0 | 1,
           required(:gas_used) => non_neg_integer(),
           required(:logs) => [Bloom.log_entry()],
-          required(:db) => Database.t()
+          required(:db) => Database.t(),
+          optional(:tx_type) => Receipt.tx_type()
         }
 
   @type tx_executor :: (term(), BlockCtx.t(), Database.t() ->
@@ -61,12 +67,10 @@ defmodule EEVM.Block.Processor do
           system_calls: [system_call()],
           tx_encoder: tx_encoder(),
           withdrawals: [Withdrawal.t()],
-          hardfork: atom() | nil
+          block_context: BlockCtx.t()
         ]
 
-  @type process_error ::
-          :block_gas_limit_exceeded
-          | {:tx_failed, non_neg_integer(), term()}
+  @type process_error :: {:tx_failed, non_neg_integer(), term()}
 
   @doc """
   Execute every phase of the block and produce a `%EEVM.Block.Result{}`.
@@ -77,8 +81,9 @@ defmodule EEVM.Block.Processor do
   Returns:
 
   - `{:ok, %Result{}}` on success.
-  - `{:error, :block_gas_limit_exceeded}` when `sum(tx.gas_limit)` exceeds
-    `header.gas_limit`.
+  - `{:error, {:tx_failed, index, :gas_allowance_exceeded}}` when a
+    transaction's `gas_limit` exceeds the gas left in the block
+    (`header.gas_limit` minus the gas used so far).
   - `{:error, {:tx_failed, index, reason}}` when the injected executor
     rejects a transaction. `index` is 0-based in `transactions` order.
   """
@@ -91,34 +96,16 @@ defmodule EEVM.Block.Processor do
     tx_encoder = Keyword.get(opts, :tx_encoder, &Envelope.encode/1)
     withdrawals = Keyword.get(opts, :withdrawals, [])
 
-    block_ctx = to_block_ctx(header)
+    block_ctx = Keyword.get_lazy(opts, :block_context, fn -> to_block_ctx(header) end)
+    db_after_system = apply_system_calls(pre_state_db, block_ctx, system_calls)
 
-    with :ok <- check_block_gas_limit(header, transactions) do
-      db_after_system = apply_system_calls(pre_state_db, block_ctx, system_calls)
+    case execute_transactions(transactions, block_ctx, db_after_system, tx_executor, header) do
+      {:ok, receipts, post_tx_db, gas_used} ->
+        post_db = apply_withdrawals(post_tx_db, withdrawals)
+        {:ok, build_result(post_db, receipts, transactions, gas_used, tx_encoder)}
 
-      case execute_transactions(transactions, block_ctx, db_after_system, tx_executor) do
-        {:ok, receipts, post_tx_db, gas_used} ->
-          post_db = apply_withdrawals(post_tx_db, withdrawals)
-          {:ok, build_result(post_db, receipts, transactions, gas_used, tx_encoder)}
-
-        {:error, _} = error ->
-          error
-      end
-    end
-  end
-
-  # ---------------------------------------------------------------------------
-  # Phase 1 — block-level gas check
-  # ---------------------------------------------------------------------------
-
-  @spec check_block_gas_limit(Header.t(), [term()]) :: :ok | {:error, :block_gas_limit_exceeded}
-  defp check_block_gas_limit(%Header{gas_limit: block_gas_limit}, transactions) do
-    declared = Enum.reduce(transactions, 0, fn tx, acc -> acc + tx_gas_limit(tx) end)
-
-    if declared > block_gas_limit do
-      {:error, :block_gas_limit_exceeded}
-    else
-      :ok
+      {:error, _} = error ->
+        error
     end
   end
 
@@ -144,29 +131,35 @@ defmodule EEVM.Block.Processor do
   # Phase 3 — transaction fold with cumulative gas tracking
   # ---------------------------------------------------------------------------
 
-  @spec execute_transactions([term()], BlockCtx.t(), Database.t(), tx_executor()) ::
+  @spec execute_transactions([term()], BlockCtx.t(), Database.t(), tx_executor(), Header.t()) ::
           {:ok, [Receipt.t()], Database.t(), non_neg_integer()}
           | {:error, {:tx_failed, non_neg_integer(), term()}}
-  defp execute_transactions(transactions, block_ctx, db, tx_executor) do
+  defp execute_transactions(transactions, block_ctx, db, tx_executor, %Header{} = header) do
     initial = {[], db, 0, 0}
 
     transactions
     |> Enum.reduce_while(initial, fn tx, {receipts, db_acc, cumulative_gas, index} ->
-      case tx_executor.(tx, block_ctx, db_acc) do
-        {:ok, %{status: status, gas_used: gas_used, logs: logs, db: new_db}} ->
-          new_cumulative = cumulative_gas + gas_used
+      # A transaction may only claim the gas still left in the block.
+      if tx_gas_limit(tx) > header.gas_limit - cumulative_gas do
+        {:halt, {:error, {:tx_failed, index, :gas_allowance_exceeded}}}
+      else
+        case tx_executor.(tx, block_ctx, db_acc) do
+          {:ok, %{status: status, gas_used: gas_used, logs: logs, db: new_db} = tx_result} ->
+            new_cumulative = cumulative_gas + gas_used
 
-          receipt = %Receipt{
-            status: status,
-            cumulative_gas_used: new_cumulative,
-            logs: logs,
-            logs_bloom: Bloom.from_logs(logs)
-          }
+            receipt = %Receipt{
+              tx_type: Map.get(tx_result, :tx_type, :legacy),
+              status: status,
+              cumulative_gas_used: new_cumulative,
+              logs: logs,
+              logs_bloom: Bloom.from_logs(logs)
+            }
 
-          {:cont, {[receipt | receipts], new_db, new_cumulative, index + 1}}
+            {:cont, {[receipt | receipts], new_db, new_cumulative, index + 1}}
 
-        {:error, reason} ->
-          {:halt, {:error, {:tx_failed, index, reason}}}
+          {:error, reason} ->
+            {:halt, {:error, {:tx_failed, index, reason}}}
+        end
       end
     end)
     |> case do
@@ -223,7 +216,7 @@ defmodule EEVM.Block.Processor do
   defp compute_receipts_root(receipts) do
     receipts
     |> Enum.with_index()
-    |> Enum.map(fn {receipt, index} -> {ExRLP.encode(index), encode_receipt(receipt)} end)
+    |> Enum.map(fn {receipt, index} -> {ExRLP.encode(index), Receipt.encode(receipt)} end)
     |> Trie.root_hash()
   end
 
@@ -240,17 +233,6 @@ defmodule EEVM.Block.Processor do
     Enum.reduce(receipts, Bloom.empty(), fn %Receipt{logs_bloom: bloom}, acc ->
       Bloom.merge(acc, bloom)
     end)
-  end
-
-  # Byzantium-and-later receipt layout: [status, cumulativeGasUsed, bloom, logs].
-  @spec encode_receipt(Receipt.t()) :: binary()
-  defp encode_receipt(%Receipt{} = receipt) do
-    encoded_logs =
-      Enum.map(receipt.logs, fn %{address: address, topics: topics, data: data} ->
-        [<<address::unsigned-big-160>>, Enum.map(topics, &<<&1::unsigned-big-256>>), data]
-      end)
-
-    ExRLP.encode([receipt.status, receipt.cumulative_gas_used, receipt.logs_bloom, encoded_logs])
   end
 
   # ---------------------------------------------------------------------------
@@ -279,8 +261,8 @@ defmodule EEVM.Block.Processor do
       coinbase: header.coinbase,
       gaslimit: header.gas_limit,
       prevrandao: header.prev_randao,
-      basefee: header.base_fee_per_gas,
-      parent_beacon_block_root: header.parent_beacon_block_root
+      basefee: header.base_fee_per_gas || 0,
+      parent_beacon_block_root: header.parent_beacon_block_root || 0
     }
   end
 end

@@ -2,18 +2,12 @@ defmodule EEVM.TestSupport.BlockchainTestFixture do
   @moduledoc """
   Parses official `BlockchainTests` JSON fixtures into typed structs.
 
-  The schema differs from `GeneralStateTests`:
-
-  - Top-level keys: `pre`, `postState`, `network`, `genesisBlockHeader`,
-    `genesisRLP`, `blocks`, `lastblockhash`.
-  - Each entry in `blocks` carries a parsed `blockHeader` plus a parsed
-    `transactions` array (with the recovered `sender` already attached) and
-    the canonical `rlp` of the whole block.
-  - `InvalidBlocks` fixtures additionally include an `expectException`
-    string on the offending block.
-
-  This loader produces the shape the runner consumes; it does not run any
-  semantic checks of its own.
+  The runner executes blocks from their canonical `rlp` through
+  `EEVM.Block`, so the loader keeps only what that needs: the pre- and
+  post-state, the network, the genesis block's RLP, and each block's `rlp`
+  and optional `expectException`. The JSON copies of headers and
+  transactions are ignored; `InvalidBlocks` fixtures deliberately put
+  malformed values there.
   """
 
   defmodule Account do
@@ -29,133 +23,16 @@ defmodule EEVM.TestSupport.BlockchainTestFixture do
     defstruct balance: 0, nonce: 0, code: <<>>, storage: %{}
   end
 
-  defmodule TransactionFields do
-    @moduledoc false
-
-    @type t :: %__MODULE__{
-            sender: non_neg_integer(),
-            nonce: non_neg_integer(),
-            type: :legacy | :eip2930 | :eip1559 | :eip4844 | :eip7702,
-            to: non_neg_integer() | nil,
-            value: non_neg_integer(),
-            data: binary(),
-            gas_limit: non_neg_integer(),
-            gas_price: non_neg_integer(),
-            max_fee_per_gas: non_neg_integer(),
-            max_priority_fee_per_gas: non_neg_integer(),
-            max_fee_per_blob_gas: non_neg_integer(),
-            access_list: [{non_neg_integer(), [non_neg_integer()]}],
-            blob_hashes: [non_neg_integer()],
-            authorization_list: [EEVM.Context.Transaction.authorization()],
-            chain_id: non_neg_integer()
-          }
-
-    defstruct sender: 0,
-              nonce: 0,
-              type: :legacy,
-              to: nil,
-              value: 0,
-              data: <<>>,
-              gas_limit: 0,
-              gas_price: 0,
-              max_fee_per_gas: 0,
-              max_priority_fee_per_gas: 0,
-              max_fee_per_blob_gas: 0,
-              access_list: [],
-              blob_hashes: [],
-              authorization_list: [],
-              chain_id: 1
-  end
-
-  defmodule BlockHeader do
-    @moduledoc false
-
-    @type t :: %__MODULE__{
-            parent_hash: binary(),
-            coinbase: non_neg_integer(),
-            state_root: binary(),
-            transactions_root: binary(),
-            receipts_root: binary(),
-            logs_bloom: binary(),
-            difficulty: non_neg_integer(),
-            number: non_neg_integer(),
-            gas_limit: non_neg_integer(),
-            gas_used: non_neg_integer(),
-            timestamp: non_neg_integer(),
-            extra_data: binary(),
-            mix_hash: non_neg_integer(),
-            nonce: binary(),
-            base_fee_per_gas: non_neg_integer(),
-            withdrawals_root: binary() | nil,
-            blob_gas_used: non_neg_integer() | nil,
-            excess_blob_gas: non_neg_integer() | nil,
-            parent_beacon_block_root: non_neg_integer() | nil,
-            requests_hash: binary() | nil,
-            ommers_hash: binary(),
-            hash: binary()
-          }
-
-    defstruct [
-      :parent_hash,
-      :coinbase,
-      :state_root,
-      :transactions_root,
-      :receipts_root,
-      :logs_bloom,
-      :difficulty,
-      :number,
-      :gas_limit,
-      :gas_used,
-      :timestamp,
-      :extra_data,
-      :mix_hash,
-      :nonce,
-      :base_fee_per_gas,
-      :withdrawals_root,
-      :blob_gas_used,
-      :excess_blob_gas,
-      :parent_beacon_block_root,
-      :requests_hash,
-      :ommers_hash,
-      :hash
-    ]
-  end
-
-  defmodule Withdrawal do
-    @moduledoc false
-
-    @type t :: %__MODULE__{
-            index: non_neg_integer(),
-            validator_index: non_neg_integer(),
-            address: non_neg_integer(),
-            amount: non_neg_integer()
-          }
-
-    defstruct [:index, :validator_index, :address, :amount]
-  end
-
   defmodule Block do
     @moduledoc false
 
     @type t :: %__MODULE__{
             block_number: non_neg_integer(),
-            header: BlockHeader.t() | nil,
             rlp: binary(),
-            transactions: [TransactionFields.t()],
-            withdrawals: [Withdrawal.t()],
-            expect_exception: String.t() | nil,
-            decode_error: String.t() | nil
+            expect_exception: String.t() | nil
           }
 
-    defstruct [
-      :block_number,
-      :header,
-      :rlp,
-      transactions: [],
-      withdrawals: [],
-      expect_exception: nil,
-      decode_error: nil
-    ]
+    defstruct [:block_number, :rlp, expect_exception: nil]
   end
 
   defmodule Case do
@@ -166,12 +43,11 @@ defmodule EEVM.TestSupport.BlockchainTestFixture do
             network: EEVM.HardforkConfig.spec_id(),
             pre: %{non_neg_integer() => Account.t()},
             post: %{non_neg_integer() => Account.t()},
-            genesis_header: BlockHeader.t(),
-            last_block_hash: binary(),
+            genesis_rlp: binary(),
             blocks: [Block.t()]
           }
 
-    defstruct [:name, :network, :pre, :post, :genesis_header, :last_block_hash, blocks: []]
+    defstruct [:name, :network, :pre, :post, :genesis_rlp, blocks: []]
   end
 
   @spec load_file!(binary()) :: [Case.t()]
@@ -185,123 +61,17 @@ defmodule EEVM.TestSupport.BlockchainTestFixture do
         network: parse_network!(Map.fetch!(payload, "network")),
         pre: parse_accounts(Map.fetch!(payload, "pre")),
         post: parse_accounts(Map.get(payload, "postState", %{})),
-        genesis_header: parse_block_header(Map.fetch!(payload, "genesisBlockHeader")),
-        last_block_hash: parse_bytes!(Map.fetch!(payload, "lastblockhash")),
-        blocks: parse_blocks(Map.fetch!(payload, "blocks"))
+        genesis_rlp: parse_bytes!(Map.fetch!(payload, "genesisRLP")),
+        blocks: Enum.map(Map.fetch!(payload, "blocks"), &parse_block/1)
       }
     end)
   end
 
-  defp parse_blocks(blocks) when is_list(blocks), do: Enum.map(blocks, &parse_block/1)
-
-  # InvalidBlocks fixtures deliberately carry malformed fields (such as
-  # "0x:bigint ..." placeholders or a uint64 field holding 20 bytes). A block
-  # that doesn't decode keeps its expectations and records `decode_error`, so
-  # the runner rejects it as an invalid block instead of the loader crashing.
   defp parse_block(block) do
-    decoded = Map.get(block, "rlp_decoded") || %{}
-    header_payload = Map.get(block, "blockHeader") || Map.get(decoded, "blockHeader")
-    tx_payload = Map.get(block, "transactions") || Map.get(decoded, "transactions") || []
-    wd_payload = Map.get(block, "withdrawals") || Map.get(decoded, "withdrawals") || []
-    expect_exception = Map.get(block, "expectException")
-
     %Block{
       block_number: parse_quantity!(Map.get(block, "blocknumber", "0")),
-      header: parse_optional_header(header_payload),
       rlp: parse_bytes!(Map.fetch!(block, "rlp")),
-      transactions: Enum.map(tx_payload, &parse_transaction/1),
-      withdrawals: Enum.map(wd_payload, &parse_withdrawal/1),
-      expect_exception: expect_exception
-    }
-  rescue
-    error in ArgumentError ->
-      %Block{
-        block_number: Map.get(block, "blocknumber", "0") |> safe_quantity(),
-        expect_exception: Map.get(block, "expectException"),
-        decode_error: Exception.message(error)
-      }
-  end
-
-  defp safe_quantity(value) do
-    parse_quantity!(value)
-  rescue
-    ArgumentError -> 0
-  end
-
-  defp parse_optional_header(nil), do: nil
-  defp parse_optional_header(header), do: parse_block_header(header)
-
-  defp parse_block_header(header) do
-    %BlockHeader{
-      parent_hash: parse_bytes!(Map.fetch!(header, "parentHash")),
-      coinbase: parse_address!(Map.fetch!(header, "coinbase")),
-      state_root: parse_bytes!(Map.fetch!(header, "stateRoot")),
-      transactions_root: parse_bytes!(Map.fetch!(header, "transactionsTrie")),
-      receipts_root: parse_bytes!(Map.fetch!(header, "receiptTrie")),
-      logs_bloom: parse_bytes!(Map.fetch!(header, "bloom")),
-      difficulty: parse_quantity!(Map.fetch!(header, "difficulty")),
-      number: parse_quantity!(Map.fetch!(header, "number")),
-      gas_limit: parse_quantity!(Map.fetch!(header, "gasLimit")),
-      gas_used: parse_quantity!(Map.fetch!(header, "gasUsed")),
-      timestamp: parse_quantity!(Map.fetch!(header, "timestamp")),
-      extra_data: parse_bytes!(Map.fetch!(header, "extraData")),
-      mix_hash: parse_quantity!(Map.fetch!(header, "mixHash")),
-      nonce: parse_bytes!(Map.fetch!(header, "nonce")),
-      base_fee_per_gas: parse_quantity!(Map.get(header, "baseFeePerGas", "0x0")),
-      withdrawals_root: parse_optional_bytes(Map.get(header, "withdrawalsRoot")),
-      blob_gas_used: parse_optional_quantity(Map.get(header, "blobGasUsed")),
-      excess_blob_gas: parse_optional_quantity(Map.get(header, "excessBlobGas")),
-      parent_beacon_block_root: parse_optional_quantity(Map.get(header, "parentBeaconBlockRoot")),
-      requests_hash: parse_optional_bytes(Map.get(header, "requestsHash")),
-      ommers_hash: parse_bytes!(Map.fetch!(header, "uncleHash")),
-      hash: parse_bytes!(Map.fetch!(header, "hash"))
-    }
-  end
-
-  # EIP-4895 encodes index, validator_index, and amount as uint64 and the
-  # address as exactly 20 bytes.
-  defp parse_withdrawal(w) do
-    %Withdrawal{
-      index: parse_uint64!(Map.fetch!(w, "index")),
-      validator_index: parse_uint64!(Map.fetch!(w, "validatorIndex")),
-      address: parse_address20!(Map.fetch!(w, "address")),
-      amount: parse_uint64!(Map.fetch!(w, "amount"))
-    }
-  end
-
-  defp parse_uint64!(value) do
-    case parse_quantity!(value) do
-      int when int < 0x1_0000_0000_0000_0000 -> int
-      _ -> raise ArgumentError, "uint64 field overflows: #{value}"
-    end
-  end
-
-  defp parse_address20!(value) do
-    case parse_bytes!(value) do
-      <<address::unsigned-big-160>> -> address
-      _ -> raise ArgumentError, "address is not 20 bytes: #{value}"
-    end
-  end
-
-  defp parse_transaction(tx) do
-    type = parse_tx_type(Map.get(tx, "type"))
-
-    %TransactionFields{
-      sender: parse_optional_address(Map.get(tx, "sender", "")),
-      nonce: parse_quantity!(Map.fetch!(tx, "nonce")),
-      type: type,
-      to: parse_optional_address(Map.get(tx, "to", "")),
-      value: parse_quantity!(Map.fetch!(tx, "value")),
-      data: parse_bytes!(Map.fetch!(tx, "data")),
-      gas_limit: parse_quantity!(Map.fetch!(tx, "gasLimit")),
-      gas_price: parse_quantity!(Map.get(tx, "gasPrice", "0x0")),
-      max_fee_per_gas: parse_quantity!(Map.get(tx, "maxFeePerGas", "0x0")),
-      max_priority_fee_per_gas: parse_quantity!(Map.get(tx, "maxPriorityFeePerGas", "0x0")),
-      max_fee_per_blob_gas: parse_quantity!(Map.get(tx, "maxFeePerBlobGas", "0x0")),
-      access_list: parse_access_list(Map.get(tx, "accessList", [])),
-      blob_hashes: parse_quantity_list(Map.get(tx, "blobVersionedHashes", [])),
-      authorization_list: parse_authorization_list(Map.get(tx, "authorizationList", [])),
-      chain_id: parse_quantity!(Map.get(tx, "chainId", "0x1"))
+      expect_exception: Map.get(block, "expectException")
     }
   end
 
@@ -322,41 +92,6 @@ defmodule EEVM.TestSupport.BlockchainTestFixture do
       {parse_quantity!(slot), parse_quantity!(value)}
     end)
   end
-
-  defp parse_access_list(entries) when is_list(entries) do
-    Enum.map(entries, fn entry ->
-      {parse_address!(Map.fetch!(entry, "address")),
-       Enum.map(Map.get(entry, "storageKeys", []), &parse_quantity!/1)}
-    end)
-  end
-
-  defp parse_quantity_list(values) when is_list(values), do: Enum.map(values, &parse_quantity!/1)
-
-  defp parse_authorization_list(entries) when is_list(entries) do
-    Enum.map(entries, fn entry ->
-      %{
-        chain_id: parse_quantity!(Map.fetch!(entry, "chainId")),
-        address: parse_address!(Map.fetch!(entry, "address")),
-        nonce: parse_quantity!(Map.fetch!(entry, "nonce")),
-        y_parity: parse_quantity!(Map.get(entry, "yParity", Map.get(entry, "v"))),
-        r: parse_quantity!(Map.fetch!(entry, "r")),
-        s: parse_quantity!(Map.fetch!(entry, "s"))
-      }
-    end)
-  end
-
-  defp parse_tx_type(nil), do: :legacy
-  defp parse_tx_type("0x0"), do: :legacy
-  defp parse_tx_type("0x00"), do: :legacy
-  defp parse_tx_type("0x1"), do: :eip2930
-  defp parse_tx_type("0x01"), do: :eip2930
-  defp parse_tx_type("0x2"), do: :eip1559
-  defp parse_tx_type("0x02"), do: :eip1559
-  defp parse_tx_type("0x3"), do: :eip4844
-  defp parse_tx_type("0x03"), do: :eip4844
-  defp parse_tx_type("0x4"), do: :eip7702
-  defp parse_tx_type("0x04"), do: :eip7702
-  defp parse_tx_type(_), do: :legacy
 
   defp parse_network!("Frontier"), do: :frontier
   defp parse_network!("Homestead"), do: :homestead
@@ -391,21 +126,11 @@ defmodule EEVM.TestSupport.BlockchainTestFixture do
     end
   end
 
-  defp parse_optional_address(""), do: nil
-  defp parse_optional_address("0x"), do: nil
-  defp parse_optional_address(value), do: parse_address!(value)
-
   defp parse_address!(value) do
     value
     |> parse_bytes!()
     |> :binary.decode_unsigned()
   end
-
-  defp parse_optional_bytes(nil), do: nil
-  defp parse_optional_bytes(value), do: parse_bytes!(value)
-
-  defp parse_optional_quantity(nil), do: nil
-  defp parse_optional_quantity(value), do: parse_quantity!(value)
 
   defp parse_quantity!("0x"), do: 0
   defp parse_quantity!(""), do: 0

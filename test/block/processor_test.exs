@@ -158,19 +158,23 @@ defmodule EEVM.Block.ProcessorTest do
   # ---------------------------------------------------------------------------
 
   describe "block gas limit enforcement" do
-    test "rejects the block when sum(tx.gas_limit) > header.gas_limit" do
+    test "rejects a transaction whose gas limit exceeds the gas left in the block" do
       db = InMemory.new()
       header = noop_header(gas_limit: 50_000)
 
+      # The first transaction uses 21_000, leaving 29_000 for the second.
       txs = [
         tx(id: 1, gas_limit: 30_000),
-        tx(id: 2, gas_limit: 30_000)
+        tx(id: 2, gas_limit: 29_001)
       ]
 
-      assert {:error, :block_gas_limit_exceeded} = run(header, txs, db)
+      assert {:error, {:tx_failed, 1, :gas_allowance_exceeded}} = run(header, txs, db)
+
+      assert {:ok, %Result{gas_used: 42_000}} =
+               run(header, [hd(txs), tx(id: 2, gas_limit: 29_000)], db)
     end
 
-    test "accepts sum equal to the header gas limit" do
+    test "accepts transactions that use exactly the header gas limit" do
       db = InMemory.new()
       header = noop_header(gas_limit: 60_000)
 

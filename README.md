@@ -119,9 +119,39 @@ EEVM.StateRoot.compute_state_root(result.post_state_db) |> Base.encode16(case: :
 
 Addresses are integers in the database API and 20-byte binaries in transaction
 structs, matching their wire encoding. `EEVM.Handler.execute/4` also accepts raw
-signed transaction bytes. To process a whole block, with system contracts,
-withdrawals, receipts, and roots, use `EEVM.Block.Processor.process_block/4` and
-pass a `:tx_executor` that calls `EEVM.Handler.execute/4`.
+signed transaction bytes.
+
+### Build, encode, and execute a block
+
+`EEVM.Block` handles whole blocks. `build/4` produces a child of a parent
+header: it derives the base fee and blob fields, runs the transactions, and
+fills in every root. `encode/1` and `decode/1` convert to and from canonical
+RLP. `execute/4` validates a block against its parent (including the EIP-7934
+size limit from Osaka), applies the system calls, transactions, and
+withdrawals, and checks the header's commitments. Both take the same
+`:hardfork` and `:config` options as `EEVM.Handler.execute/4`, and errors are
+listed in `EEVM.Error`.
+
+```elixir
+iex> alias EEVM.Block
+iex> alias EEVM.Transaction.{FeeMarket, Signer}
+iex> private_key = <<0x46::256>>
+iex> {:ok, <<4, public_key::binary-size(64)>>} = ExSecp256k1.create_public_key(private_key)
+iex> <<_::binary-size(12), sender::unsigned-big-160>> = ExKeccak.hash_256(public_key)
+iex> db = EEVM.Database.InMemory.new(accounts: %{sender => %{balance: 10 ** 18, nonce: 0, code: <<>>}})
+iex> tx = %FeeMarket{chain_id: 1, nonce: 0, max_priority_fee_per_gas: 1, max_fee_per_gas: 10,
+...>   gas_limit: 21_000, to: <<0xB0B::160>>, value: 1_000, data: <<>>, access_list: []}
+iex> {:ok, {<<r::256, s::256>>, y_parity}} = ExSecp256k1.sign_compact(Signer.signing_hash(tx, 1), private_key)
+iex> parent = EEVM.Block.Header.new(gas_limit: 30_000_000, base_fee_per_gas: 7, hash: <<1::256>>)
+iex> {:ok, block, _result} = Block.build(parent, [%{tx | y_parity: y_parity, r: r, s: s}], db, timestamp: 12)
+iex> {:ok, decoded} = block |> Block.encode() |> Block.decode()
+iex> {:ok, result} = Block.execute(decoded, parent, db, hardfork: :cancun)
+iex> {result.gas_used, EEVM.Database.get_balance(result.post_state_db, 0xB0B)}
+{21000, 1000}
+```
+
+`EEVM.Block.Processor.process_block/4` is the lower-level engine underneath; use
+it directly to plug in your own transaction executor.
 
 State lives behind the `EEVM.Database` behaviour. `EEVM.Database.InMemory` is the
 built-in backend; implement the behaviour to execute against your own storage.
@@ -139,20 +169,19 @@ rules.
 
 Rules that do switch on the configured fork: EIP-170, EIP-2929, EIP-3529,
 EIP-3541, EIP-3855, EIP-3860, EIP-1153, EIP-5656, EIP-6780, EIP-4788, EIP-2537,
-EIP-2935, EIP-7623, EIP-7823, EIP-7825, EIP-7883, EIP-7918, EIP-7939, and
-EIP-7951.
+EIP-2935, EIP-7623, EIP-7823, EIP-7825, EIP-7883, EIP-7918, EIP-7934, EIP-7939,
+and EIP-7951.
 
 | Area | Implemented |
 |------|-------------|
 | Transactions | Legacy with EIP-155, EIP-2718 envelopes, EIP-2930 access lists, EIP-1559 fee market, EIP-4844 blobs, EIP-7702 set code (partial, see [#144](https://github.com/mw2000/eevm/issues/144)), EIP-7623 calldata floor, EIP-7825 gas limit cap |
 | Execution and gas | Full opcode set through Cancun (including PUSH0, TLOAD/TSTORE, MCOPY, BLOBHASH, BLOBBASEFEE), EIP-2929 warm/cold access, EIP-2200 and EIP-3529 SSTORE metering and refunds, EIP-161, EIP-170, EIP-3541, EIP-3651, EIP-3860, EIP-6780 |
 | Precompiles | `0x01`–`0x11` and `0x100`: ECRECOVER, SHA256, RIPEMD160, IDENTITY, MODEXP (EIP-198, EIP-2565; EIP-7823 and EIP-7883 from Osaka), alt_bn128 (EIP-196/197), BLAKE2F (EIP-152), KZG point evaluation (EIP-4844), BLS12-381 (EIP-2537), P256VERIFY (EIP-7951, from Osaka) |
-| Blocks | Header validation, EIP-4895 withdrawals, EIP-4788 beacon roots, EIP-2935 block hashes, receipts, logs bloom, MPT state, transaction, and receipt roots |
+| Blocks | RLP block codec, building, header and body validation, EIP-7934 size limit, EIP-4895 withdrawals, EIP-4788 beacon roots, EIP-2935 block hashes, receipts, logs bloom, MPT state, transaction, and receipt roots |
 | Tooling | EIP-3155 tracing, disassembler, custom precompile registration |
 
-Osaka support (so far the CLZ opcode, EIP-7823, EIP-7825, EIP-7883, EIP-7918, and EIP-7951) is in progress.
-The EIP-7934 block size limit is checked only by the `BlockchainTests` harness,
-because the library does not RLP-encode blocks yet. The
+Osaka support (so far the CLZ opcode, EIP-7823, EIP-7825, EIP-7883, EIP-7918,
+EIP-7934, and EIP-7951) is in progress. The
 [roadmap](https://github.com/mw2000/eevm/issues/153) tracks what remains.
 
 ## Conformance
@@ -196,8 +225,9 @@ eevm is layered like revm:
   `EEVM.Interpreter.Instructions.*`.
 - **Handler** (`EEVM.Handler`): one transaction through validation,
   pre-execution, execution, and post-execution.
-- **Block** (`EEVM.Block.Processor`): system calls, transactions, withdrawals,
-  receipts, and roots for a whole block.
+- **Block** (`EEVM.Block`): RLP codec, validation, and execution of a whole
+  block: system calls, transactions through the handler, withdrawals,
+  receipts, and roots.
 
 The [API documentation](https://mw2000.github.io/eevm/) is built with ExDoc from
 `main`; its [`EEVM` module page](https://mw2000.github.io/eevm/EEVM.html) has the

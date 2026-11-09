@@ -80,10 +80,29 @@ defmodule EEVM.Error do
   | `:invalid_difficulty` | `difficulty` isn't 0 (EIP-3675, from Paris) |
   | `:invalid_nonce` | `nonce` isn't eight zero bytes (EIP-3675, from Paris) |
   | `:invalid_ommers_hash` | `ommers_hash` isn't the empty-list hash (EIP-3675, from Paris) |
-  | `:unexpected_blob_fields` | A pre-Cancun header carries `blob_gas_used` or `excess_blob_gas` |
-  | `:missing_blob_fields` | A Cancun-or-later header lacks `blob_gas_used` or `excess_blob_gas` |
+  | `:missing_header_fields` | A field the fork defines (`base_fee_per_gas`, `withdrawals_root`, the blob fields, `parent_beacon_block_root`, `requests_hash`) is `nil` |
+  | `:unexpected_header_fields` | A field from a later fork is set |
   | `:invalid_blob_gas_used` | `blob_gas_used` isn't a multiple of 131,072 or exceeds the fork's per-block maximum (EIP-4844, EIP-7691) |
   | `:invalid_excess_blob_gas` | `excess_blob_gas` differs from the value derived from the parent (EIP-4844, EIP-7918 from Osaka) |
+
+  ## Block Errors
+
+  Returned by `EEVM.Block.decode/1`, `validate/3`, `execute/4`, and
+  `build/4`, in addition to every header validation error above.
+
+  | Error | Meaning |
+  |-------|---------|
+  | `:invalid_block_encoding` | The bytes aren't a canonical RLP block |
+  | `:rlp_block_size_exceeded` | The encoded block is over 8,388,608 bytes (EIP-7934, from Osaka) |
+  | `:invalid_transactions_root` | `transactions_root` doesn't commit to the block's transactions |
+  | `:invalid_withdrawals_root` | `withdrawals_root` doesn't commit to the withdrawals, or withdrawals are present before Shanghai or missing after |
+  | `:invalid_ommers_hash` | `ommers_hash` doesn't commit to the block's ommers |
+  | `:invalid_blob_gas_used` | `blob_gas_used` differs from the transactions' total blob gas |
+  | `{:tx_failed, index, reason}` | Transaction `index` (0-based) was rejected: `reason` is an `EEVM.Handler` error, or `:gas_allowance_exceeded` when its gas limit exceeds the gas left in the block |
+  | `:invalid_gas_used` | `gas_used` differs from the gas the transactions used |
+  | `:invalid_logs_bloom` | `logs_bloom` differs from the receipts' combined bloom |
+  | `:invalid_receipts_root` | `receipts_root` differs from the receipts' root |
+  | `:invalid_state_root` | `state_root` differs from the post-block state |
 
   ## Registry Errors
 
@@ -153,15 +172,28 @@ defmodule EEVM.Error do
           | :invalid_difficulty
           | :invalid_nonce
           | :invalid_ommers_hash
-          | :unexpected_blob_fields
-          | :missing_blob_fields
+          | :missing_header_fields
+          | :unexpected_header_fields
           | :invalid_blob_gas_used
           | :invalid_excess_blob_gas
+
+  @type block_error ::
+          :invalid_block_encoding
+          | :rlp_block_size_exceeded
+          | header_validation_error()
+          | :invalid_transactions_root
+          | :invalid_withdrawals_root
+          | :invalid_blob_gas_used
+          | {:tx_failed, non_neg_integer(), atom()}
+          | :invalid_gas_used
+          | :invalid_logs_bloom
+          | :invalid_receipts_root
+          | :invalid_state_root
 
   @type reason ::
           execution_error()
           | precompile_error()
           | :unknown_opcode
           | transaction_validation_error()
-          | header_validation_error()
+          | block_error()
 end
