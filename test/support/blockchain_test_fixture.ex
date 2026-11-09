@@ -45,21 +45,35 @@ defmodule EEVM.TestSupport.BlockchainTestFixture do
             pre: %{non_neg_integer() => Account.t()},
             post: %{non_neg_integer() => Account.t()},
             genesis_rlp: binary(),
+            last_block_hash: binary() | nil,
             blocks: [Block.t()]
           }
 
-    defstruct [:name, :network, :transition, :pre, :post, :genesis_rlp, blocks: []]
+    defstruct [
+      :name,
+      :network,
+      :transition,
+      :pre,
+      :post,
+      :genesis_rlp,
+      :last_block_hash,
+      blocks: []
+    ]
   end
 
   @typedoc """
   A mid-chain fork switch from a synthetic network name such as
   `PragueToOsakaAtTime15k`: blocks before `at` run on `from`, the rest on the
-  case's `network`. `:merge` (from `...AtDiff...` names) activates on the first
-  block with zero difficulty.
+  case's `network`. `{:total_difficulty, ttd}` (from `...AtDiffC0000` names,
+  in hex) activates on the first block whose parent's total difficulty
+  reaches `ttd`, as the Merge did.
   """
   @type transition :: %{
           from: EEVM.HardforkConfig.spec_id(),
-          at: {:block, non_neg_integer()} | {:timestamp, non_neg_integer()} | :merge
+          at:
+            {:block, non_neg_integer()}
+            | {:timestamp, non_neg_integer()}
+            | {:total_difficulty, non_neg_integer()}
         }
 
   @transition_network ~r/^(?<from>\w+?)To(?<to>\w+?)At(?<kind>Time|Diff)?(?<value>\w+)$/
@@ -79,6 +93,7 @@ defmodule EEVM.TestSupport.BlockchainTestFixture do
         pre: parse_accounts(Map.fetch!(payload, "pre")),
         post: parse_accounts(Map.get(payload, "postState", %{})),
         genesis_rlp: parse_bytes!(Map.fetch!(payload, "genesisRLP")),
+        last_block_hash: payload |> Map.get("lastblockhash") |> then(&(&1 && parse_bytes!(&1))),
         blocks: Enum.map(Map.fetch!(payload, "blocks"), &parse_block/1)
       }
     end)
@@ -122,7 +137,7 @@ defmodule EEVM.TestSupport.BlockchainTestFixture do
 
   defp parse_activation!("", value), do: {:block, String.to_integer(value)}
   defp parse_activation!("Time", value), do: {:timestamp, parse_thousands!(value)}
-  defp parse_activation!("Diff", _total_difficulty), do: :merge
+  defp parse_activation!("Diff", ttd), do: {:total_difficulty, String.to_integer(ttd, 16)}
 
   defp parse_thousands!(value) do
     case Integer.parse(value) do

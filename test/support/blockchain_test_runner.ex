@@ -9,11 +9,13 @@ defmodule EEVM.TestSupport.BlockchainTestRunner do
      of the previous valid block. BLOCKHASH sees the hashes of every block
      applied so far. Transition networks such as `CancunToPragueAtTime15k`
      pick the fork for each block from its header.
-  3. After every block, verify the final database matches the fixture's
+  3. Verify that the state after the fixture's `lastblockhash` matches its
      `postState`.
 
-  A block with `expectException` must fail to decode or execute; the chain
-  then continues from the previous block. A block without one must apply.
+  Each block applies on top of the block its `parent_hash` names, so fixtures
+  with side chains (a reorg to a heavier chain) build every branch. A block
+  with `expectException` must fail to decode or execute and leaves the known
+  blocks unchanged. A block without one must apply.
   """
 
   alias EEVM.Block
@@ -28,7 +30,7 @@ defmodule EEVM.TestSupport.BlockchainTestRunner do
   @spec run_case(Case.t()) :: :ok | {:error, term()}
   def run_case(%Case{} = test) do
     with {:ok, %Block{header: genesis}} <- Block.decode(test.genesis_rlp),
-         db = build_pre_state(test.pre, block_config(test, genesis)),
+         db = build_pre_state(test.pre, block_config(test, genesis, 0)),
          {:ok, final_db} <- run_blocks(test.blocks, db, genesis, test) do
       verify_post_state(final_db, test.post)
     end
@@ -51,53 +53,81 @@ defmodule EEVM.TestSupport.BlockchainTestRunner do
     |> BlockHashes.install_if_enabled(config.hardfork)
   end
 
+  # `known` maps each applied block's hash to the state after it, its header,
+  # the BLOCKHASH window of its own ancestry, and its total difficulty.
   defp run_blocks(blocks, db, %Header{} = genesis, test) do
-    initial = {db, genesis, %{genesis.number => :binary.decode_unsigned(genesis.hash)}}
+    known = %{
+      genesis.hash =>
+        {db, genesis, %{genesis.number => :binary.decode_unsigned(genesis.hash)},
+         genesis.difficulty}
+    }
 
-    Enum.reduce_while(blocks, {:ok, initial}, fn block, {:ok, chain} ->
-      case attempt_block(block, chain, test) do
-        {:ok, chain} -> {:cont, {:ok, chain}}
+    Enum.reduce_while(blocks, {:ok, known, genesis.hash}, fn block, {:ok, known, head} ->
+      case attempt_block(block, known, test) do
+        {:ok, ^known} -> {:cont, {:ok, known, head}}
+        {:ok, known, hash} -> {:cont, {:ok, known, hash}}
         {:error, _} = error -> {:halt, error}
       end
     end)
     |> case do
-      {:ok, {db, _parent, _hashes}} -> {:ok, db}
-      {:error, _} = error -> error
+      {:ok, known, head} ->
+        {db, _header, _hashes, _td} = Map.fetch!(known, test.last_block_hash || head)
+        {:ok, db}
+
+      {:error, _} = error ->
+        error
     end
   end
 
   # `expectException` semantics: a declared exception means the block must
   # be rejected, and the chain continues from the previous block. Without
   # one, any rejection fails the case.
-  defp attempt_block(%FixtureBlock{expect_exception: exception} = block, chain, test) do
-    case {apply_block(block, chain, test), exception} do
-      {{:ok, chain}, nil} -> {:ok, chain}
-      {{:error, reason}, nil} -> {:error, {:block_failed, block.block_number, reason}}
-      {{:ok, _}, _} -> {:error, {:expected_exception_not_raised, block.block_number, exception}}
-      {{:error, _}, _} -> {:ok, chain}
+  defp attempt_block(%FixtureBlock{expect_exception: exception} = block, known, test) do
+    case {apply_block(block, known, test), exception} do
+      {{:ok, entry}, nil} ->
+        {:ok, Map.put(known, elem(entry, 1).hash, entry), elem(entry, 1).hash}
+
+      {{:error, reason}, nil} ->
+        {:error, {:block_failed, block.block_number, reason}}
+
+      {{:ok, _}, _} ->
+        {:error, {:expected_exception_not_raised, block.block_number, exception}}
+
+      {{:error, _}, _} ->
+        {:ok, known}
     end
   end
 
-  defp apply_block(%FixtureBlock{rlp: rlp}, {db, parent, hashes}, test) do
+  defp apply_block(%FixtureBlock{rlp: rlp}, known, test) do
     with {:ok, %Block{header: header} = block} <- Block.decode(rlp),
-         config = block_config(test, header),
+         {:ok, {db, parent, hashes, parent_td}} <- fetch_parent(known, header),
+         config = block_config(test, header, parent_td),
          {:ok, result} <- Block.execute(block, parent, db, config: config, block_hashes: hashes) do
       {:ok,
        {result.post_state_db, header,
-        Map.put(hashes, header.number, :binary.decode_unsigned(header.hash))}}
+        Map.put(hashes, header.number, :binary.decode_unsigned(header.hash)),
+        parent_td + header.difficulty}}
+    end
+  end
+
+  defp fetch_parent(known, %Header{parent_hash: parent_hash}) do
+    case Map.fetch(known, parent_hash) do
+      {:ok, entry} -> {:ok, entry}
+      :error -> {:error, :unknown_parent}
     end
   end
 
   # Transition fixtures (e.g. `PragueToOsakaAtTime15k`) switch forks mid-chain.
-  defp block_config(%Case{transition: nil, network: fork}, _header), do: Config.new(fork)
+  defp block_config(%Case{transition: nil, network: fork}, _header, _parent_td),
+    do: Config.new(fork)
 
-  defp block_config(%Case{transition: %{from: from, at: at}, network: to}, header) do
-    Config.new(if activated?(at, header), do: to, else: from)
+  defp block_config(%Case{transition: %{from: from, at: at}, network: to}, header, parent_td) do
+    Config.new(if activated?(at, header, parent_td), do: to, else: from)
   end
 
-  defp activated?({:block, number}, header), do: header.number >= number
-  defp activated?({:timestamp, timestamp}, header), do: header.timestamp >= timestamp
-  defp activated?(:merge, header), do: header.difficulty == 0
+  defp activated?({:block, number}, header, _parent_td), do: header.number >= number
+  defp activated?({:timestamp, timestamp}, header, _parent_td), do: header.timestamp >= timestamp
+  defp activated?({:total_difficulty, ttd}, _header, parent_td), do: parent_td >= ttd
 
   defp verify_post_state(db, post) do
     Enum.find_value(post, :ok, fn {addr, %Account{} = expected} ->
