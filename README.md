@@ -143,7 +143,7 @@ EIP-2935, EIP-7623, EIP-7825, EIP-7918, and EIP-7939.
 
 | Area | Implemented |
 |------|-------------|
-| Transactions | Legacy with EIP-155, EIP-2718 envelopes, EIP-2930 access lists, EIP-1559 fee market, EIP-4844 blobs, EIP-7702 set code, EIP-7623 calldata floor, EIP-7825 gas limit cap |
+| Transactions | Legacy with EIP-155, EIP-2718 envelopes, EIP-2930 access lists, EIP-1559 fee market, EIP-4844 blobs, EIP-7702 set code (partial, see [#144](https://github.com/mw2000/eevm/issues/144)), EIP-7623 calldata floor, EIP-7825 gas limit cap |
 | Execution and gas | Full opcode set through Cancun (including PUSH0, TLOAD/TSTORE, MCOPY, BLOBHASH, BLOBBASEFEE), EIP-2929 warm/cold access, EIP-2200 and EIP-3529 SSTORE metering and refunds, EIP-161, EIP-170, EIP-3541, EIP-3651, EIP-3860, EIP-6780 |
 | Precompiles | `0x01`–`0x11`: ECRECOVER, SHA256, RIPEMD160, IDENTITY, MODEXP (EIP-198), alt_bn128 (EIP-196/197), BLAKE2F (EIP-152), KZG point evaluation (EIP-4844), BLS12-381 (EIP-2537) |
 | Blocks | Header validation, EIP-4895 withdrawals, EIP-4788 beacon roots, EIP-2935 block hashes, receipts, logs bloom, MPT state, transaction, and receipt roots |
@@ -151,7 +151,8 @@ EIP-2935, EIP-7623, EIP-7825, EIP-7918, and EIP-7939.
 
 Osaka support (so far the CLZ opcode, EIP-7825, and EIP-7918) is in progress.
 The EIP-7934 block size limit is checked only by the `BlockchainTests` harness,
-because the library does not RLP-encode blocks yet. Osaka work is tracked in [GitHub Issues](https://github.com/mw2000/eevm/issues).
+because the library does not RLP-encode blocks yet. The
+[roadmap](https://github.com/mw2000/eevm/issues/153) tracks what remains.
 
 ## Conformance
 
@@ -159,8 +160,9 @@ eevm is not yet conformant with the official
 [`ethereum/tests`](https://github.com/ethereum/tests) suites. The repository
 includes harnesses for `GeneralStateTests` and `BlockchainTests`; many official
 fixtures still fail. Work on a conformance runner that reports per-suite results
-is in progress. The default `mix test` run covers unit tests, spec-derived test
-vectors, and small checked-in smoke fixtures, not the official suites.
+is in progress ([#143](https://github.com/mw2000/eevm/issues/143)). The default
+`mix test` run covers unit tests, spec-derived test vectors, and small checked-in
+smoke fixtures, not the official suites.
 
 To run official fixtures yourself:
 
