@@ -1,6 +1,8 @@
 defmodule EEVM.Interpreter.Instructions.ExhaustivenessTest do
   use ExUnit.Case, async: true
 
+  alias EEVM.Interpreter.Instructions.Registry
+
   @moduledoc """
   Ensures every known opcode produces a valid result when executed.
 
@@ -62,6 +64,31 @@ defmodule EEVM.Interpreter.Instructions.ExhaustivenessTest do
       end
     end
 
+    # Yellow Paper §9.4.2: an opcode with fewer than `inputs` stack items, or one that would
+    # leave more than 1024, halts exceptionally before it runs. The interpreter checks this
+    # from the registry's `inputs`/`outputs`, so both sides of each boundary are checked here.
+    # Osaka enables every opcode in the registry.
+    test "every opcode underflows one item short of its inputs, and not at its inputs" do
+      for opcode <- @all_known_opcodes,
+          {:ok, %{inputs: inputs}} = Registry.info(opcode),
+          inputs > 0 do
+        short = run_at_depth(opcode, inputs - 1)
+        assert {short.status, short.frame.gas} == {{:error, :stack_underflow}, 0}, hex(opcode)
+        assert run_at_depth(opcode, inputs).status != {:error, :stack_underflow}, hex(opcode)
+      end
+    end
+
+    test "every opcode that grows the stack overflows past 1024 items, and not at 1024" do
+      for opcode <- @all_known_opcodes,
+          {:ok, %{inputs: inputs, outputs: outputs}} = Registry.info(opcode),
+          outputs > inputs do
+        max_depth = 1024 + inputs - outputs
+        over = run_at_depth(opcode, max_depth + 1)
+        assert {over.status, over.frame.gas} == {{:error, :stack_overflow}, 0}, hex(opcode)
+        assert run_at_depth(opcode, max_depth).status != {:error, :stack_overflow}, hex(opcode)
+      end
+    end
+
     test "unknown opcodes halt as invalid" do
       # Pick some unassigned opcodes
       unassigned = [0x0C, 0x0D, 0x0E, 0x0F, 0x1F, 0x21, 0x4B, 0xA5, 0xB0, 0xEF]
@@ -75,6 +102,13 @@ defmodule EEVM.Interpreter.Instructions.ExhaustivenessTest do
       end
     end
   end
+
+  defp run_at_depth(opcode, depth) do
+    code = :binary.copy(<<0x5F>>, depth) <> build_bytecode(opcode)
+    EEVM.execute(code, gas: 1_000_000, hardfork: :osaka)
+  end
+
+  defp hex(opcode), do: "opcode 0x#{Integer.to_string(opcode, 16)}"
 
   defp build_bytecode(opcode) do
     case EEVM.Interpreter.Instructions.Registry.info(opcode) do

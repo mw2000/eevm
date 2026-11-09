@@ -12,8 +12,8 @@ defmodule EEVM.Error do
 
   | Error | Source | Meaning |
   |-------|--------|---------|
-  | `:stack_underflow` | `EEVM.Interpreter.Stack` | Attempted to pop/peek from an empty stack |
-  | `:stack_overflow` | `EEVM.Interpreter.Stack` | Attempted to push onto a full stack (1,024 elements) |
+  | `:stack_underflow` | `EEVM.Interpreter` (pre-dispatch check), `EEVM.Interpreter.Stack` | Attempted to pop/peek from an empty stack |
+  | `:stack_overflow` | `EEVM.Interpreter` (pre-dispatch check), `EEVM.Interpreter.Stack` | Attempted to push onto a full stack (1,024 elements) |
   | `:out_of_gas` | `EEVM.Interpreter.MachineState` | Gas consumed exceeds available gas |
   | `:invalid_jump_destination` | `EEVM.Interpreter.Instructions.ControlFlow` | JUMP/JUMPI target is not a JUMPDEST |
   | `:static_state_modification` | `EEVM.Interpreter`, `EEVM.Interpreter.Instructions.System.Calls` | State-mutating opcode or value-bearing CALL inside a STATICCALL frame (EIP-214) |

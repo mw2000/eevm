@@ -72,6 +72,13 @@ defmodule EEVM.Interpreter.Instructions.ControlFlowTest do
       assert EEVM.stack_values(result) == [0]
     end
 
+    test "pushing a 1025th item halts with stack overflow and burns all gas" do
+      result = EEVM.execute(:binary.copy(<<0x5F>>, 1025), gas: 10_000)
+
+      assert result.status == {:error, :stack_overflow}
+      assert result.frame.gas == 0
+    end
+
     test "PUSH0 costs 2 gas (base)" do
       code = <<0x5F, 0x00>>
       result = EEVM.execute(code, gas: 1000)

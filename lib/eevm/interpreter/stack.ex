@@ -78,6 +78,10 @@ defmodule EEVM.Interpreter.Stack do
     {:ok, %__MODULE__{elements: new_elements, size: size}}
   end
 
+  @doc "Returns the maximum stack depth (1024)."
+  @spec max_depth() :: pos_integer()
+  def max_depth, do: @max_depth
+
   @doc "Returns the current stack depth."
   @spec depth(t()) :: non_neg_integer()
   def depth(%__MODULE__{size: size}), do: size

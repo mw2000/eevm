@@ -170,13 +170,28 @@ defmodule EEVM.Interpreter do
   # Dispatch an opcode byte to its implementing module via the Registry.
   #
   # The Registry maps each opcode to a `:module` (the `Instructions.*` module
-  # whose `execute/2` handles it) and a `:state_mutating` flag. Inside a
+  # whose `execute/2` handles it), its stack `:inputs`/`:outputs`, and a
+  # `:state_mutating` flag. Before the module runs, the stack bounds are checked
+  # once here: fewer than `inputs` items is a stack underflow, and ending above
+  # 1024 items is a stack overflow (Yellow Paper §9.4.2). Opcode modules can
+  # therefore push without handling `{:error, :stack_overflow}`. Inside a
   # STATICCALL frame (`frame.is_static`), state-mutating opcodes (SSTORE,
   # TSTORE, LOG0..4, CREATE, CREATE2, SELFDESTRUCT) are an exceptional halt
-  # (EIP-214) before reaching the module. Unknown opcodes halt as `:invalid`.
+  # (EIP-214). Unknown opcodes halt as `:invalid`.
+
+  @max_stack_depth Stack.max_depth()
 
   defp execute_opcode(opcode, state) do
+    depth = Stack.depth(state.frame.stack)
+
     case Registry.info(opcode) do
+      {:ok, %{inputs: inputs}} when depth < inputs ->
+        {:error, :stack_underflow, state}
+
+      {:ok, %{inputs: inputs, outputs: outputs}}
+      when depth - inputs + outputs > @max_stack_depth ->
+        {:error, :stack_overflow, state}
+
       {:ok, %{state_mutating: true}} when state.frame.is_static ->
         {:error, :static_state_modification, state}
 
