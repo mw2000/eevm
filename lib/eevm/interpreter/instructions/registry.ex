@@ -61,6 +61,7 @@ defmodule EEVM.Interpreter.Instructions.Registry do
   @shl 0x1B
   @shr 0x1C
   @sar 0x1D
+  @clz 0x1E
 
   @keccak256 0x20
   @push0 0x5F
@@ -161,6 +162,7 @@ defmodule EEVM.Interpreter.Instructions.Registry do
     @shl => %{name: "SHL", inputs: 2, outputs: 1, module: Bitwise},
     @shr => %{name: "SHR", inputs: 2, outputs: 1, module: Bitwise},
     @sar => %{name: "SAR", inputs: 2, outputs: 1, module: Bitwise},
+    @clz => %{name: "CLZ", inputs: 1, outputs: 1, module: Bitwise},
     @address => %{name: "ADDRESS", inputs: 0, outputs: 1, module: Simple},
     @balance => %{name: "BALANCE", inputs: 1, outputs: 1, module: External},
     @origin => %{name: "ORIGIN", inputs: 0, outputs: 1, module: Simple},

@@ -44,7 +44,7 @@ defmodule EEVM.Interpreter.Instructions.ExhaustivenessTest do
         [0x00] ++
           Enum.to_list(0x01..0x0B) ++
           Enum.to_list(0x10..0x15) ++
-          Enum.to_list(0x16..0x1D) ++
+          Enum.to_list(0x16..0x1E) ++
           [0x20] ++
           Enum.to_list(0x30..0x3F) ++
           Enum.to_list(0x40..0x4A) ++
@@ -64,7 +64,7 @@ defmodule EEVM.Interpreter.Instructions.ExhaustivenessTest do
 
     test "unknown opcodes halt as invalid" do
       # Pick some unassigned opcodes
-      unassigned = [0x0C, 0x0D, 0x0E, 0x0F, 0x1E, 0x1F, 0x21, 0x4B, 0xA5, 0xB0, 0xEF]
+      unassigned = [0x0C, 0x0D, 0x0E, 0x0F, 0x1F, 0x21, 0x4B, 0xA5, 0xB0, 0xEF]
 
       for opcode <- unassigned do
         bytecode = <<opcode, 0x00>>

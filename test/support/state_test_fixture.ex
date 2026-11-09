@@ -220,7 +220,7 @@ defmodule EEVM.TestSupport.StateTestFixture do
       max_fee_per_blob_gas: parse_quantity!(Map.get(tx, "maxFeePerBlobGas", "0x0")),
       access_list: parse_access_list(Map.get(tx, "accessLists", [])),
       blob_hashes: parse_blob_hashes(Map.get(tx, "blobVersionedHashes", [])),
-      type: parse_tx_type(Map.get(tx, "type", nil)),
+      type: parse_tx_type(Map.get(tx, "type", infer_tx_type(tx))),
       data: parse_binary_list(Map.get(tx, "data", ["0x"])),
       gas_limit: parse_quantity_list(Map.get(tx, "gasLimit", ["0x0"])),
       value: parse_quantity_list(Map.get(tx, "value", ["0x0"]))
@@ -270,6 +270,12 @@ defmodule EEVM.TestSupport.StateTestFixture do
   defp parse_access_list(_), do: []
 
   defp parse_blob_hashes(values) when is_list(values), do: Enum.map(values, &parse_quantity!/1)
+
+  # execution-spec-tests fixtures omit "type"; like geth's runner, infer it
+  # from the fee fields so fee-market transactions are charged correctly.
+  defp infer_tx_type(%{"blobVersionedHashes" => _}), do: "0x3"
+  defp infer_tx_type(%{"maxFeePerGas" => _}), do: "0x2"
+  defp infer_tx_type(_tx), do: nil
 
   defp parse_tx_type(nil), do: :legacy
   defp parse_tx_type("0x0"), do: :legacy

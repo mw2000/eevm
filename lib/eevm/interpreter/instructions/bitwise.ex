@@ -1,7 +1,8 @@
 defmodule EEVM.Interpreter.Instructions.Bitwise do
-  @moduledoc "EVM bitwise opcodes: AND, OR, XOR, NOT, BYTE, SHL, SHR, SAR."
+  @moduledoc "EVM bitwise opcodes: AND, OR, XOR, NOT, BYTE, SHL, SHR, SAR, CLZ."
   import Bitwise
 
+  alias EEVM.HardforkConfig
   alias EEVM.Interpreter.Instructions.Helpers
   alias EEVM.Interpreter.{MachineState, Stack}
 
@@ -20,6 +21,7 @@ defmodule EEVM.Interpreter.Instructions.Bitwise do
   | 0x1B | SHL      | logical left shift: x << shift mod 2^256          |
   | 0x1C | SHR      | logical right shift: x >> shift                   |
   | 0x1D | SAR      | arithmetic right shift (sign-preserving)           |
+  | 0x1E | CLZ      | count of leading zero bits in x (256 if x = 0)     |
 
   Returns `{:ok, new_state}` on success, `{:error, reason, state}` on failure.
   """
@@ -108,5 +110,26 @@ defmodule EEVM.Interpreter.Instructions.Bitwise do
     end
   end
 
+  # CLZ (EIP-7939, Osaka+): pushes the number of leading zero bits in the
+  # 256-bit word, so CLZ(0) = 256 and CLZ(x) = 0 when the top bit is set.
+  # Pre-Osaka, 0x1E is undefined → :invalid.
+  def execute(0x1E, %{env: %{config: %{hardfork: hardfork}}} = state) do
+    if HardforkConfig.enabled?(hardfork, :eip_7939) do
+      with {:ok, x, s1} <- Stack.pop(state.frame.stack) do
+        {:ok, s2} = Stack.push(s1, count_leading_zeros(<<x::256>>, 0))
+        {:ok, state |> MachineState.update_frame(&%{&1 | stack: s2}) |> MachineState.advance_pc()}
+      else
+        {:error, reason} -> {:error, reason, state}
+      end
+    else
+      {:ok, MachineState.halt(state, :invalid)}
+    end
+  end
+
   def execute(_opcode, state), do: {:ok, MachineState.halt(state, :invalid)}
+
+  defp count_leading_zeros(<<0::1, rest::bitstring>>, count),
+    do: count_leading_zeros(rest, count + 1)
+
+  defp count_leading_zeros(_bits, count), do: count
 end

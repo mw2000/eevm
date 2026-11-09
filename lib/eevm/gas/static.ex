@@ -13,7 +13,7 @@ defmodule EEVM.Gas.Static do
   | Zero       | 0    | STOP, RETURN, REVERT |
   | Base       | 2    | ADDRESS, ORIGIN, CALLER, CALLVALUE, CALLDATASIZE, CODESIZE, GASPRICE, COINBASE, TIMESTAMP, NUMBER, PREVRANDAO, GASLIMIT, CHAINID, BASEFEE, POP, PC, MSIZE, PUSH0 |
   | Very Low   | 3    | ADD, SUB, NOT, LT, GT, SLT, SGT, EQ, ISZERO, AND, OR, XOR, BYTE, SHL, SHR, SAR, CALLDATALOAD, MLOAD, MSTORE, MSTORE8, PUSH1–PUSH32, DUP1–DUP16, SWAP1–SWAP16 |
-  | Low        | 5    | MUL, DIV, SDIV, MOD, SMOD, SIGNEXTEND |
+  | Low        | 5    | MUL, DIV, SDIV, MOD, SMOD, SIGNEXTEND, CLZ |
   | Mid        | 8    | ADDMOD, MULMOD, JUMP |
   | High       | 10   | JUMPI |
 
@@ -70,7 +70,7 @@ defmodule EEVM.Gas.Static do
   def static_cost(0x0A), do: @gas_high
   def static_cost(0x0B), do: @gas_low
 
-  # 0x10–0x1D: Comparison & Bitwise
+  # 0x10–0x1E: Comparison & Bitwise
   def static_cost(0x10), do: @gas_very_low
   def static_cost(0x11), do: @gas_very_low
   def static_cost(0x12), do: @gas_very_low
@@ -85,6 +85,8 @@ defmodule EEVM.Gas.Static do
   def static_cost(0x1B), do: @gas_very_low
   def static_cost(0x1C), do: @gas_very_low
   def static_cost(0x1D), do: @gas_very_low
+  # EIP-7939: CLZ priced like MUL to avoid under-pricing
+  def static_cost(0x1E), do: @gas_low
 
   # 0x20: KECCAK256 (static base; dynamic cost added per word in Gas.Dynamic)
   def static_cost(0x20), do: @gas_keccak256
