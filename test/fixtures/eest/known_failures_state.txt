@@ -1,15 +1,7 @@
 # Cases known to fail. CI fails on any failing case not covered here.
 # Each line is a directory (dir/), a fixture file, a test (file#name), or a case.
 # Regenerate after fixing failures with:
-#   mix eevm.state_tests 'test/fixtures/eest/fixtures/state_tests/**/*.json' --write-known-failures test/fixtures/eest/known_failures_state.txt
-state_tests/berlin/eip2930_access_list/test_eip2930_tx_validity.json#tests/berlin/eip2930_access_list/test_tx_type.py::test_eip2930_tx_validity[fork_Byzantium-invalid-state_test]
-state_tests/berlin/eip2930_access_list/test_eip2930_tx_validity.json#tests/berlin/eip2930_access_list/test_tx_type.py::test_eip2930_tx_validity[fork_ConstantinopleFix-invalid-state_test]
-state_tests/berlin/eip2930_access_list/test_eip2930_tx_validity.json#tests/berlin/eip2930_access_list/test_tx_type.py::test_eip2930_tx_validity[fork_Frontier-invalid-state_test]
-state_tests/berlin/eip2930_access_list/test_eip2930_tx_validity.json#tests/berlin/eip2930_access_list/test_tx_type.py::test_eip2930_tx_validity[fork_Homestead-invalid-state_test]
-state_tests/berlin/eip2930_access_list/test_eip2930_tx_validity.json#tests/berlin/eip2930_access_list/test_tx_type.py::test_eip2930_tx_validity[fork_Istanbul-invalid-state_test]
-state_tests/cancun/eip4844_blobs/test_blob_gas_subtraction_tx.json
-state_tests/cancun/eip4844_blobs/test_blob_tx_attribute_gasprice_opcode.json
-state_tests/cancun/eip4844_blobs/test_blob_type_tx_pre_fork.json#tests/cancun/eip4844_blobs/test_blob_txs.py::test_blob_type_tx_pre_fork[fork_Shanghai-state_test-one_blob_tx]
+#   mix eevm.state_tests 'test/fixtures/eest/fixtures/state_tests/**/*.json' --timeout 180000 --write-known-failures test/fixtures/eest/known_failures_state.txt
 state_tests/cancun/eip4844_blobs/test_call_opcode_types.json#tests/cancun/eip4844_blobs/test_point_evaluation_precompile.py::test_call_opcode_types[fork_Cancun-call_opcode_CALL-evm_code_type_LEGACY-state_test--incorrect]
 state_tests/cancun/eip4844_blobs/test_call_opcode_types.json#tests/cancun/eip4844_blobs/test_point_evaluation_precompile.py::test_call_opcode_types[fork_Cancun-call_opcode_CALLCODE-evm_code_type_LEGACY-state_test--incorrect]
 state_tests/cancun/eip4844_blobs/test_call_opcode_types.json#tests/cancun/eip4844_blobs/test_point_evaluation_precompile.py::test_call_opcode_types[fork_Cancun-call_opcode_DELEGATECALL-evm_code_type_LEGACY-state_test--incorrect]
@@ -229,12 +221,6 @@ state_tests/frontier/precompiles/test_precompiles.json#tests/frontier/precompile
 state_tests/frontier/precompiles/test_precompiles.json#tests/frontier/precompiles/test_ripemd.py::test_precompiles[fork_Homestead-state_test-oog_False-two blocks]
 state_tests/frontier/touch/test_zero_gas_price_and_touching.json#tests/frontier/touch/test_touch.py::test_zero_gas_price_and_touching[fork_Frontier-state_test]
 state_tests/frontier/touch/test_zero_gas_price_and_touching.json#tests/frontier/touch/test_touch.py::test_zero_gas_price_and_touching[fork_Homestead-state_test]
-state_tests/london/eip1559_fee_market_change/test_eip1559_tx_validity.json#tests/london/eip1559_fee_market_change/test_tx_type.py::test_eip1559_tx_validity[fork_Berlin-invalid-state_test]
-state_tests/london/eip1559_fee_market_change/test_eip1559_tx_validity.json#tests/london/eip1559_fee_market_change/test_tx_type.py::test_eip1559_tx_validity[fork_Byzantium-invalid-state_test]
-state_tests/london/eip1559_fee_market_change/test_eip1559_tx_validity.json#tests/london/eip1559_fee_market_change/test_tx_type.py::test_eip1559_tx_validity[fork_ConstantinopleFix-invalid-state_test]
-state_tests/london/eip1559_fee_market_change/test_eip1559_tx_validity.json#tests/london/eip1559_fee_market_change/test_tx_type.py::test_eip1559_tx_validity[fork_Frontier-invalid-state_test]
-state_tests/london/eip1559_fee_market_change/test_eip1559_tx_validity.json#tests/london/eip1559_fee_market_change/test_tx_type.py::test_eip1559_tx_validity[fork_Homestead-invalid-state_test]
-state_tests/london/eip1559_fee_market_change/test_eip1559_tx_validity.json#tests/london/eip1559_fee_market_change/test_tx_type.py::test_eip1559_tx_validity[fork_Istanbul-invalid-state_test]
 state_tests/prague/eip2537_bls_12_381_precompiles/test_invalid.json#tests/prague/eip2537_bls_12_381_precompiles/test_bls12_g1add.py::test_invalid[fork_Prague-state_test--bls_g1add_point_not_on_curve-]
 state_tests/prague/eip2537_bls_12_381_precompiles/test_invalid.json#tests/prague/eip2537_bls_12_381_precompiles/test_bls12_g1add.py::test_invalid[fork_Prague-state_test--inf_plus_rand_not_on_curve_0-]
 state_tests/prague/eip2537_bls_12_381_precompiles/test_invalid.json#tests/prague/eip2537_bls_12_381_precompiles/test_bls12_g1add.py::test_invalid[fork_Prague-state_test--invalid_point_a_1-]
@@ -515,23 +501,6 @@ state_tests/static/state_tests/stBadOpcode/invalidAddr.json#tests/static/state_t
 state_tests/static/state_tests/stBadOpcode/invalidAddr.json#tests/static/state_tests/stBadOpcode/invalidAddrFiller.yml::invalidAddr[fork_Prague-state_test-ok-85]
 state_tests/static/state_tests/stBadOpcode/invalidAddr.json#tests/static/state_tests/stBadOpcode/invalidAddrFiller.yml::invalidAddr[fork_Prague-state_test-ok-8]
 state_tests/static/state_tests/stBadOpcode/invalidAddr.json#tests/static/state_tests/stBadOpcode/invalidAddrFiller.yml::invalidAddr[fork_Prague-state_test-ok-9]
-state_tests/static/state_tests/stEIP150Specific/NewGasPriceForCodes.json
 state_tests/static/state_tests/stEIP1559/lowGasPriceOldTypes.json
-state_tests/static/state_tests/stEIP1559/senderBalance.json
-state_tests/static/state_tests/stExample/eip1559.json
-state_tests/static/state_tests/stExample/mergeTest.json
 state_tests/static/state_tests/stMemExpandingEIP150Calls/NewGasPriceForCodesWithMemExpandingCalls.json
-state_tests/static/state_tests/stSpecialTest/eoaEmptyParis.json#tests/static/state_tests/stSpecialTest/eoaEmptyParisFiller.yml::eoaEmptyParis[fork_Cancun-state_test-d0-g0-v0]
-state_tests/static/state_tests/stSpecialTest/eoaEmptyParis.json#tests/static/state_tests/stSpecialTest/eoaEmptyParisFiller.yml::eoaEmptyParis[fork_Cancun-state_test-d0-g1-v0]
-state_tests/static/state_tests/stSpecialTest/eoaEmptyParis.json#tests/static/state_tests/stSpecialTest/eoaEmptyParisFiller.yml::eoaEmptyParis[fork_Cancun-state_test-d0-g1-v1]
-state_tests/static/state_tests/stSpecialTest/eoaEmptyParis.json#tests/static/state_tests/stSpecialTest/eoaEmptyParisFiller.yml::eoaEmptyParis[fork_Cancun-state_test-d1-g0-v0]
-state_tests/static/state_tests/stSpecialTest/eoaEmptyParis.json#tests/static/state_tests/stSpecialTest/eoaEmptyParisFiller.yml::eoaEmptyParis[fork_Cancun-state_test-d1-g1-v0]
-state_tests/static/state_tests/stSpecialTest/eoaEmptyParis.json#tests/static/state_tests/stSpecialTest/eoaEmptyParisFiller.yml::eoaEmptyParis[fork_Cancun-state_test-d1-g1-v1]
-state_tests/static/state_tests/stSpecialTest/eoaEmptyParis.json#tests/static/state_tests/stSpecialTest/eoaEmptyParisFiller.yml::eoaEmptyParis[fork_Prague-state_test-d0-g0-v0]
-state_tests/static/state_tests/stSpecialTest/eoaEmptyParis.json#tests/static/state_tests/stSpecialTest/eoaEmptyParisFiller.yml::eoaEmptyParis[fork_Prague-state_test-d0-g1-v0]
-state_tests/static/state_tests/stSpecialTest/eoaEmptyParis.json#tests/static/state_tests/stSpecialTest/eoaEmptyParisFiller.yml::eoaEmptyParis[fork_Prague-state_test-d0-g1-v1]
-state_tests/static/state_tests/stSpecialTest/eoaEmptyParis.json#tests/static/state_tests/stSpecialTest/eoaEmptyParisFiller.yml::eoaEmptyParis[fork_Prague-state_test-d1-g0-v0]
-state_tests/static/state_tests/stSpecialTest/eoaEmptyParis.json#tests/static/state_tests/stSpecialTest/eoaEmptyParisFiller.yml::eoaEmptyParis[fork_Prague-state_test-d1-g1-v0]
-state_tests/static/state_tests/stSpecialTest/eoaEmptyParis.json#tests/static/state_tests/stSpecialTest/eoaEmptyParisFiller.yml::eoaEmptyParis[fork_Prague-state_test-d1-g1-v1]
-state_tests/static/state_tests/stSystemOperationsTest/callerAccountBalance.json
 state_tests/static/state_tests/stSystemOperationsTest/suicideCallerAddresTooBigLeft.json

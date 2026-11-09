@@ -5,9 +5,9 @@ defmodule EEVM.TestSupport.TxExecutor do
   can't go through `EEVM.Handler`.
 
   Performs the steps a real client folds into block processing:
-  validate → burn the EIP-4844 blob gas fee and bump nonce → apply EIP-7702
-  authorizations → run the interpreter top-level → settle gas fees (sender
-  debit, coinbase credit).
+  validate → charge the gas and EIP-4844 blob gas fees and bump nonce → apply
+  EIP-7702 authorizations → run the interpreter top-level → refund unused gas
+  and credit the coinbase.
   """
 
   alias EEVM.{BlockEnv, Config, Database, TxEnv}
@@ -26,9 +26,17 @@ defmodule EEVM.TestSupport.TxExecutor do
           {:ok, result()} | {:error, term()}
   def execute(%TxEnv{} = tx, %Database{} = db, %BlockEnv{} = block, %Config{} = config) do
     with :ok <- validate(tx, db, block, config),
-         {:ok, db_after_blob_fee} <-
-           debit_balance(db, tx.origin, PreExecution.blob_gas_fee(tx, block)) do
-      db_after_nonce = Database.increment_nonce(db_after_blob_fee, tx.origin)
+         # GASPRICE (0x3A) reads the price per gas the sender pays (EIP-1559).
+         tx = %{tx | gas_price: PreExecution.effective_gas_price(tx, block)},
+         # The sender pays gas_limit * gas price and the blob fee before execution
+         # (execution-specs process_transaction), so BALANCE sees the debited balance.
+         {:ok, db_after_fees} <-
+           debit_balance(
+             db,
+             tx.origin,
+             tx.gas_limit * tx.gas_price + PreExecution.blob_gas_fee(tx, block)
+           ) do
+      db_after_nonce = Database.increment_nonce(db_after_fees, tx.origin)
 
       {db_authorized, authorization} =
         PreExecution.apply_authorizations(db_after_nonce, tx, config.chain_id)
@@ -38,9 +46,12 @@ defmodule EEVM.TestSupport.TxExecutor do
       settled = if failed?, do: db_authorized, else: machine.db
       gas_used = tx.gas_limit - machine.frame.gas
 
-      with {:ok, finalized_db} <- apply_fees(settled, tx, block, gas_used) do
-        {:ok, %{db: finalized_db, machine: machine, gas_used: gas_used, failed?: failed?}}
-      end
+      finalized_db =
+        settled
+        |> credit_balance(tx.origin, (tx.gas_limit - gas_used) * tx.gas_price)
+        |> credit_balance(block.coinbase, gas_used * max(tx.gas_price - block.base_fee, 0))
+
+      {:ok, %{db: finalized_db, machine: machine, gas_used: gas_used, failed?: failed?}}
     end
   end
 
@@ -65,31 +76,6 @@ defmodule EEVM.TestSupport.TxExecutor do
       Execution.run_top_level(tx, db, block, config, execution_gas, authorization)
 
     machine
-  end
-
-  defp apply_fees(db, %TxEnv{} = tx, %BlockEnv{} = block, gas_used) do
-    sender_fee = gas_used * effective_gas_price(tx, block)
-    miner_reward = gas_used * miner_reward_per_gas(tx, block)
-
-    with {:ok, debited} <- debit_balance(db, tx.origin, sender_fee) do
-      {:ok, credit_balance(debited, block.coinbase, miner_reward)}
-    end
-  end
-
-  defp effective_gas_price(%TxEnv{type: type} = tx, %BlockEnv{} = block)
-       when type in [:eip1559, :eip4844, :eip7702] do
-    min(tx.max_fee_per_gas, block.base_fee + tx.max_priority_fee_per_gas)
-  end
-
-  defp effective_gas_price(%TxEnv{} = tx, _block), do: tx.gas_price
-
-  defp miner_reward_per_gas(%TxEnv{type: type} = tx, %BlockEnv{} = block)
-       when type in [:eip1559, :eip4844, :eip7702] do
-    max(effective_gas_price(tx, block) - block.base_fee, 0)
-  end
-
-  defp miner_reward_per_gas(%TxEnv{} = tx, %BlockEnv{} = block) do
-    max(tx.gas_price - block.base_fee, 0)
   end
 
   defp failed?(status) when status in [:reverted, :invalid, :out_of_gas], do: true
