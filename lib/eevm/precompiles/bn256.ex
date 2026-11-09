@@ -35,10 +35,17 @@ defmodule EEVM.Precompiles.BN256 do
   The identity/infinity point is encoded as `(0, 0)`.
   """
 
-  alias BN.{BN128Arithmetic, FQ, FQ2, Pairing}
+  alias BN.{BN128Arithmetic, FQ, FQ2, FQP, Pairing}
   alias EEVM.HardforkConfig
 
   @field_modulus 21_888_242_871_839_275_222_246_405_745_257_275_088_696_311_157_297_823_662_689_037_894_645_226_208_583
+  # Order n of the G1 and G2 subgroups (EIP-197).
+  @curve_order 21_888_242_871_839_275_222_246_405_745_257_275_088_548_364_400_416_034_343_698_204_186_575_808_495_617
+  # n as bits after the leading 1, for double-and-add.
+  @curve_order_tail_bits @curve_order |> Integer.digits(2) |> tl()
+
+  @fq2_zero FQ2.new([0, 0])
+  @fq2_one FQ2.new([1, 0])
 
   @byzantium_gas %{add: 500, mul: 40_000, pairing_base: 100_000, pairing_per_pair: 80_000}
   @eip_1108_gas %{add: 150, mul: 6_000, pairing_base: 45_000, pairing_per_pair: 34_000}
@@ -172,15 +179,73 @@ defmodule EEVM.Precompiles.BN256 do
            y_imag >= @field_modulus or y_real >= @field_modulus do
         {:error, :invalid_point}
       else
-        point = {FQ2.new([x_imag, x_real]), FQ2.new([y_imag, y_real])}
+        # EIP-197 encodes each Fp2 coordinate imaginary part first, but
+        # `BN.FQ2.new/1` takes coefficients real part first.
+        point = {FQ2.new([x_real, x_imag]), FQ2.new([y_real, y_imag])}
 
-        if BN128Arithmetic.on_curve?(point) do
+        if BN128Arithmetic.on_curve?(point) and in_g2_subgroup?(point) do
           {:ok, point}
         else
           {:error, :invalid_point}
         end
       end
     end
+  end
+
+  # EIP-197: G2 points must lie in the order-n subgroup. Unlike G1 (cofactor 1),
+  # the twist curve has points of other orders, some small (its cofactor has the
+  # factor 10069). n·P is computed in Jacobian coordinates (x = X/Z², y = Y/Z³),
+  # where infinity is Z = 0 and no step divides; `BN.BN128Arithmetic.mult/2` is
+  # affine and divides by zero when a multiple of such a point reaches infinity.
+  defp in_g2_subgroup?({x, y} = point) do
+    {_x, _y, z} =
+      Enum.reduce(@curve_order_tail_bits, {x, y, @fq2_one}, fn bit, acc ->
+        doubled = g2_double(acc)
+        if bit == 1, do: g2_add_affine(doubled, point), else: doubled
+      end)
+
+    FQP.zero?(z)
+  end
+
+  # Jacobian doubling on y² = x³ + b ("dbl-2009-l", a = 0). Z3 = 2·Y·Z, so
+  # infinity (Z = 0) doubles to infinity.
+  defp g2_double({x, y, z}) do
+    a = FQP.mult(x, x)
+    b = FQP.mult(y, y)
+    c = FQP.mult(b, b)
+    x_plus_b = FQP.add(x, b)
+    d = FQP.mult(FQP.sub(FQP.sub(FQP.mult(x_plus_b, x_plus_b), a), c), 2)
+    e = FQP.mult(a, 3)
+    x3 = FQP.sub(FQP.mult(e, e), FQP.mult(d, 2))
+    y3 = FQP.sub(FQP.mult(e, FQP.sub(d, x3)), FQP.mult(c, 8))
+    {x3, y3, FQP.mult(FQP.mult(y, z), 2)}
+  end
+
+  # Jacobian + affine addition ("madd-2007-bl"), with the equal and opposite
+  # point cases handled explicitly.
+  defp g2_add_affine({x1, y1, z1} = p1, {x2, y2}) do
+    if FQP.zero?(z1) do
+      {x2, y2, @fq2_one}
+    else
+      z1z1 = FQP.mult(z1, z1)
+      h = FQP.sub(FQP.mult(x2, z1z1), x1)
+      r = FQP.mult(FQP.sub(FQP.mult(y2, FQP.mult(z1, z1z1)), y1), 2)
+
+      cond do
+        FQP.zero?(h) and FQP.zero?(r) -> g2_double(p1)
+        FQP.zero?(h) -> {@fq2_one, @fq2_one, @fq2_zero}
+        true -> g2_add_distinct(x1, y1, z1, h, r)
+      end
+    end
+  end
+
+  defp g2_add_distinct(x1, y1, z1, h, r) do
+    i = FQP.mult(FQP.mult(h, h), 4)
+    j = FQP.mult(h, i)
+    v = FQP.mult(x1, i)
+    x3 = FQP.sub(FQP.sub(FQP.mult(r, r), j), FQP.mult(v, 2))
+    y3 = FQP.sub(FQP.mult(r, FQP.sub(v, x3)), FQP.mult(FQP.mult(y1, j), 2))
+    {x3, y3, FQP.mult(FQP.mult(z1, h), 2)}
   end
 
   # --- Pairing helpers ---

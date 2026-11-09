@@ -33,10 +33,8 @@ small assembler in `bench/support/asm.exs`.
 | erc20: transfer via Handler | A signed legacy `transfer(address,uint256)` with two SLOAD/SSTOREs and a LOG3 |
 
 `bench/precompiles_bench.exs` calls `EEVM.Precompiles.execute/4` directly with valid
-inputs: ecrecover, sha256, ripemd160, and identity (1 KiB), a 2048-bit ModExp, and a
-one-pair BLS12-381 pairing. The BN256 pairing job is skipped until
-[#169](https://github.com/mw2000/eevm/issues/169) is fixed, because valid G2 points are
-currently rejected.
+inputs: ecrecover, sha256, ripemd160, and identity (1 KiB), a 2048-bit ModExp, a
+two-pair BN256 pairing, BLAKE2F at 12 and 1M rounds, and a one-pair BLS12-381 pairing.
 
 ## Profiling
 
@@ -77,7 +75,11 @@ which an in-memory database doesn't pay. Compare the compute scenarios with othe
 | ripemd160 1 KiB (0x03) | 4,440 | 210,151 | 933 |
 | identity 1 KiB (0x04) | 111 | 2,347,937 | 261 |
 | modexp 2048-bit (0x05) | 698,368 | 145 | 101 |
+| bn256 pairing, 2 pairs (0x08) | 113,000 | 0.41 | 0.05 |
 | bls12-381 pairing, 1 pair (0x0F) | 70,300 | 557 | 39.2 |
+
+The BN256 pairing row was measured later, after
+[#169](https://github.com/mw2000/eevm/issues/169) was fixed, on the same kind of orb.
 
 ### Hot spots
 

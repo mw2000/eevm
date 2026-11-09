@@ -153,10 +153,50 @@ defmodule EEVM.Precompiles.BN256Test do
       assert {:ok, _, 113_000} = BN256.execute_pairing(input, 200_000)
     end
 
+    test "rejects a G2 point on the curve but outside the order-n subgroup" do
+      # G1 generator with a twist point of order 10069 (a factor of the G2 cofactor
+      # 2p - n), derived from a non-subgroup point in stZeroKnowledge/ecpairing_inputs.
+      input =
+        Base.decode16!(
+          "0000000000000000000000000000000000000000000000000000000000000001" <>
+            "0000000000000000000000000000000000000000000000000000000000000002" <>
+            "2b181d90f59718a61f1a606c5d972af7c8b1c0e424c7a028539fdc04679684e0" <>
+            "2c279d2a76bc3ca141811c9bf0182e4f3627b18f4e0d988225347270da830a48" <>
+            "0c2ebf03d0233d1c1f1ebd3c9671f6b52fd60b5852ca4c2e49b029ee61d4d5b6" <>
+            "2934a14c64aaf89224af028f41a8677e87b48ac4872d55b00832624684aacfb0",
+          case: :lower
+        )
+
+      assert {:error, :invalid_point} = BN256.execute_pairing(input, 100_000)
+    end
+
     test "all-zero pair (identity points) returns 1" do
       input = :binary.copy(<<0>>, 192)
       assert {:ok, output, 79_000} = BN256.execute_pairing(input, 100_000)
       assert output == <<1::256>>
+    end
+  end
+
+  describe "ecPairing (0x08) official EIP-197 vectors" do
+    # geth's bn256Pairing.json (see test/fixtures/precompiles/README.md). Each pair
+    # costs about a second in the pure-Elixir pairing, so only the vectors with at
+    # most two pairs run here, covering both results; the 3- and 10-pair vectors
+    # are exercised by the stZeroKnowledge state tests.
+    @vectors_run ~w(empty_data one_point jeff1 jeff6 two_point_match_2)
+
+    for vector <-
+          "test/fixtures/precompiles/bn256_pairing_eip197_vectors.json"
+          |> File.read!()
+          |> Jason.decode!(),
+        vector["Name"] in @vectors_run do
+      @vector vector
+      test @vector["Name"] do
+        input = Base.decode16!(@vector["Input"], case: :mixed)
+        expected = Base.decode16!(@vector["Expected"], case: :mixed)
+        gas = @vector["Gas"]
+
+        assert {:ok, ^expected, ^gas} = BN256.execute_pairing(input, gas)
+      end
     end
   end
 

@@ -8,3 +8,6 @@ Official vectors, checked in verbatim:
 - `p256verify_eip7951_vectors.json` — P256VERIFY vectors (mostly Wycheproof)
   from [EIP-7951](https://eips.ethereum.org/assets/eip-7951/test-vectors.json).
   Their `Gas` field is the RIP-7212 cost (3450); EIP-7951 charges 6900.
+- `bn256_pairing_eip197_vectors.json` — alt_bn128 pairing (EIP-197) vectors with
+  Istanbul gas costs, from go-ethereum's
+  [`core/vm/testdata/precompiles/bn256Pairing.json`](https://github.com/ethereum/go-ethereum/blob/master/core/vm/testdata/precompiles/bn256Pairing.json).

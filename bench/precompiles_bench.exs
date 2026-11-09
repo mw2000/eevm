@@ -73,8 +73,7 @@ inputs = %{
 }
 
 # Run every job once to measure its gas, and drop any that fails so one broken
-# precompile doesn't stop the suite. The BN256 pairing job is dropped until #169
-# (G2 coefficient order) is fixed.
+# precompile doesn't stop the suite.
 for {name, {address, input}} <- Enum.sort(inputs),
     run = fn -> Precompiles.execute(address, input, gas, config) end,
     result = run.(),
