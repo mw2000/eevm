@@ -152,10 +152,9 @@ defmodule EEVM.Database.InMemory do
     if from_balance < amount do
       {:error, :insufficient_balance}
     else
-      updated_state =
-        state
-        |> set_balance(from, from_balance - amount)
-        |> set_balance(to, get_balance(state, to) + amount)
+      # Credit from the debited state so a self-transfer leaves the balance unchanged.
+      debited = set_balance(state, from, from_balance - amount)
+      updated_state = set_balance(debited, to, get_balance(debited, to) + amount)
 
       {:ok, updated_state}
     end

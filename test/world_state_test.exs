@@ -41,6 +41,13 @@ defmodule EEVM.WorldStateTest do
     assert WorldState.get_balance(updated, 2) == 7
   end
 
+  test "transfer to self leaves the balance unchanged" do
+    world_state = WorldState.new(%{1 => %{balance: 5}})
+
+    assert {:ok, updated} = WorldState.transfer(world_state, 1, 1, 4)
+    assert WorldState.get_balance(updated, 1) == 5
+  end
+
   test "transfer fails when source has insufficient balance" do
     world_state = WorldState.new(%{1 => %{balance: 1}, 2 => %{balance: 3}})
 

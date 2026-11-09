@@ -163,6 +163,12 @@ defmodule EEVM.DatabaseTest do
       assert {:error, :insufficient_balance} = Database.transfer(db, 1, 2, 20)
     end
 
+    test "transfer to self leaves the balance unchanged" do
+      db = InMemory.new(accounts: %{1 => %{balance: 100}})
+      assert {:ok, db} = Database.transfer(db, 1, 1, 30)
+      assert Database.get_balance(db, 1) == 100
+    end
+
     test "transfer to non-existent account creates it" do
       db = InMemory.new(accounts: %{1 => %{balance: 50}})
       assert {:ok, db} = Database.transfer(db, 1, 2, 25)

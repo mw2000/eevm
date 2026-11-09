@@ -108,10 +108,9 @@ defmodule EEVM.WorldState do
     if from_balance < amount do
       {:error, :insufficient_balance}
     else
-      updated_state =
-        world_state
-        |> set_balance(from, from_balance - amount)
-        |> set_balance(to, get_balance(world_state, to) + amount)
+      # Credit from the debited state so a self-transfer leaves the balance unchanged.
+      debited = set_balance(world_state, from, from_balance - amount)
+      updated_state = set_balance(debited, to, get_balance(debited, to) + amount)
 
       {:ok, updated_state}
     end
