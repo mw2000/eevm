@@ -38,6 +38,21 @@ defmodule EEVM.Gas.Blob do
   def gas_per_blob, do: @gas_per_blob
 
   @doc """
+  Returns the most blob gas one block may use: max blobs per block times
+  `gas_per_blob/0` (6 blobs in Cancun, 9 from Prague per EIP-7691).
+
+  ## Example
+
+      iex> EEVM.Gas.Blob.max_blob_gas_per_block(EEVM.HardforkConfig.new(:cancun))
+      786_432
+  """
+  @spec max_blob_gas_per_block(HardforkConfig.t()) :: pos_integer()
+  def max_blob_gas_per_block(%HardforkConfig{} = hardfork) do
+    {_target, max_blobs, _fraction} = schedule(hardfork)
+    max_blobs * @gas_per_blob
+  end
+
+  @doc """
   Returns the blob base fee for a block carrying `excess_blob_gas`.
 
   ## Examples

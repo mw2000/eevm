@@ -23,9 +23,16 @@ defmodule EEVM.Block.Header do
   | `extra_data` | Arbitrary producer bytes (at most 32 bytes on mainnet) |
   | `difficulty` | Proof-of-work difficulty (always zero post-Merge) |
   | `hash` | Keccak hash of this header, as supplied by the caller (not computed here) |
+  | `nonce` | 8-byte proof-of-work nonce (all zero post-Merge) |
+  | `ommers_hash` | Keccak hash of the RLP ommers list (the empty-list hash post-Merge) |
   | `blob_gas_used` | EIP-4844 blob gas consumed by the block; `nil` before Cancun |
   | `excess_blob_gas` | EIP-4844 running excess blob gas; `nil` before Cancun |
   """
+
+  # keccak256(rlp([]))
+  @empty_ommers_hash Base.decode16!(
+                       "1DCC4DE8DEC75D7AAB85B567B6CCD41AD312451B948A7413F0A142FD40D49347"
+                     )
 
   @type t :: %__MODULE__{
           number: non_neg_integer(),
@@ -44,6 +51,8 @@ defmodule EEVM.Block.Header do
           extra_data: binary(),
           difficulty: non_neg_integer(),
           hash: binary(),
+          nonce: binary(),
+          ommers_hash: binary(),
           blob_gas_used: non_neg_integer() | nil,
           excess_blob_gas: non_neg_integer() | nil
         }
@@ -64,8 +73,17 @@ defmodule EEVM.Block.Header do
             extra_data: <<>>,
             difficulty: 0,
             hash: <<0::256>>,
+            nonce: <<0::64>>,
+            ommers_hash: @empty_ommers_hash,
             blob_gas_used: nil,
             excess_blob_gas: nil
+
+  @doc """
+  Returns the ommers hash of a block with no ommers, `keccak256(rlp([]))`,
+  which every post-Merge header carries.
+  """
+  @spec empty_ommers_hash() :: binary()
+  def empty_ommers_hash, do: @empty_ommers_hash
 
   @doc "Returns a zero-initialised header."
   @spec new() :: t()

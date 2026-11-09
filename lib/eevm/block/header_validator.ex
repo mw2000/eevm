@@ -10,18 +10,24 @@ defmodule EEVM.Block.HeaderValidator do
     * `extra_data` is at most 32 bytes.
     * `gas_limit` is at least 5,000, fits in a signed 64-bit integer, and
       differs from the parent's gas limit by less than `parent_gas_limit / 1024`.
-    * From Cancun, `excess_blob_gas` equals the value derived from the parent
-      by `EEVM.Gas.Blob.calc_excess_blob_gas/2` (EIP-4844, with the EIP-7918
-      reserve price from Osaka). Skipped when the child's `excess_blob_gas`
-      is `nil`.
+    * From London, `base_fee_per_gas` equals the value derived from the
+      parent's base fee, gas used, and gas target (EIP-1559).
+    * From Paris, `difficulty` is 0, `nonce` is eight zero bytes, and
+      `ommers_hash` is `EEVM.Block.Header.empty_ommers_hash/0` (EIP-3675).
+    * From Cancun, `blob_gas_used` and `excess_blob_gas` are present (and
+      absent before Cancun). `blob_gas_used` is a multiple of the per-blob gas
+      and at most `EEVM.Gas.Blob.max_blob_gas_per_block/1`. `excess_blob_gas`
+      equals `EEVM.Gas.Blob.calc_excess_blob_gas/2` of the parent (EIP-4844,
+      EIP-7691 from Prague, EIP-7918 from Osaka).
 
-  Checks run in that order and the first failure wins.
+  Checks run in that order and the first failure wins. The parent is judged
+  under the same fork as the child, so a fork's first block (such as London's,
+  whose expected base fee is the initial 1 gwei) isn't modelled.
 
   Cross-checks of `gas_used`, `state_root`, `transactions_root`,
   `receipts_root`, `logs_bloom`, and `withdrawals_root` need the block's
   execution result, so they happen after `EEVM.Block.Processor.process_block/4`
-  and aren't covered here. EIP-1559 base-fee rules and the remaining
-  EIP-4844 blob-field rules aren't covered yet either.
+  and aren't covered here.
   """
 
   alias EEVM.Block.Header
@@ -32,6 +38,9 @@ defmodule EEVM.Block.HeaderValidator do
   @max_gas_limit_uint64_signed Bitwise.bsl(1, 63) - 1
   @min_gas_limit 5_000
   @gas_limit_divisor 1_024
+  # EIP-1559
+  @elasticity_multiplier 2
+  @base_fee_max_change_denominator 8
 
   @typedoc "Reason returned when a header fails validation; see `EEVM.Error`."
   @type error :: EEVM.Error.header_validation_error()
@@ -44,11 +53,12 @@ defmodule EEVM.Block.HeaderValidator do
   ## Example
 
       iex> alias EEVM.Block.{Header, HeaderValidator}
+      iex> shanghai = EEVM.HardforkConfig.new(:shanghai)
       iex> parent = Header.new(number: 1, timestamp: 10, gas_limit: 30_000_000, hash: <<1::256>>)
       iex> child = Header.new(number: 2, timestamp: 22, gas_limit: 30_000_000, parent_hash: <<1::256>>)
-      iex> HeaderValidator.validate(child, parent)
+      iex> HeaderValidator.validate(child, parent, shanghai)
       :ok
-      iex> HeaderValidator.validate(%{child | timestamp: 10}, parent)
+      iex> HeaderValidator.validate(%{child | timestamp: 10}, parent, shanghai)
       {:error, :invalid_timestamp}
   """
   @spec validate(Header.t(), Header.t(), HardforkConfig.t()) :: :ok | {:error, error()}
@@ -61,8 +71,10 @@ defmodule EEVM.Block.HeaderValidator do
          :ok <- check_number(child, parent),
          :ok <- check_timestamp(child, parent),
          :ok <- check_extra_data(child),
-         :ok <- check_gas_limit(child, parent) do
-      check_excess_blob_gas(child, parent, hardfork)
+         :ok <- check_gas_limit(child, parent),
+         :ok <- check_base_fee(child, parent, hardfork),
+         :ok <- check_post_merge_fields(child, hardfork) do
+      check_blob_gas(child, parent, hardfork)
     end
   end
 
@@ -96,13 +108,50 @@ defmodule EEVM.Block.HeaderValidator do
     end
   end
 
-  defp check_excess_blob_gas(%Header{excess_blob_gas: nil}, _parent, _hardfork), do: :ok
+  defp check_base_fee(%Header{base_fee_per_gas: base_fee}, parent, hardfork) do
+    if not HardforkConfig.enabled?(hardfork, :eip_1559) or base_fee == expected_base_fee(parent),
+      do: :ok,
+      else: {:error, :invalid_base_fee}
+  end
 
-  defp check_excess_blob_gas(%Header{excess_blob_gas: excess}, parent, hardfork) do
+  # EIP-1559 calculate_base_fee_per_gas: move the parent's base fee by at most
+  # 1/8 towards the parent's gas use relative to its target (gas_limit / 2).
+  defp expected_base_fee(%Header{gas_limit: limit, gas_used: used, base_fee_per_gas: fee}) do
+    target = div(limit, @elasticity_multiplier)
+
     cond do
-      not HardforkConfig.enabled?(hardfork, :eip_4844) -> :ok
-      excess == Blob.calc_excess_blob_gas(parent, hardfork) -> :ok
-      true -> {:error, :invalid_excess_blob_gas}
+      used == target ->
+        fee
+
+      used > target ->
+        fee + max(div(div(fee * (used - target), target), @base_fee_max_change_denominator), 1)
+
+      true ->
+        fee - div(div(fee * (target - used), target), @base_fee_max_change_denominator)
+    end
+  end
+
+  defp check_post_merge_fields(%Header{} = child, hardfork) do
+    cond do
+      not HardforkConfig.enabled?(hardfork, :eip_3675) -> :ok
+      child.difficulty != 0 -> {:error, :invalid_difficulty}
+      child.nonce != <<0::64>> -> {:error, :invalid_nonce}
+      child.ommers_hash != Header.empty_ommers_hash() -> {:error, :invalid_ommers_hash}
+      true -> :ok
+    end
+  end
+
+  defp check_blob_gas(%Header{blob_gas_used: used, excess_blob_gas: excess}, parent, hardfork) do
+    blob_fork? = HardforkConfig.enabled?(hardfork, :eip_4844)
+
+    cond do
+      not blob_fork? and used == nil and excess == nil -> :ok
+      not blob_fork? -> {:error, :unexpected_blob_fields}
+      used == nil or excess == nil -> {:error, :missing_blob_fields}
+      rem(used, Blob.gas_per_blob()) != 0 -> {:error, :invalid_blob_gas_used}
+      used > Blob.max_blob_gas_per_block(hardfork) -> {:error, :invalid_blob_gas_used}
+      excess != Blob.calc_excess_blob_gas(parent, hardfork) -> {:error, :invalid_excess_blob_gas}
+      true -> :ok
     end
   end
 end

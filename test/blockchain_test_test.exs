@@ -13,7 +13,7 @@ defmodule EEVM.BlockchainTestTest do
       blockchain_test <- BlockchainTestFixture.load_file!(fixture_path),
       BlockchainTestCatalog.skipped?(fixture_path, blockchain_test.name) == false do
     @tag :blockchain_tests
-    test "#{blockchain_test.name} from #{Path.basename(fixture_path)}" do
+    test BlockchainTestCatalog.test_name(fixture_path, blockchain_test.name) do
       assert :ok = BlockchainTestRunner.run_case(unquote(Macro.escape(blockchain_test)))
     end
   end
@@ -44,6 +44,39 @@ defmodule EEVM.BlockchainTestTest do
     test "Prague has no block size limit", %{prague_case: test} do
       assert :ok = BlockchainTestRunner.run_case(with_rlp_size(test, @max_rlp_block_size + 1))
     end
+  end
+
+  describe "fixture blocks that fail to decode" do
+    setup do
+      [prague_case] =
+        "test/fixtures/blockchain_tests/smoke/mergeExample.json"
+        |> BlockchainTestFixture.load_file!()
+        |> Enum.filter(&(&1.network == :prague))
+
+      undecodable = %{hd(prague_case.blocks) | header: nil, decode_error: "bad hex"}
+      %{prague_case: prague_case, undecodable: undecodable}
+    end
+
+    test "count as the expected rejection when the block expects an exception", ctx do
+      block = %{ctx.undecodable | expect_exception: "BlockException.RLP_STRUCTURES_ENCODING"}
+
+      assert :ok = BlockchainTestRunner.run_case(%{ctx.prague_case | blocks: [block], post: %{}})
+    end
+
+    test "fail the case when the block was meant to be valid", ctx do
+      assert {:error, {:block_failed, 1, {:invalid_block_encoding, "bad hex"}}} =
+               BlockchainTestRunner.run_case(%{ctx.prague_case | blocks: [ctx.undecodable]})
+    end
+  end
+
+  test "generated test names stay under ExUnit's limit and unique" do
+    long_case = String.duplicate("x", 300)
+    a = BlockchainTestCatalog.test_name("BlockchainTests/A/same.json", long_case)
+    b = BlockchainTestCatalog.test_name("BlockchainTests/B/same.json", long_case)
+
+    assert String.length(a) == 200
+    assert a != b
+    assert "short from A/same.json" == BlockchainTestCatalog.test_name("x/A/same.json", "short")
   end
 
   defp with_rlp_size(test, size) do

@@ -76,6 +76,13 @@ defmodule EEVM.Error do
   | `:extra_data_too_big` | `extra_data` is longer than 32 bytes |
   | `:invalid_gas_limit` | `gas_limit` is below 5,000 or moves by `parent_gas_limit / 1024` or more |
   | `:gas_limit_too_big` | `gas_limit` exceeds the signed 64-bit maximum |
+  | `:invalid_base_fee` | `base_fee_per_gas` differs from the value derived from the parent (EIP-1559, from London) |
+  | `:invalid_difficulty` | `difficulty` isn't 0 (EIP-3675, from Paris) |
+  | `:invalid_nonce` | `nonce` isn't eight zero bytes (EIP-3675, from Paris) |
+  | `:invalid_ommers_hash` | `ommers_hash` isn't the empty-list hash (EIP-3675, from Paris) |
+  | `:unexpected_blob_fields` | A pre-Cancun header carries `blob_gas_used` or `excess_blob_gas` |
+  | `:missing_blob_fields` | A Cancun-or-later header lacks `blob_gas_used` or `excess_blob_gas` |
+  | `:invalid_blob_gas_used` | `blob_gas_used` isn't a multiple of 131,072 or exceeds the fork's per-block maximum (EIP-4844, EIP-7691) |
   | `:invalid_excess_blob_gas` | `excess_blob_gas` differs from the value derived from the parent (EIP-4844, EIP-7918 from Osaka) |
 
   ## Registry Errors
@@ -142,6 +149,13 @@ defmodule EEVM.Error do
           | :extra_data_too_big
           | :invalid_gas_limit
           | :gas_limit_too_big
+          | :invalid_base_fee
+          | :invalid_difficulty
+          | :invalid_nonce
+          | :invalid_ommers_hash
+          | :unexpected_blob_fields
+          | :missing_blob_fields
+          | :invalid_blob_gas_used
           | :invalid_excess_blob_gas
 
   @type reason ::

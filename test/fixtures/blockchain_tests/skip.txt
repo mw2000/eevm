@@ -34,10 +34,8 @@ test/fixtures/state_tests/ethereum-tests/BlockchainTests/TransitionTests/bcHomes
 test/fixtures/state_tests/ethereum-tests/BlockchainTests/TransitionTests/bcMergeToShanghai/shanghaiBeforeTransition.json
 
 # --- InvalidBlocks/bcInvalidHeaderTest ---
-# These need a header consensus rule we don't yet enforce (post-merge
-# difficulty=0 check, exact timestamp-equal-to-parent rejection at the
-# correct block) plus one EVM gas-accounting bug. The header validator
-# rejects the bad header, but earlier "good" blocks also surface the
-# accounting issue, so the whole fixture fails.
+# The header validator rejects the bad headers (post-merge difficulty, equal
+# timestamps), but an earlier valid block fails on an EVM gas-accounting bug
+# (invalid_gas_used), so the whole fixture still fails.
 test/fixtures/state_tests/ethereum-tests/BlockchainTests/InvalidBlocks/bcInvalidHeaderTest/DifficultyIsZero.json
 test/fixtures/state_tests/ethereum-tests/BlockchainTests/InvalidBlocks/bcInvalidHeaderTest/timeDiff0.json

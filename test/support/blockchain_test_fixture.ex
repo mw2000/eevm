@@ -91,6 +91,7 @@ defmodule EEVM.TestSupport.BlockchainTestFixture do
             excess_blob_gas: non_neg_integer() | nil,
             parent_beacon_block_root: non_neg_integer() | nil,
             requests_hash: binary() | nil,
+            ommers_hash: binary(),
             hash: binary()
           }
 
@@ -115,6 +116,7 @@ defmodule EEVM.TestSupport.BlockchainTestFixture do
       :excess_blob_gas,
       :parent_beacon_block_root,
       :requests_hash,
+      :ommers_hash,
       :hash
     ]
   end
@@ -141,7 +143,8 @@ defmodule EEVM.TestSupport.BlockchainTestFixture do
             rlp: binary(),
             transactions: [TransactionFields.t()],
             withdrawals: [Withdrawal.t()],
-            expect_exception: String.t() | nil
+            expect_exception: String.t() | nil,
+            decode_error: String.t() | nil
           }
 
     defstruct [
@@ -150,7 +153,8 @@ defmodule EEVM.TestSupport.BlockchainTestFixture do
       :rlp,
       transactions: [],
       withdrawals: [],
-      expect_exception: nil
+      expect_exception: nil,
+      decode_error: nil
     ]
   end
 
@@ -188,22 +192,40 @@ defmodule EEVM.TestSupport.BlockchainTestFixture do
     end)
   end
 
-  defp parse_blocks(blocks) when is_list(blocks) do
-    Enum.map(blocks, fn block ->
-      decoded = Map.get(block, "rlp_decoded") || %{}
-      header_payload = Map.get(block, "blockHeader") || Map.get(decoded, "blockHeader")
-      tx_payload = Map.get(block, "transactions") || Map.get(decoded, "transactions") || []
-      wd_payload = Map.get(block, "withdrawals") || Map.get(decoded, "withdrawals") || []
+  defp parse_blocks(blocks) when is_list(blocks), do: Enum.map(blocks, &parse_block/1)
 
+  # InvalidBlocks fixtures deliberately carry malformed fields (such as
+  # "0x:bigint ..." placeholders or a uint64 field holding 20 bytes). A block
+  # that doesn't decode keeps its expectations and records `decode_error`, so
+  # the runner rejects it as an invalid block instead of the loader crashing.
+  defp parse_block(block) do
+    decoded = Map.get(block, "rlp_decoded") || %{}
+    header_payload = Map.get(block, "blockHeader") || Map.get(decoded, "blockHeader")
+    tx_payload = Map.get(block, "transactions") || Map.get(decoded, "transactions") || []
+    wd_payload = Map.get(block, "withdrawals") || Map.get(decoded, "withdrawals") || []
+    expect_exception = Map.get(block, "expectException")
+
+    %Block{
+      block_number: parse_quantity!(Map.get(block, "blocknumber", "0")),
+      header: parse_optional_header(header_payload),
+      rlp: parse_bytes!(Map.fetch!(block, "rlp")),
+      transactions: Enum.map(tx_payload, &parse_transaction/1),
+      withdrawals: Enum.map(wd_payload, &parse_withdrawal/1),
+      expect_exception: expect_exception
+    }
+  rescue
+    error in ArgumentError ->
       %Block{
-        block_number: parse_quantity!(Map.get(block, "blocknumber", "0")),
-        header: parse_optional_header(header_payload),
-        rlp: parse_bytes!(Map.fetch!(block, "rlp")),
-        transactions: Enum.map(tx_payload, &parse_transaction/1),
-        withdrawals: Enum.map(wd_payload, &parse_withdrawal/1),
-        expect_exception: Map.get(block, "expectException")
+        block_number: Map.get(block, "blocknumber", "0") |> safe_quantity(),
+        expect_exception: Map.get(block, "expectException"),
+        decode_error: Exception.message(error)
       }
-    end)
+  end
+
+  defp safe_quantity(value) do
+    parse_quantity!(value)
+  rescue
+    ArgumentError -> 0
   end
 
   defp parse_optional_header(nil), do: nil
@@ -231,17 +253,34 @@ defmodule EEVM.TestSupport.BlockchainTestFixture do
       excess_blob_gas: parse_optional_quantity(Map.get(header, "excessBlobGas")),
       parent_beacon_block_root: parse_optional_quantity(Map.get(header, "parentBeaconBlockRoot")),
       requests_hash: parse_optional_bytes(Map.get(header, "requestsHash")),
+      ommers_hash: parse_bytes!(Map.fetch!(header, "uncleHash")),
       hash: parse_bytes!(Map.fetch!(header, "hash"))
     }
   end
 
+  # EIP-4895 encodes index, validator_index, and amount as uint64 and the
+  # address as exactly 20 bytes.
   defp parse_withdrawal(w) do
     %Withdrawal{
-      index: parse_quantity!(Map.fetch!(w, "index")),
-      validator_index: parse_quantity!(Map.fetch!(w, "validatorIndex")),
-      address: parse_address!(Map.fetch!(w, "address")),
-      amount: parse_quantity!(Map.fetch!(w, "amount"))
+      index: parse_uint64!(Map.fetch!(w, "index")),
+      validator_index: parse_uint64!(Map.fetch!(w, "validatorIndex")),
+      address: parse_address20!(Map.fetch!(w, "address")),
+      amount: parse_uint64!(Map.fetch!(w, "amount"))
     }
+  end
+
+  defp parse_uint64!(value) do
+    case parse_quantity!(value) do
+      int when int < 0x1_0000_0000_0000_0000 -> int
+      _ -> raise ArgumentError, "uint64 field overflows: #{value}"
+    end
+  end
+
+  defp parse_address20!(value) do
+    case parse_bytes!(value) do
+      <<address::unsigned-big-160>> -> address
+      _ -> raise ArgumentError, "address is not 20 bytes: #{value}"
+    end
   end
 
   defp parse_transaction(tx) do

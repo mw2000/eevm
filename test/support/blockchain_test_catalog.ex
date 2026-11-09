@@ -16,6 +16,34 @@ defmodule EEVM.TestSupport.BlockchainTestCatalog do
     |> Enum.reject(&skip_file_path?(&1, skip_entries))
   end
 
+  # ExUnit rejects test names of 255 characters or more (they become atoms)
+  # and duplicate names. EEST-generated case names in BlockchainTests reach ~390
+  # characters, so long labels are truncated and suffixed with a hash of the
+  # full label. The fixture's parent directory is part of the label because
+  # the same file name and case name recur across directories.
+  @max_test_name_length 200
+  @hash_suffix_length 8
+
+  @doc "Returns the ExUnit test name for a fixture case, at most 200 characters long."
+  @spec test_name(binary(), binary()) :: binary()
+  def test_name(fixture_path, test_name) do
+    file =
+      Path.join(fixture_path |> Path.dirname() |> Path.basename(), Path.basename(fixture_path))
+
+    label = "#{test_name} from #{file}"
+
+    if String.length(label) <= @max_test_name_length do
+      label
+    else
+      hash =
+        :crypto.hash(:sha256, label)
+        |> Base.encode16(case: :lower)
+        |> binary_part(0, @hash_suffix_length)
+
+      String.slice(label, 0, @max_test_name_length - @hash_suffix_length - 2) <> " #" <> hash
+    end
+  end
+
   @spec skipped?(binary(), binary()) :: {:ok, binary()} | false
   def skipped?(fixture_path, test_name) do
     relative_path = repo_relative(fixture_path)

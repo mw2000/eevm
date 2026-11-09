@@ -81,10 +81,14 @@ defmodule EEVM.HardforkConfig do
     eip_2200: :istanbul,
     # EIP-2929 (Berlin): cold/warm address & storage access costs
     eip_2929: :berlin,
+    # EIP-1559 (London): fee market; header base_fee_per_gas follows the parent's gas usage
+    eip_1559: :london,
     # EIP-3529 (London): reduce gas refunds (cap at 1/5 of gas used)
     eip_3529: :london,
     # EIP-3541 (London): reject runtime code with 0xEF prefix (EOF reserved)
     eip_3541: :london,
+    # EIP-3675 (Paris): proof of stake; difficulty, nonce, and ommers are fixed to empty values
+    eip_3675: :paris,
     # EIP-3651 (Shanghai): COINBASE pre-warmed at tx start
     eip_3651: :shanghai,
     # EIP-3855 (Shanghai): PUSH0 opcode

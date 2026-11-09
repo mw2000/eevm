@@ -108,6 +108,10 @@ defmodule EEVM.TestSupport.BlockchainTestRunner do
     end
   end
 
+  defp run_block(%FixtureBlock{decode_error: reason}, _db, _parent, _config)
+       when is_binary(reason),
+       do: {:error, {:invalid_block_encoding, reason}}
+
   defp run_block(%FixtureBlock{header: nil}, _db, _parent, _config),
     do: {:error, :missing_block_header}
 
@@ -189,6 +193,8 @@ defmodule EEVM.TestSupport.BlockchainTestRunner do
       extra_data: header.extra_data,
       difficulty: header.difficulty,
       hash: header.hash,
+      nonce: header.nonce,
+      ommers_hash: header.ommers_hash,
       blob_gas_used: header.blob_gas_used,
       excess_blob_gas: header.excess_blob_gas
     )
