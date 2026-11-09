@@ -194,7 +194,12 @@ defmodule EEVM.Interpreter.Instructions.System.Calls do
       {calldata, memory_after_read} =
         Memory.read_bytes(state_after_cost.frame.memory, args_offset, args_size)
 
-      forwarded_gas = Dynamic.call_forwarded_gas(state_after_cost.frame.gas, gas_requested)
+      forwarded_gas =
+        Dynamic.call_forwarded_gas(
+          state_after_cost.frame.gas,
+          gas_requested,
+          state_after_cost.env.config.hardfork
+        )
 
       case MachineState.consume_gas(
              MachineState.update_frame(state_after_cost, &%{&1 | memory: memory_after_read}),
@@ -316,8 +321,10 @@ defmodule EEVM.Interpreter.Instructions.System.Calls do
              |> MachineState.advance_pc()}
           end
 
-        {:error, :out_of_gas, _halted_state} ->
-          call_failed(state_after_cost, stack)
+        # Only before EIP-150 can the request exceed the gas left: the caller
+        # runs out of gas.
+        {:error, :out_of_gas, halted_state} ->
+          {:error, :out_of_gas, halted_state}
       end
     else
       {:error, :insufficient_balance} ->
@@ -367,7 +374,12 @@ defmodule EEVM.Interpreter.Instructions.System.Calls do
       {calldata, memory_after_read} =
         Memory.read_bytes(state_after_cost.frame.memory, args_offset, args_size)
 
-      forwarded_gas = Dynamic.call_forwarded_gas(state_after_cost.frame.gas, gas_requested)
+      forwarded_gas =
+        Dynamic.call_forwarded_gas(
+          state_after_cost.frame.gas,
+          gas_requested,
+          state_after_cost.env.config.hardfork
+        )
 
       case MachineState.consume_gas(
              MachineState.update_frame(state_after_cost, &%{&1 | memory: memory_after_read}),
@@ -483,8 +495,10 @@ defmodule EEVM.Interpreter.Instructions.System.Calls do
              |> MachineState.advance_pc()}
           end
 
-        {:error, :out_of_gas, _halted_state} ->
-          call_failed(state_after_cost, stack)
+        # Only before EIP-150 can the request exceed the gas left: the caller
+        # runs out of gas.
+        {:error, :out_of_gas, halted_state} ->
+          {:error, :out_of_gas, halted_state}
       end
     else
       {:error, :out_of_gas, halted_state} ->

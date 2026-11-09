@@ -10,7 +10,7 @@ defmodule EEVM.Gas.Dynamic do
 
   | Opcode | Dynamic Cost | Reference |
   |--------|-------------|-----------|
-  | EXP | 50 × byte_size(exponent) | Yellow Paper |
+  | EXP | 50 × byte_size(exponent); 10 before Spurious Dragon | EIP-160 |
   | KECCAK256 | 6 × word_count(size) | Yellow Paper |
   | CALLDATACOPY, CODECOPY, RETURNDATACOPY | 3 × word_count(size) | Yellow Paper |
   | LOG0–LOG4 | 375 × topics + 8 × data_size (the 375 base is static) | Yellow Paper |
@@ -18,7 +18,7 @@ defmodule EEVM.Gas.Dynamic do
   | CREATE/CREATE2 deploy | 200 × code_size | Yellow Paper |
   | CALL value transfer | 9,000 gas | Yellow Paper |
   | CALL new account creation | 25,000 gas | Yellow Paper |
-  | CALL gas forwarding | min(requested, available - available/64) | EIP-150 |
+  | CALL gas forwarding | min(requested, available - available/64); requested before Tangerine Whistle | EIP-150 |
   | CALL value stipend | 2,300 gas | Yellow Paper |
   | SSTORE | per-fork schedule, see `sstore_cost/4` | EIP-2200, EIP-2929, EIP-3529 |
 
@@ -36,8 +36,9 @@ defmodule EEVM.Gas.Dynamic do
 
   alias EEVM.HardforkConfig
 
-  # EXP: 50 gas per byte of exponent (Yellow Paper)
+  # EXP: gas per byte of exponent, raised from 10 to 50 by EIP-160
   @gas_exp_byte 50
+  @frontier_gas_exp_byte 10
   # KECCAK256: 6 gas per 32-byte word of input (Yellow Paper)
   @gas_keccak256_word 6
   # CALLDATACOPY/CODECOPY/RETURNDATACOPY: 3 gas per 32-byte word (Yellow Paper)
@@ -69,11 +70,16 @@ defmodule EEVM.Gas.Dynamic do
   # EIP-3529: reduced refund for clearing a slot
   @eip_3529_sstore_clears_schedule 4_800
 
-  @spec exp_dynamic_cost(non_neg_integer()) :: non_neg_integer()
-  def exp_dynamic_cost(0), do: 0
+  @spec exp_dynamic_cost(non_neg_integer(), HardforkConfig.t()) :: non_neg_integer()
+  def exp_dynamic_cost(0, _hardfork), do: 0
 
-  def exp_dynamic_cost(exponent) do
-    @gas_exp_byte * byte_size_of(exponent)
+  def exp_dynamic_cost(exponent, hardfork) do
+    byte_cost =
+      if HardforkConfig.enabled?(hardfork, :eip_160),
+        do: @gas_exp_byte,
+        else: @frontier_gas_exp_byte
+
+    byte_cost * byte_size_of(exponent)
   end
 
   @spec keccak256_dynamic_cost(non_neg_integer()) :: non_neg_integer()
@@ -105,10 +111,21 @@ defmodule EEVM.Gas.Dynamic do
   def call_new_account_cost(true, _value), do: 0
   def call_new_account_cost(false, _value), do: @gas_new_account
 
-  @spec call_forwarded_gas(non_neg_integer(), non_neg_integer()) :: non_neg_integer()
-  def call_forwarded_gas(available_gas, requested_gas) do
-    max_forward = available_gas - div(available_gas, 64)
-    min(requested_gas, max_forward)
+  @doc """
+  Gas a CALL-family or CREATE opcode hands to its child frame. From Tangerine
+  Whistle (EIP-150) the caller keeps 1/64 of what it has left and the request
+  is capped at the rest; before, the full request is forwarded, and a request
+  above the available gas is an out-of-gas error in the caller.
+  """
+  @spec call_forwarded_gas(non_neg_integer(), non_neg_integer(), HardforkConfig.t()) ::
+          non_neg_integer()
+  def call_forwarded_gas(available_gas, requested_gas, hardfork) do
+    if HardforkConfig.enabled?(hardfork, :eip_150) do
+      max_forward = available_gas - div(available_gas, 64)
+      min(requested_gas, max_forward)
+    else
+      requested_gas
+    end
   end
 
   @spec call_stipend(non_neg_integer()) :: non_neg_integer()

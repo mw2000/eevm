@@ -12,7 +12,7 @@ defmodule EEVM.HardforkConfig do
   | `:frontier`      | baseline     |
   | `:homestead`     | EIP-2 (contract-creation tx cost), EIP-7 (DELEGATECALL) |
   | `:tangerine_whistle` | EIP-150 gas repricing |
-  | `:spurious_dragon` | EIP-155, EIP-161, EIP-170 (code size limit) |
+  | `:spurious_dragon` | EIP-155, EIP-160 (EXP cost), EIP-161, EIP-170 (code size limit) |
   | `:byzantium`     | EIP-140 (REVERT), EIP-211 (RETURNDATASIZE/RETURNDATACOPY), EIP-214 (STATICCALL) |
   | `:constantinople` | EIP-1014 (CREATE2), EIP-145 (SHL/SHR/SAR), EIP-1052 (EXTCODEHASH) |
   | `:istanbul`      | EIP-1344 (CHAINID), EIP-1884 (SELFBALANCE), EIP-2028 (calldata cost), EIP-2200 (SSTORE) |
@@ -75,6 +75,8 @@ defmodule EEVM.HardforkConfig do
     eip_7: :homestead,
     # EIP-150 (Tangerine Whistle): IO-heavy opcode repricing
     eip_150: :tangerine_whistle,
+    # EIP-160 (Spurious Dragon): EXP costs 50 gas per exponent byte instead of 10
+    eip_160: :spurious_dragon,
     # EIP-161 (Spurious Dragon): empty-account clearing
     eip_161: :spurious_dragon,
     # EIP-170 (Spurious Dragon): 24,576-byte runtime code size limit

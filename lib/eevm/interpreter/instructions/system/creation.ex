@@ -107,9 +107,17 @@ defmodule EEVM.Interpreter.Instructions.System.Creation do
 
         case MachineState.consume_gas(state_after_cost, initcode_cost) do
           {:ok, state_after_initcode_cost} ->
-            # EIP-150: the init code gets all but 1/64 of the remaining gas.
+            # EIP-150: the init code gets all but 1/64 of the remaining gas
+            # (all of it before Tangerine Whistle).
             available_gas = state_after_initcode_cost.frame.gas
-            create_gas = Dynamic.call_forwarded_gas(available_gas, available_gas)
+
+            create_gas =
+              Dynamic.call_forwarded_gas(
+                available_gas,
+                available_gas,
+                state_after_initcode_cost.env.config.hardfork
+              )
+
             reserve_gas = available_gas - create_gas
 
             {init_code, memory_after_read} =

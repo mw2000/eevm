@@ -168,8 +168,29 @@ defmodule EEVM.GasTest do
     end
 
     test "CALL forwarded gas follows EIP-150 63/64 rule" do
-      assert Dynamic.call_forwarded_gas(6400, 6400) == 6300
-      assert Dynamic.call_forwarded_gas(6400, 1000) == 1000
+      tangerine_whistle = EEVM.HardforkConfig.new(:tangerine_whistle)
+      assert Dynamic.call_forwarded_gas(6400, 6400, tangerine_whistle) == 6300
+      assert Dynamic.call_forwarded_gas(6400, 1000, tangerine_whistle) == 1000
+    end
+
+    test "before EIP-150 CALL forwards the full request" do
+      homestead = EEVM.HardforkConfig.new(:homestead)
+      assert Dynamic.call_forwarded_gas(6400, 6400, homestead) == 6400
+      assert Dynamic.call_forwarded_gas(6400, 9000, homestead) == 9000
+    end
+
+    test "before EIP-150 a CALL requesting more gas than is left runs out of gas" do
+      # CALL(gas: GAS, to: 0x42, value 0, no memory), STOP
+      code = <<0x60, 0, 0x60, 0, 0x60, 0, 0x60, 0, 0x60, 0, 0x60, 0x42, 0x5A, 0xF1, 0x00>>
+
+      assert EEVM.execute(code, gas: 100_000, hardfork: :homestead).status == :out_of_gas
+      assert EEVM.execute(code, gas: 100_000, hardfork: :tangerine_whistle).status == :stopped
+    end
+
+    test "EXP costs 10 gas per exponent byte before Spurious Dragon (EIP-160), 50 after" do
+      exponent = 0x0100
+      assert Dynamic.exp_dynamic_cost(exponent, EEVM.HardforkConfig.new(:tangerine_whistle)) == 20
+      assert Dynamic.exp_dynamic_cost(exponent, EEVM.HardforkConfig.new(:spurious_dragon)) == 100
     end
 
     test "CALL stipend applies only when value is non-zero" do

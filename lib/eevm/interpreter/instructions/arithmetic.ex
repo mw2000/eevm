@@ -159,7 +159,7 @@ defmodule EEVM.Interpreter.Instructions.Arithmetic do
          {:ok, state_after_gas} <-
            MachineState.consume_gas(
              MachineState.update_frame(state, &%{&1 | stack: s2}),
-             Dynamic.exp_dynamic_cost(b)
+             Dynamic.exp_dynamic_cost(b, state.env.config.hardfork)
            ) do
       result = Helpers.mod_pow(a, b, @max_uint256 + 1)
       {:ok, s3} = Stack.push(state_after_gas.frame.stack, result)
