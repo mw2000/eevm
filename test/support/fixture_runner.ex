@@ -16,6 +16,15 @@ defmodule EEVM.TestSupport.FixtureRunner do
   (`dir/file.json#name@fork:d0g0v0`); lines starting with `#` are comments.
   `--write-known-failures FILE` writes the current failures in that format,
   collapsing any directory, file, or test where every case failed to one line.
+
+  ## Stale fixtures
+
+  `--stale-fixtures FILE` lists cases, in the same format, whose fixture is
+  older than a rule eevm implements, so their expectations are wrong rather
+  than eevm. A listed case that fails is reported as `stale`: it counts in its
+  own column, not as a failure, and never needs a known-failures entry. A
+  listed case that passes is reported as a pass, with a note to drop it from
+  the list.
   """
 
   @fixtures_root "test/fixtures/state_tests/ethereum-tests/"
@@ -29,6 +38,7 @@ defmodule EEVM.TestSupport.FixtureRunner do
   @switches [
     known_failures: :string,
     write_known_failures: :string,
+    stale_fixtures: :string,
     report: :string,
     timeout: :integer,
     max_heap_mb: :integer,
@@ -38,7 +48,7 @@ defmodule EEVM.TestSupport.FixtureRunner do
   defmodule Result do
     @moduledoc false
 
-    @type outcome :: :pass | :fail | :crash
+    @type outcome :: :pass | :fail | :crash | :stale
 
     @type t :: %__MODULE__{
             id: String.t(),
@@ -62,16 +72,19 @@ defmodule EEVM.TestSupport.FixtureRunner do
 
   `files_fun` receives the positional globs (or `default_glob` when none are
   given) and returns the fixture files to run; `load` turns one file into cases.
+  `defaults` holds option values used when `args` doesn't set them.
   """
   @spec main(
           String.t(),
           [String.t()],
           binary(),
           ([binary()] -> [binary()]),
-          (binary() -> [fixture_case()])
+          (binary() -> [fixture_case()]),
+          keyword()
         ) :: :ok
-  def main(task, args, default_glob, files_fun, load) do
+  def main(task, args, default_glob, files_fun, load, defaults \\ []) do
     {opts, globs} = OptionParser.parse!(args, strict: @switches)
+    opts = Keyword.merge(defaults, opts)
     globs = if globs == [], do: [default_glob], else: globs
     files = files_fun.(globs)
 
@@ -88,6 +101,7 @@ defmodule EEVM.TestSupport.FixtureRunner do
         max_heap_bytes: Keyword.get(opts, :max_heap_mb, 1024) * 1024 * 1024,
         jobs: Keyword.get(opts, :jobs, System.schedulers_online())
       )
+      |> mark_stale(opts[:stale_fixtures])
 
     elapsed = System.monotonic_time(:millisecond) - started
     print_summary(results, elapsed)
@@ -254,7 +268,7 @@ defmodule EEVM.TestSupport.FixtureRunner do
       |> Enum.sort_by(fn {key, _} -> sort_key.(key) end)
       |> Enum.map(fn {key, results} -> Enum.map([key | counts(results)], &to_string/1) end)
 
-    header = [title, "pass", "fail", "crash", "total", "pass%"]
+    header = [title, "pass", "fail", "crash", "stale", "total", "pass%"]
     widths = column_widths([header | rows])
 
     [header | rows]
@@ -269,13 +283,16 @@ defmodule EEVM.TestSupport.FixtureRunner do
     end)
   end
 
+  # pass% leaves stale cases out: their fixtures, not eevm, are wrong.
   defp counts(results) do
     freq = Enum.frequencies_by(results, & &1.outcome)
     total = length(results)
     pass = Map.get(freq, :pass, 0)
-    percent = if total == 0, do: 0.0, else: Float.round(pass * 100 / total, 1)
+    stale = Map.get(freq, :stale, 0)
+    runnable = total - stale
+    percent = if runnable == 0, do: 0.0, else: Float.round(pass * 100 / runnable, 1)
 
-    [pass, Map.get(freq, :fail, 0), Map.get(freq, :crash, 0), total, percent]
+    [pass, Map.get(freq, :fail, 0), Map.get(freq, :crash, 0), stale, total, percent]
   end
 
   defp column_widths(rows) do
@@ -285,14 +302,14 @@ defmodule EEVM.TestSupport.FixtureRunner do
   end
 
   defp totals_line(results) do
-    [pass, fail, crash, total, _] = counts(results)
-    "#{total} cases: #{pass} passed, #{fail} failed, #{crash} crashed"
+    [pass, fail, crash, stale, total, _] = counts(results)
+    "#{total} cases: #{pass} passed, #{fail} failed, #{crash} crashed, #{stale} stale"
   end
 
   defp failure_groups(results) do
     groups =
       results
-      |> Enum.reject(&(&1.outcome == :pass))
+      |> Enum.filter(&failed?/1)
       |> Enum.frequencies_by(&reason_class/1)
       |> Enum.sort_by(fn {_, count} -> -count end)
 
@@ -335,8 +352,8 @@ defmodule EEVM.TestSupport.FixtureRunner do
 
   defp report_json(results) do
     results_counts = fn group ->
-      [pass, fail, crash, total, _] = counts(group)
-      %{pass: pass, fail: fail, crash: crash, total: total}
+      [pass, fail, crash, stale, total, _] = counts(group)
+      %{pass: pass, fail: fail, crash: crash, stale: stale, total: total}
     end
 
     by = fn key ->
@@ -344,7 +361,7 @@ defmodule EEVM.TestSupport.FixtureRunner do
     end
 
     failures =
-      for result <- results, result.outcome != :pass do
+      for result <- results, failed?(result) do
         %{
           id: result.id,
           fork: result.fork,
@@ -382,7 +399,7 @@ defmodule EEVM.TestSupport.FixtureRunner do
 
   defp known_failure_lines(results) do
     results
-    |> Enum.map(&{known_failure_keys(&1), &1.outcome == :pass})
+    |> Enum.map(&{known_failure_keys(&1), not failed?(&1)})
     |> collapse()
     |> Enum.map(&[&1, "\n"])
   end
@@ -402,25 +419,18 @@ defmodule EEVM.TestSupport.FixtureRunner do
   end
 
   defp check_known_failures(results, nil) do
-    if Enum.all?(results, &(&1.outcome == :pass)) do
-      :ok
-    else
+    if Enum.any?(results, &failed?/1) do
       Mix.raise("Fixture failures (pass --known-failures FILE to compare against a baseline)")
+    else
+      :ok
     end
   end
 
   defp check_known_failures(results, path) do
-    entries =
-      path
-      |> File.read!()
-      |> String.split("\n", trim: true)
-      |> Enum.map(&String.trim/1)
-      |> Enum.reject(&(&1 == "" or String.starts_with?(&1, "#")))
-      |> MapSet.new()
-
-    known? = fn %Result{} = result -> Enum.any?(known_failure_keys(result), &(&1 in entries)) end
-    {passed, failed} = Enum.split_with(results, &(&1.outcome == :pass))
-    regressions = Enum.reject(failed, known?)
+    entries = read_entries(path)
+    known? = fn %Result{} = result -> listed?(result, entries) end
+    passed = Enum.filter(results, &(&1.outcome == :pass))
+    regressions = results |> Enum.filter(&failed?/1) |> Enum.reject(known?)
     fixed = Enum.count(passed, known?)
 
     if fixed > 0 do
@@ -435,6 +445,39 @@ defmodule EEVM.TestSupport.FixtureRunner do
       Enum.each(regressions, &Mix.shell().error("REGRESSION #{&1.id}: #{reason_class(&1)}"))
       Mix.raise("#{length(regressions)} cases failed that #{path} does not list")
     end
+  end
+
+  defp mark_stale(results, nil), do: results
+
+  defp mark_stale(results, path) do
+    entries = read_entries(path)
+
+    passing =
+      Enum.count(results, &(&1.outcome == :pass and listed?(&1, entries)))
+
+    if passing > 0 do
+      Mix.shell().info("#{passing} cases listed in #{path} now pass; remove them from it")
+    end
+
+    Enum.map(results, fn result ->
+      if result.outcome == :fail and listed?(result, entries),
+        do: %{result | outcome: :stale},
+        else: result
+    end)
+  end
+
+  defp failed?(%Result{outcome: outcome}), do: outcome in [:fail, :crash]
+
+  defp listed?(%Result{} = result, entries),
+    do: Enum.any?(known_failure_keys(result), &(&1 in entries))
+
+  defp read_entries(path) do
+    path
+    |> File.read!()
+    |> String.split("\n", trim: true)
+    |> Enum.map(&String.trim/1)
+    |> Enum.reject(&(&1 == "" or String.starts_with?(&1, "#")))
+    |> MapSet.new()
   end
 
   # The entries that can cover a result, broadest first: each enclosing

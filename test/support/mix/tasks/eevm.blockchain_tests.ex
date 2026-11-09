@@ -5,12 +5,17 @@ defmodule Mix.Tasks.Eevm.BlockchainTests do
   Runs `BlockchainTests` fixtures from the `ethereum-tests` submodule.
 
       mix eevm.blockchain_tests [GLOB...] [--known-failures FILE] [--write-known-failures FILE]
-                                [--report FILE.json] [--timeout MS] [--max-heap-mb MB] [--jobs N]
+                                [--stale-fixtures FILE] [--report FILE.json] [--timeout MS]
+                                [--max-heap-mb MB] [--jobs N]
 
   With no glob, runs every file under `BlockchainTests/`. Files and test names
   listed in `test/fixtures/blockchain_tests/skip.txt` are not run. Each test
   (one chain of blocks) is one case; see `EEVM.TestSupport.FixtureRunner` for
   isolation, the summary, and the known-failures ratchet.
+
+  `--stale-fixtures` defaults to `test/fixtures/blockchain_tests/stale_fixtures.txt`:
+  cases of the pinned snapshot filled before a rule eevm implements, reported
+  as `stale` instead of failing.
   """
 
   use Mix.Task
@@ -31,7 +36,8 @@ defmodule Mix.Tasks.Eevm.BlockchainTests do
       args,
       BlockchainTestCatalog.official_glob(),
       &BlockchainTestCatalog.fixture_paths/1,
-      &load/1
+      &load/1,
+      stale_fixtures: "test/fixtures/blockchain_tests/stale_fixtures.txt"
     )
   end
 

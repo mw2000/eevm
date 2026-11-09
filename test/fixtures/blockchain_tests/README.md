@@ -12,6 +12,11 @@
   or cannot finish within the per-case timeout.
 - `known_failures.txt` lists cases that run but are known to fail. CI fails
   only when a case outside this list fails.
+- `stale_fixtures.txt` lists cases whose fixtures predate a rule eevm
+  implements (Prague cases filled before the EIP-7002/EIP-7251 contracts were
+  required). `mix eevm.blockchain_tests` reads it by default and reports a
+  listed case that fails as `stale`, in its own column, rather than as a
+  failure; pass% leaves stale cases out.
 
 Initialize the upstream fixture submodule with:
 

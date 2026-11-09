@@ -206,9 +206,11 @@ fixtures that are not run at all because they abort the VM or cannot finish
 within the per-case timeout.
 
 The pinned `ethereum/tests` snapshot filled its Prague BlockchainTests before
-the final EIP-7002/EIP-7251 rule that the request contracts must have code, so
-its Prague cases without them are known failures. Current Prague coverage comes
-from [EEST](https://github.com/ethereum/execution-spec-tests) fixtures.
+the final EIP-7002/EIP-7251 rule that the request contracts must have code.
+Those cases are listed in `test/fixtures/blockchain_tests/stale_fixtures.txt`,
+and the runner reports them as `stale` rather than as failures or passes. The
+authoritative Prague suite is
+[EEST](https://github.com/ethereum/execution-spec-tests).
 
 ## Performance
 
