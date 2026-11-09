@@ -10,6 +10,7 @@ defmodule EEVM.Block.HeaderValidator do
     * `extra_data` is at most 32 bytes.
     * `gas_limit` is at least 5,000, fits in a signed 64-bit integer, and
       differs from the parent's gas limit by less than `parent_gas_limit / 1024`.
+      For London's first block the parent's limit counts double (EIP-1559).
     * Each fork-dependent field is present exactly when its fork is active:
       `base_fee_per_gas` (London), `withdrawals_root` (Shanghai),
       `blob_gas_used`, `excess_blob_gas`, and `parent_beacon_block_root`
@@ -23,9 +24,9 @@ defmodule EEVM.Block.HeaderValidator do
       equals `EEVM.Gas.Blob.calc_excess_blob_gas/2` of the parent (EIP-4844,
       EIP-7691 from Prague, EIP-7918 from Osaka).
 
-  Checks run in that order and the first failure wins. The parent is judged
-  under the same fork as the child, so a fork's first block (such as London's,
-  whose expected base fee is the initial 1 gwei) isn't modelled.
+  Checks run in that order and the first failure wins. A parent without a
+  base fee under a London-or-later child marks London's first block, whose
+  base fee is the initial 1 gwei.
 
   Checks against the block body and the execution result (`transactions_root`,
   `withdrawals_root`, `gas_used`, `receipts_root`, `state_root`, ...) live in
@@ -82,7 +83,7 @@ defmodule EEVM.Block.HeaderValidator do
          :ok <- check_number(child, parent),
          :ok <- check_timestamp(child, parent),
          :ok <- check_extra_data(child),
-         :ok <- check_gas_limit(child, parent),
+         :ok <- check_gas_limit(child, parent, hardfork),
          :ok <- check_fork_fields(child, hardfork),
          :ok <- check_base_fee(child, parent, hardfork),
          :ok <- check_post_merge_fields(child, hardfork) do
@@ -104,13 +105,21 @@ defmodule EEVM.Block.HeaderValidator do
 
   defp check_extra_data(_), do: {:error, :extra_data_too_big}
 
-  defp check_gas_limit(%Header{gas_limit: limit}, _) when limit < @min_gas_limit,
+  defp check_gas_limit(%Header{gas_limit: limit}, _, _) when limit < @min_gas_limit,
     do: {:error, :invalid_gas_limit}
 
-  defp check_gas_limit(%Header{gas_limit: limit}, _) when limit > @max_gas_limit_uint64_signed,
-    do: {:error, :gas_limit_too_big}
+  defp check_gas_limit(%Header{gas_limit: limit}, _, _)
+       when limit > @max_gas_limit_uint64_signed,
+       do: {:error, :gas_limit_too_big}
 
-  defp check_gas_limit(%Header{gas_limit: limit}, %Header{gas_limit: parent_limit}) do
+  defp check_gas_limit(%Header{gas_limit: limit}, %Header{} = parent, hardfork) do
+    # EIP-1559: the fork block's parent gas limit is scaled by the elasticity
+    # multiplier, so the gas target stays where the old limit was.
+    parent_limit =
+      if HardforkConfig.enabled?(hardfork, :eip_1559) and parent.base_fee_per_gas == nil,
+        do: parent.gas_limit * 2,
+        else: parent.gas_limit
+
     bound = div(parent_limit, @gas_limit_divisor)
 
     if abs(limit - parent_limit) >= bound do

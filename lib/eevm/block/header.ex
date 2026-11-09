@@ -44,6 +44,8 @@ defmodule EEVM.Block.Header do
 
   # EIP-1559
   @elasticity_multiplier 2
+  # EIP-1559: base fee of London's first block
+  @initial_base_fee 1_000_000_000
   @base_fee_max_change_denominator 8
 
   @type t :: %__MODULE__{
@@ -222,6 +224,8 @@ defmodule EEVM.Block.Header do
   Returns the `base_fee_per_gas` a child of `parent` must carry (EIP-1559):
   the parent's base fee moved by at most 1/8 towards its gas use relative to
   its gas target (`gas_limit / 2`), rising by at least 1 wei above target.
+  A parent without a base fee is the last block before London, so its child
+  is London's first block and carries the initial 1 gwei.
 
   ## Example
 
@@ -230,8 +234,10 @@ defmodule EEVM.Block.Header do
       900
   """
   @spec calc_base_fee_per_gas(t()) :: non_neg_integer()
+  def calc_base_fee_per_gas(%__MODULE__{base_fee_per_gas: nil}), do: @initial_base_fee
+
   def calc_base_fee_per_gas(%__MODULE__{gas_limit: limit, gas_used: used} = parent) do
-    fee = parent.base_fee_per_gas || 0
+    fee = parent.base_fee_per_gas
     target = div(limit, @elasticity_multiplier)
 
     cond do

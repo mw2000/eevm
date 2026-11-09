@@ -131,6 +131,51 @@ defmodule EEVM.Block.HeaderValidatorTest do
              )
   end
 
+  describe "London's first block (EIP-1559)" do
+    # The Berlin parent has no base fee: its London child must carry the
+    # initial 1 gwei, and the parent's gas limit counts double.
+    @london HardforkConfig.new(:london)
+
+    defp berlin_parent, do: before(@parent, :berlin)
+
+    defp london_child(overrides),
+      do:
+        before(
+          child(
+            Keyword.merge([base_fee_per_gas: 1_000_000_000, gas_limit: 2_048_000], overrides)
+          ),
+          :london
+        )
+
+    test "carries the initial base fee of 1 gwei" do
+      assert :ok = HeaderValidator.validate(london_child([]), berlin_parent(), @london)
+
+      assert {:error, :invalid_base_fee} =
+               HeaderValidator.validate(
+                 london_child(base_fee_per_gas: 0),
+                 berlin_parent(),
+                 @london
+               )
+    end
+
+    test "may move the gas limit within 1/1024 of twice the parent's" do
+      # 2 * 1_024_000 = 2_048_000, whose bound is 2_000.
+      assert :ok =
+               HeaderValidator.validate(
+                 london_child(gas_limit: 2_049_999),
+                 berlin_parent(),
+                 @london
+               )
+
+      assert {:error, :invalid_gas_limit} =
+               HeaderValidator.validate(
+                 london_child(gas_limit: 2_050_000),
+                 berlin_parent(),
+                 @london
+               )
+    end
+  end
+
   describe "EIP-1559 base fee (from London)" do
     # Expected values follow EIP-1559 calculate_base_fee_per_gas with target
     # = 1_024_000 / 2 and a max change of 1/8 per block.
