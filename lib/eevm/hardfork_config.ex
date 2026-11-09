@@ -10,12 +10,12 @@ defmodule EEVM.HardforkConfig do
   | Hardfork         | Notable EIPs |
   |------------------|--------------|
   | `:frontier`      | baseline     |
-  | `:homestead`     | EIP-7 (DELEGATECALL) |
+  | `:homestead`     | EIP-2 (contract-creation tx cost), EIP-7 (DELEGATECALL) |
   | `:tangerine_whistle` | EIP-150 gas repricing |
   | `:spurious_dragon` | EIP-155, EIP-161, EIP-170 (code size limit) |
   | `:byzantium`     | EIP-140 (REVERT), EIP-211 (RETURNDATASIZE/RETURNDATACOPY), EIP-214 (STATICCALL) |
   | `:constantinople` | EIP-1014 (CREATE2), EIP-145 (SHL/SHR/SAR), EIP-1052 (EXTCODEHASH) |
-  | `:istanbul`      | EIP-1344 (CHAINID), EIP-1884 (SELFBALANCE), EIP-2200 (SSTORE) |
+  | `:istanbul`      | EIP-1344 (CHAINID), EIP-1884 (SELFBALANCE), EIP-2028 (calldata cost), EIP-2200 (SSTORE) |
   | `:berlin`        | EIP-2929 (cold/warm access), EIP-2930 (access lists) |
   | `:london`        | EIP-1559 (basefee), EIP-3198 (BASEFEE), EIP-3529 (refund cap), EIP-3541 (0xEF rejection) |
   | `:paris`         | The Merge (PREVRANDAO replaces DIFFICULTY) |
@@ -69,6 +69,8 @@ defmodule EEVM.HardforkConfig do
 
   # Maps each EIP feature flag to the first hardfork that activates it.
   @eip_activation %{
+    # EIP-2 (Homestead): contract-creation transactions cost 32,000 more
+    eip_2: :homestead,
     # EIP-7 (Homestead): DELEGATECALL opcode
     eip_7: :homestead,
     # EIP-150 (Tangerine Whistle): IO-heavy opcode repricing
@@ -95,6 +97,8 @@ defmodule EEVM.HardforkConfig do
     eip_1344: :istanbul,
     # EIP-1884 (Istanbul): SELFBALANCE opcode; BALANCE, SLOAD, EXTCODEHASH repricing
     eip_1884: :istanbul,
+    # EIP-2028 (Istanbul): non-zero calldata bytes cost 16 gas instead of 68
+    eip_2028: :istanbul,
     # EIP-2929 (Berlin): cold/warm address & storage access costs
     eip_2929: :berlin,
     # EIP-1559 (London): fee market; header base_fee_per_gas follows the parent's gas usage

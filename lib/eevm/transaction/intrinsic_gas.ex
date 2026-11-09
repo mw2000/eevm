@@ -20,14 +20,15 @@ defmodule EEVM.Transaction.IntrinsicGas do
   @per_empty_account_cost 25_000
 
   @doc """
-  Intrinsic gas: base cost, calldata, creation and initcode words (EIP-3860,
-  from Shanghai), access list (EIP-2930), and 25,000 per authorization
-  (EIP-7702).
+  Returns the intrinsic gas of `tx` under `hardfork`: the 21,000 base, its
+  calldata, contract creation (32,000 from Homestead, EIP-2, plus 2 per
+  initcode word from Shanghai, EIP-3860), access-list entries (EIP-2930), and
+  25,000 per authorization (EIP-7702).
   """
   @spec calculate(Transaction.t(), HardforkConfig.t()) :: non_neg_integer()
   def calculate(%Transaction{} = tx, %HardforkConfig{} = hardfork) do
     @tx_base_cost +
-      Intrinsic.calldata_cost(tx.data) +
+      Intrinsic.calldata_cost(tx.data, hardfork) +
       creation_cost(tx, hardfork) +
       access_list_cost(tx.access_list) +
       @per_empty_account_cost * length(tx.authorization_list)
@@ -49,11 +50,15 @@ defmodule EEVM.Transaction.IntrinsicGas do
     max(calculate(tx, hardfork), calldata_floor_gas_cost(tx, hardfork))
   end
 
-  # EIP-3860 (Shanghai+): creation txs also pay per 32-byte word of initcode.
   defp creation_cost(%Transaction{to: nil, data: initcode}, hardfork) do
-    if HardforkConfig.enabled?(hardfork, :eip_3860),
-      do: @tx_create_cost + @initcode_word_cost * word_count(initcode),
-      else: @tx_create_cost
+    create_cost = if HardforkConfig.enabled?(hardfork, :eip_2), do: @tx_create_cost, else: 0
+
+    initcode_cost =
+      if HardforkConfig.enabled?(hardfork, :eip_3860),
+        do: @initcode_word_cost * word_count(initcode),
+        else: 0
+
+    create_cost + initcode_cost
   end
 
   defp creation_cost(%Transaction{}, _hardfork), do: 0

@@ -23,6 +23,20 @@ defmodule EEVM.Transaction.IntrinsicGasTest do
       assert IntrinsicGas.calculate(tx, @cancun) == 21_000 + 32_000 + 5 * 16 + 2
     end
 
+    test "contract creation costs 32,000 from Homestead (EIP-2), initcode words from Shanghai" do
+      tx = Transaction.new(to: nil, data: :binary.copy(<<1>>, 33))
+
+      assert IntrinsicGas.calculate(tx, HardforkConfig.new(:frontier)) == 21_000 + 33 * 68
+
+      assert IntrinsicGas.calculate(tx, HardforkConfig.new(:homestead)) ==
+               21_000 + 32_000 + 33 * 68
+
+      assert IntrinsicGas.calculate(tx, HardforkConfig.new(:paris)) == 21_000 + 32_000 + 33 * 16
+
+      assert IntrinsicGas.calculate(tx, HardforkConfig.new(:shanghai)) ==
+               21_000 + 32_000 + 33 * 16 + 2 * 2
+    end
+
     test "access list costs are included" do
       tx =
         Transaction.new(
