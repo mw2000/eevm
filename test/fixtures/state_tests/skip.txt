@@ -1,3 +1,8 @@
+# StateTests skip list: fixtures that are not run at all.
+#
+# Only list fixtures that cannot run safely, such as ones that abort the VM.
+# Fixtures that run but fail belong in known_failures.txt instead.
+#
 # One entry per line.
 # Formats:
 # - test/fixtures/state_tests/ethereum-tests/GeneralStateTests/some/path/file.json

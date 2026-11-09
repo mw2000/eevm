@@ -187,26 +187,26 @@ EIP-7934, and EIP-7951) is in progress. The
 ## Conformance
 
 eevm is not yet conformant with the official
-[`ethereum/tests`](https://github.com/ethereum/tests) suites. The repository
-includes harnesses for `GeneralStateTests` and `BlockchainTests`; many official
-fixtures still fail. Work on a conformance runner that reports per-suite results
-is in progress ([#143](https://github.com/mw2000/eevm/issues/143)). The default
-`mix test` run covers unit tests, spec-derived test vectors, and small checked-in
-smoke fixtures, not the official suites.
-
-To run official fixtures yourself:
+[`ethereum/tests`](https://github.com/ethereum/tests) suites; many official
+fixtures still fail. Two Mix tasks run the `GeneralStateTests` and
+`BlockchainTests` fixtures from a pinned submodule and print pass, fail, and
+crash counts by fork and by test category. Each case runs in its own process
+with a heap cap and a timeout, so a runaway case counts as a crash instead of
+stopping the run. The default `mix test` run covers unit tests, spec-derived
+test vectors, and small checked-in smoke fixtures, not the official suites.
 
 ```bash
-git submodule update --init test/fixtures/state_tests/ethereum-tests
+git submodule update --init --depth 1 test/fixtures/state_tests/ethereum-tests
 
-EEVM_STATE_TEST_GLOB='test/fixtures/state_tests/ethereum-tests/GeneralStateTests/stExample/*.json' \
-  mix test test/state_test_test.exs
-
-EEVM_BLOCKCHAIN_TEST_GLOB='test/fixtures/state_tests/ethereum-tests/BlockchainTests/ValidBlocks/bcExample/*.json' \
-  mix test test/blockchain_test_test.exs
+mix eevm.state_tests
+mix eevm.state_tests 'test/fixtures/state_tests/ethereum-tests/GeneralStateTests/stExample/*.json'
+mix eevm.blockchain_tests 'test/fixtures/state_tests/ethereum-tests/BlockchainTests/ValidBlocks/**/*.json'
 ```
 
-Known-unsupported cases are listed in `test/fixtures/*/skip.txt`.
+CI runs both suites against `test/fixtures/*/known_failures.txt` and fails only
+when a case outside those lists fails. After fixing failures, regenerate a list
+with `--write-known-failures FILE`. `test/fixtures/*/skip.txt` lists the few
+fixtures that are not run at all because they abort the VM.
 
 ## Performance
 

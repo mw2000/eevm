@@ -1,24 +1,33 @@
 # BlockchainTest Fixtures
 
-- `smoke/` is a place for tiny checked-in fixtures that exercise the harness
-  itself.
+- `smoke/` contains tiny checked-in fixtures that exercise the harness itself;
+  `mix test` runs them.
 - Official `BlockchainTests` live in the `ethereum-tests` submodule under
-  `test/fixtures/state_tests/ethereum-tests/BlockchainTests/` and cover three
-  families: `ValidBlocks/`, `InvalidBlocks/`, and `TransitionTests/`.
-- `skip.txt` lists fixtures or test names to skip. `TransitionTests` are
-  currently skipped wholesale because the runner does not yet switch forks
-  mid-chain — it picks the destination fork from the synthetic network name
-  (e.g. `BerlinToLondonAt5` → `:london`) and runs every block on it.
+  `test/fixtures/state_tests/ethereum-tests/BlockchainTests/` and cover
+  `ValidBlocks/`, `InvalidBlocks/`, `TransitionTests/`, and
+  `GeneralStateTests/` (the state tests filled as blocks).
+- Transition networks such as `CancunToPragueAtTime15k` or
+  `BerlinToLondonAt5` switch forks at the named block number or timestamp.
+- `skip.txt` lists fixtures that are not run at all because they abort the VM.
+- `known_failures.txt` lists cases that run but are known to fail. CI fails
+  only when a case outside this list fails.
 
 Initialize the upstream fixture submodule with:
 
 ```bash
-git submodule update --init test/fixtures/state_tests/ethereum-tests
+git submodule update --init --depth 1 test/fixtures/state_tests/ethereum-tests
 ```
 
-Run a focused official subset:
+Run all official fixtures, or a focused subset:
 
 ```bash
-EEVM_BLOCKCHAIN_TEST_GLOB='test/fixtures/state_tests/ethereum-tests/BlockchainTests/ValidBlocks/bcExample/*.json' \
-  mix test test/blockchain_test_test.exs
+mix eevm.blockchain_tests
+mix eevm.blockchain_tests 'test/fixtures/state_tests/ethereum-tests/BlockchainTests/ValidBlocks/bcExample/*.json'
+```
+
+Check against the baseline as CI does, and regenerate it after fixing failures:
+
+```bash
+mix eevm.blockchain_tests --known-failures test/fixtures/blockchain_tests/known_failures.txt
+mix eevm.blockchain_tests --write-known-failures test/fixtures/blockchain_tests/known_failures.txt
 ```

@@ -33,6 +33,8 @@ defmodule EEVM.MixProject do
         bench: :prod,
         dialyzer: :dev,
         docs: :dev,
+        "eevm.state_tests": :test,
+        "eevm.blockchain_tests": :test,
         "hex.publish": :dev
       ]
     ]

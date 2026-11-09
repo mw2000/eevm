@@ -1,41 +1,10 @@
-# BlockchainTests skip list.
+# BlockchainTests skip list: fixtures that are not run at all.
+#
+# Only list fixtures that cannot run safely, such as ones that abort the VM.
+# Fixtures that run but fail belong in known_failures.txt instead.
 #
 # One entry per line.
 # Formats:
 # - test/fixtures/state_tests/ethereum-tests/BlockchainTests/some/path/file.json
 # - test/fixtures/state_tests/ethereum-tests/BlockchainTests/some/path/file.json#test_name
 # - test_name
-
-# --- TransitionTests ---
-# The harness picks the destination fork from synthetic network names like
-# "ArrowGlacierToParisAtDiffC0000", but it does not switch forks mid-chain.
-# Every fixture below depends on per-block fork activation; re-enable as we
-# add proper transition support.
-test/fixtures/state_tests/ethereum-tests/BlockchainTests/TransitionTests/bcArrowGlacierToParis/difficultyFormula.json
-test/fixtures/state_tests/ethereum-tests/BlockchainTests/TransitionTests/bcArrowGlacierToParis/powToPosBlockRejection.json
-test/fixtures/state_tests/ethereum-tests/BlockchainTests/TransitionTests/bcArrowGlacierToParis/powToPosTest.json
-test/fixtures/state_tests/ethereum-tests/BlockchainTests/TransitionTests/bcBerlinToLondon/BerlinToLondonTransition.json
-test/fixtures/state_tests/ethereum-tests/BlockchainTests/TransitionTests/bcBerlinToLondon/initialVal.json
-test/fixtures/state_tests/ethereum-tests/BlockchainTests/TransitionTests/bcBerlinToLondon/londonUncles.json
-test/fixtures/state_tests/ethereum-tests/BlockchainTests/TransitionTests/bcByzantiumToConstantinopleFix/ConstantinopleFixTransition.json
-test/fixtures/state_tests/ethereum-tests/BlockchainTests/TransitionTests/bcEIP158ToByzantium/ByzantiumTransition.json
-test/fixtures/state_tests/ethereum-tests/BlockchainTests/TransitionTests/bcFrontierToHomestead/CallContractThatCreateContractBeforeAndAfterSwitchover.json
-test/fixtures/state_tests/ethereum-tests/BlockchainTests/TransitionTests/bcFrontierToHomestead/ContractCreationFailsOnHomestead.json
-test/fixtures/state_tests/ethereum-tests/BlockchainTests/TransitionTests/bcFrontierToHomestead/HomesteadOverrideFrontier.json
-test/fixtures/state_tests/ethereum-tests/BlockchainTests/TransitionTests/bcFrontierToHomestead/UncleFromFrontierInHomestead.json
-test/fixtures/state_tests/ethereum-tests/BlockchainTests/TransitionTests/bcFrontierToHomestead/UnclePopulation.json
-test/fixtures/state_tests/ethereum-tests/BlockchainTests/TransitionTests/bcFrontierToHomestead/blockChainFrontierWithLargerTDvsHomesteadBlockchain.json
-test/fixtures/state_tests/ethereum-tests/BlockchainTests/TransitionTests/bcFrontierToHomestead/blockChainFrontierWithLargerTDvsHomesteadBlockchain2.json
-test/fixtures/state_tests/ethereum-tests/BlockchainTests/TransitionTests/bcHomesteadToDao/DaoTransactions.json
-test/fixtures/state_tests/ethereum-tests/BlockchainTests/TransitionTests/bcHomesteadToDao/DaoTransactions_EmptyTransactionAndForkBlocksAhead.json
-test/fixtures/state_tests/ethereum-tests/BlockchainTests/TransitionTests/bcHomesteadToDao/DaoTransactions_UncleExtradata.json
-test/fixtures/state_tests/ethereum-tests/BlockchainTests/TransitionTests/bcHomesteadToDao/DaoTransactions_XBlockm1.json
-test/fixtures/state_tests/ethereum-tests/BlockchainTests/TransitionTests/bcHomesteadToEIP150/EIP150Transition.json
-test/fixtures/state_tests/ethereum-tests/BlockchainTests/TransitionTests/bcMergeToShanghai/shanghaiBeforeTransition.json
-
-# --- InvalidBlocks/bcInvalidHeaderTest ---
-# The header validator rejects the bad headers (post-merge difficulty, equal
-# timestamps), but an earlier valid block fails on an EVM gas-accounting bug
-# (invalid_gas_used), so the whole fixture still fails.
-test/fixtures/state_tests/ethereum-tests/BlockchainTests/InvalidBlocks/bcInvalidHeaderTest/DifficultyIsZero.json
-test/fixtures/state_tests/ethereum-tests/BlockchainTests/InvalidBlocks/bcInvalidHeaderTest/timeDiff0.json

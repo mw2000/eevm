@@ -5,11 +5,12 @@ defmodule EEVM.TestSupport.StateTestCatalog do
   @official_glob "test/fixtures/state_tests/ethereum-tests/GeneralStateTests/**/*.json"
   @default_skip_file "test/fixtures/state_tests/skip.txt"
 
-  @spec fixture_paths() :: [binary()]
-  def fixture_paths do
+  @doc "Fixture files matching `globs` (the checked-in smoke fixtures by default), minus skipped files."
+  @spec fixture_paths([binary()]) :: [binary()]
+  def fixture_paths(globs \\ [@default_glob]) do
     skip_entries = skip_entries()
 
-    fixture_globs()
+    globs
     |> Enum.flat_map(&Path.wildcard/1)
     |> Enum.uniq()
     |> Enum.sort()
@@ -28,18 +29,6 @@ defmodule EEVM.TestSupport.StateTestCatalog do
         true -> false
       end
     end)
-  end
-
-  defp fixture_globs do
-    case System.get_env("EEVM_STATE_TEST_GLOB") do
-      nil ->
-        [@default_glob]
-
-      value ->
-        value
-        |> String.split(",", trim: true)
-        |> Enum.map(&String.trim/1)
-    end
   end
 
   @spec official_glob() :: binary()

@@ -110,17 +110,20 @@ confirm the CI run for your commit passes.
   every boundary and fork transition.
 - Tests mirror `lib/` under `test/`. Shared builders live in `test/support/`.
   Use `async: true` unless a test needs global state.
-- Official fixtures come from the pinned `ethereum/tests` submodule:
+- Official fixtures come from the pinned `ethereum/tests` submodule and run
+  through Mix tasks, not `mix test`:
 
   ```bash
-  git submodule update --init test/fixtures/state_tests/ethereum-tests
-  EEVM_STATE_TEST_GLOB='test/fixtures/state_tests/ethereum-tests/GeneralStateTests/stExample/*.json' \
-    mix test test/state_test_test.exs
+  git submodule update --init --depth 1 test/fixtures/state_tests/ethereum-tests
+  mix eevm.state_tests 'test/fixtures/state_tests/ethereum-tests/GeneralStateTests/stExample/*.json'
+  mix eevm.blockchain_tests 'test/fixtures/state_tests/ethereum-tests/BlockchainTests/ValidBlocks/**/*.json'
   ```
 
-  `EEVM_BLOCKCHAIN_TEST_GLOB` does the same for `test/blockchain_test_test.exs`.
-  The default `mix test` runs only the checked-in smoke fixtures. Known failures go
-  in `test/fixtures/*/skip.txt`; remove entries when you fix them.
+  The default `mix test` runs only the checked-in smoke fixtures. CI's
+  Conformance job runs both suites against `test/fixtures/*/known_failures.txt`
+  and fails on any failure those lists don't cover. When you fix failures,
+  regenerate the list with the command in its header and commit it with the
+  fix. `test/fixtures/*/skip.txt` is only for fixtures that abort the VM.
 - `README.md` is doctested from `test/eevm_test.exs`; keep its examples running.
 - Don't claim conformance the suites don't show.
 
