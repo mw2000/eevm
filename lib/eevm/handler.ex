@@ -61,6 +61,8 @@ defmodule EEVM.Handler do
          {:ok, sender_bytes} <- Validation.recover_sender(wire_tx, chain_id),
          {:ok, tx_ctx} <- Validation.build_tx_context(wire_tx, sender_bytes),
          :ok <- Validation.validate(tx_ctx, db, block, config.hardfork),
+         # GASPRICE (0x3A) reads the price per gas the sender pays (EIP-1559).
+         tx_ctx = %{tx_ctx | gasprice: PreExecution.effective_gas_price(tx_ctx, block)},
          {:ok, db_after_upfront} <- PreExecution.charge_upfront(db, tx_ctx, block),
          {:ok, db_nonce_bumped, execution_gas} <-
            PreExecution.prepare_execution(db_after_upfront, tx_ctx, config.hardfork) do

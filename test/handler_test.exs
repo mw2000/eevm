@@ -158,6 +158,35 @@ defmodule EEVM.HandlerTest do
     end
   end
 
+  describe "execute/4 — GASPRICE" do
+    test "is the effective price per gas for an EIP-1559 transaction" do
+      tx =
+        sign_eip1559(%FeeMarket{
+          chain_id: @chain_id,
+          nonce: 0,
+          max_priority_fee_per_gas: 2,
+          max_fee_per_gas: 10,
+          gas_limit: 100_000,
+          to: <<@recipient::unsigned-big-160>>,
+          value: 0,
+          data: <<>>,
+          access_list: [],
+          y_parity: 0,
+          r: 0,
+          s: 0
+        })
+
+      # Recipient stores GASPRICE in slot 0: GASPRICE PUSH1 0 SSTORE STOP.
+      db = Database.put_code(db_with_sender(), @recipient, <<0x3A, 0x60, 0x00, 0x55, 0x00>>)
+
+      assert {:ok, %TransactionResult{status: :success, post_state_db: post_db}} =
+               run(tx, db, simple_block(basefee: 5))
+
+      # EIP-1559: min(max_fee 10, basefee 5 + tip 2) = 7.
+      assert Database.storage_load(post_db, @recipient, 0) == 7
+    end
+  end
+
   describe "execute/4 — eip-4844 blob fee" do
     # EIP-4844: the sender burns get_total_blob_gas(tx) * blob_base_fee up front,
     # where get_total_blob_gas = GAS_PER_BLOB (131_072) * blob count. Validity
