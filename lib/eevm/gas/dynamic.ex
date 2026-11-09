@@ -13,7 +13,7 @@ defmodule EEVM.Gas.Dynamic do
   | EXP | 50 × byte_size(exponent) | Yellow Paper |
   | KECCAK256 | 6 × word_count(size) | Yellow Paper |
   | CALLDATACOPY, CODECOPY, RETURNDATACOPY | 3 × word_count(size) | Yellow Paper |
-  | LOG0–LOG4 | 375 + 375 × topics + 8 × data_size | Yellow Paper |
+  | LOG0–LOG4 | 375 × topics + 8 × data_size (the 375 base is static) | Yellow Paper |
   | CREATE2 | 6 × word_count(initcode_size) | EIP-1014 |
   | CREATE/CREATE2 deploy | 200 × code_size | Yellow Paper |
   | CALL value transfer | 9,000 gas | Yellow Paper |
@@ -39,8 +39,6 @@ defmodule EEVM.Gas.Dynamic do
   @gas_keccak256_word 6
   # CALLDATACOPY/CODECOPY/RETURNDATACOPY: 3 gas per 32-byte word (Yellow Paper)
   @gas_copy 3
-  # LOG: base cost per LOG opcode (Yellow Paper)
-  @gas_log 375
   # LOG: additional cost per topic (Yellow Paper)
   @gas_log_topic 375
   # LOG: cost per byte of data (Yellow Paper)
@@ -75,9 +73,13 @@ defmodule EEVM.Gas.Dynamic do
   @spec copy_cost(non_neg_integer()) :: non_neg_integer()
   def copy_cost(size), do: div(size + 31, 32) * @gas_copy
 
+  @doc """
+  Dynamic part of LOG0–LOG4: 375 per topic plus 8 per data byte. The 375
+  base (G_log) is the opcode's static cost in `EEVM.Gas.Static`.
+  """
   @spec log_cost(non_neg_integer(), non_neg_integer()) :: non_neg_integer()
   def log_cost(topic_count, data_size),
-    do: @gas_log + @gas_log_topic * topic_count + @gas_log_data * data_size
+    do: @gas_log_topic * topic_count + @gas_log_data * data_size
 
   @spec create2_hash_cost(non_neg_integer()) :: non_neg_integer()
   def create2_hash_cost(init_code_size), do: word_count(init_code_size) * @gas_create2_word

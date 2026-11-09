@@ -120,9 +120,18 @@ defmodule EEVM.Interpreter.Instructions.LoggingTest do
     end
 
     test "gas calculation for LOGn is 375 + 375*N + 8*size" do
-      assert Dynamic.log_cost(0, 0) == 375
-      assert Dynamic.log_cost(2, 10) == 375 + 375 * 2 + 8 * 10
-      assert Dynamic.log_cost(4, 64) == 375 + 375 * 4 + 8 * 64
+      # Yellow Paper: G_log (375, static) + G_logtopic * N + G_logdata * size.
+      assert Dynamic.log_cost(0, 0) == 0
+      assert Dynamic.log_cost(2, 10) == 375 * 2 + 8 * 10
+      assert Dynamic.log_cost(4, 64) == 375 * 4 + 8 * 64
+
+      # PUSH1 0, PUSH1 0, LOG0 then PUSH1 0x2A, PUSH1 3, PUSH1 0, LOG1 (memory 0..3, one word).
+      code = <<0x60, 0x00, 0x60, 0x00, 0xA0, 0x60, 0x2A, 0x60, 0x03, 0x60, 0x00, 0xA1, 0x00>>
+      result = EEVM.execute(code, gas: 10_000)
+
+      log0 = 2 * 3 + 375
+      log1 = 3 * 3 + 375 + 375 + 8 * 3 + 3
+      assert result.frame.gas == 10_000 - log0 - log1
     end
 
     test "memory expansion is triggered by LOG data reads beyond current memory" do
