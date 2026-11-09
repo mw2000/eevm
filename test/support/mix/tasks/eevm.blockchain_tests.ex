@@ -6,7 +6,7 @@ defmodule Mix.Tasks.Eevm.BlockchainTests do
 
       mix eevm.blockchain_tests [GLOB...] [--known-failures FILE] [--write-known-failures FILE]
                                 [--stale-fixtures FILE] [--report FILE.json] [--timeout MS]
-                                [--max-heap-mb MB] [--jobs N]
+                                [--max-heap-mb MB] [--jobs N] [--fork NAME]
 
   With no glob, runs every file under `BlockchainTests/`. Files and test names
   listed in `test/fixtures/blockchain_tests/skip.txt` are not run. Each test
@@ -50,7 +50,10 @@ defmodule Mix.Tasks.Eevm.BlockchainTests do
   def load(path) do
     for test <- BlockchainTestFixture.load_file!(path),
         BlockchainTestCatalog.skipped?(path, test.name) == false do
-      {test.name, test.network, fn -> BlockchainTestRunner.run_case(test) end}
+      {test.name, fork(test.network), fn -> BlockchainTestRunner.run_case(test) end}
     end
   end
+
+  defp fork({:unsupported, _name}), do: :unsupported
+  defp fork(fork), do: fork
 end

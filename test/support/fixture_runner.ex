@@ -17,6 +17,12 @@ defmodule EEVM.TestSupport.FixtureRunner do
   `--write-known-failures FILE` writes the current failures in that format,
   collapsing any directory, file, or test where every case failed to one line.
 
+  ## Fork filter
+
+  `--fork NAME` (repeatable) runs only the cases of that fork, such as
+  `--fork osaka`. A blockchain test's fork is its network's fork, or the fork
+  it switches to for transition networks such as `PragueToOsakaAtTime15k`.
+
   ## Stale fixtures
 
   `--stale-fixtures FILE` lists cases, in the same format, whose fixture is
@@ -29,7 +35,11 @@ defmodule EEVM.TestSupport.FixtureRunner do
 
   # Fixture IDs are relative to these checkouts: ethereum/tests and the
   # execution-spec-tests release fetched by test/fixtures/eest/fetch.sh.
-  @fixture_roots ["test/fixtures/state_tests/ethereum-tests/", "test/fixtures/eest/fixtures/"]
+  @fixture_roots [
+    "test/fixtures/state_tests/ethereum-tests/",
+    "test/fixtures/eest/fixtures/",
+    "test/fixtures/eest/fixtures_develop/"
+  ]
 
   @suite_roots ~w(GeneralStateTests BlockchainTests state_tests blockchain_tests)
 
@@ -47,7 +57,8 @@ defmodule EEVM.TestSupport.FixtureRunner do
     report: :string,
     timeout: :integer,
     max_heap_mb: :integer,
-    jobs: :integer
+    jobs: :integer,
+    fork: :keep
   ]
 
   defmodule Result do
@@ -104,9 +115,13 @@ defmodule EEVM.TestSupport.FixtureRunner do
       run(files, load,
         timeout: Keyword.get(opts, :timeout, 60_000),
         max_heap_bytes: Keyword.get(opts, :max_heap_mb, 1024) * 1024 * 1024,
-        jobs: Keyword.get(opts, :jobs, System.schedulers_online())
+        jobs: Keyword.get(opts, :jobs, System.schedulers_online()),
+        forks: Keyword.get_values(opts, :fork)
       )
       |> mark_stale(opts[:stale_fixtures])
+
+    # A --fork that matches nothing would otherwise pass any ratchet.
+    if results == [], do: Mix.raise("No cases to run in #{length(files)} fixture files")
 
     elapsed = System.monotonic_time(:millisecond) - started
     print_summary(results, elapsed)
@@ -120,14 +135,18 @@ defmodule EEVM.TestSupport.FixtureRunner do
     check_known_failures(results, opts[:known_failures])
   end
 
-  @doc "Runs every case in `files`, loading one file at a time and running each case in its own process."
+  @doc """
+  Runs every case in `files`, loading one file at a time and running each case
+  in its own process. With a non-empty `:forks` list, runs only the cases whose
+  fork is named in it.
+  """
   @spec run([binary()], (binary() -> [fixture_case()]), keyword()) :: [Result.t()]
   def run(files, load, opts) do
     timeout = Keyword.fetch!(opts, :timeout)
     max_heap_words = div(Keyword.fetch!(opts, :max_heap_bytes), :erlang.system_info(:wordsize))
 
     files
-    |> Stream.flat_map(&file_cases(&1, load))
+    |> Stream.flat_map(&file_cases(&1, load, Keyword.get(opts, :forks, [])))
     |> Task.async_stream(&run_case(&1, timeout, max_heap_words),
       max_concurrency: Keyword.fetch!(opts, :jobs),
       ordered: false,
@@ -141,15 +160,15 @@ defmodule EEVM.TestSupport.FixtureRunner do
     |> Enum.sort_by(& &1.id)
   end
 
-  defp file_cases(path, load) do
+  defp file_cases(path, load, forks) do
     file = relative_path(path)
     template = %Result{file: file, category: category(file)}
 
     case load_cases(path, load) do
       {:ok, cases} ->
-        Enum.map(cases, fn {suffix, fork, fun} ->
+        for {suffix, fork, fun} <- cases, forks == [] or Atom.to_string(fork) in forks do
           {%{template | id: "#{file}##{suffix}", fork: fork}, fun}
-        end)
+        end
 
       {:error, reason} ->
         [{%{template | id: file, fork: :unknown}, {:load_failed, reason}}]

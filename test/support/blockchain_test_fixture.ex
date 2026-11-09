@@ -41,7 +41,7 @@ defmodule EEVM.TestSupport.BlockchainTestFixture do
 
     @type t :: %__MODULE__{
             name: String.t(),
-            network: EEVM.HardforkConfig.spec_id(),
+            network: EEVM.TestSupport.BlockchainTestFixture.network(),
             transition: EEVM.TestSupport.BlockchainTestFixture.transition() | nil,
             pre: %{non_neg_integer() => Account.t()},
             post: %{non_neg_integer() => Account.t()},
@@ -65,6 +65,14 @@ defmodule EEVM.TestSupport.BlockchainTestFixture do
   end
 
   @typedoc """
+  The fork a case runs on, or `{:unsupported, name}` for a network eevm doesn't
+  model, such as the blob-parameter-only forks (`BPO1`, EIP-7892) in
+  execution-spec-tests' `fixtures_develop`. Such a case fails on its own
+  instead of failing its whole fixture file.
+  """
+  @type network :: EEVM.HardforkConfig.spec_id() | {:unsupported, String.t()}
+
+  @typedoc """
   A mid-chain fork switch from a synthetic network name such as
   `PragueToOsakaAtTime15k`: blocks before `at` run on `from`, the rest on the
   case's `network`. `{:total_difficulty, ttd}` (from `...AtDiffC0000` names,
@@ -72,7 +80,7 @@ defmodule EEVM.TestSupport.BlockchainTestFixture do
   reaches `ttd`, as the Merge did.
   """
   @type transition :: %{
-          from: EEVM.HardforkConfig.spec_id(),
+          from: network(),
           at:
             {:block, non_neg_integer()}
             | {:timestamp, non_neg_integer()}
@@ -137,10 +145,10 @@ defmodule EEVM.TestSupport.BlockchainTestFixture do
   defp parse_network!(name) do
     case Regex.named_captures(@transition_network, name) do
       nil ->
-        {parse_fork!(name), nil}
+        {parse_fork(name), nil}
 
       %{"from" => from, "to" => to, "kind" => kind, "value" => value} ->
-        {parse_fork!(to), %{from: parse_fork!(from), at: parse_activation!(kind, value)}}
+        {parse_fork(to), %{from: parse_fork(from), at: parse_activation!(kind, value)}}
     end
   end
 
@@ -155,26 +163,26 @@ defmodule EEVM.TestSupport.BlockchainTestFixture do
     end
   end
 
-  defp parse_fork!("Frontier"), do: :frontier
-  defp parse_fork!("Homestead"), do: :homestead
-  defp parse_fork!("Dao"), do: :homestead
-  defp parse_fork!("EIP150"), do: :tangerine_whistle
-  defp parse_fork!("EIP158"), do: :spurious_dragon
-  defp parse_fork!("Byzantium"), do: :byzantium
-  defp parse_fork!("Constantinople"), do: :constantinople
-  defp parse_fork!("ConstantinopleFix"), do: :constantinople
-  defp parse_fork!("Istanbul"), do: :istanbul
-  defp parse_fork!("Berlin"), do: :berlin
-  defp parse_fork!("London"), do: :london
+  defp parse_fork("Frontier"), do: :frontier
+  defp parse_fork("Homestead"), do: :homestead
+  defp parse_fork("Dao"), do: :homestead
+  defp parse_fork("EIP150"), do: :tangerine_whistle
+  defp parse_fork("EIP158"), do: :spurious_dragon
+  defp parse_fork("Byzantium"), do: :byzantium
+  defp parse_fork("Constantinople"), do: :constantinople
+  defp parse_fork("ConstantinopleFix"), do: :constantinople
+  defp parse_fork("Istanbul"), do: :istanbul
+  defp parse_fork("Berlin"), do: :berlin
+  defp parse_fork("London"), do: :london
   # Arrow Glacier only delays the difficulty bomb; execution matches London.
-  defp parse_fork!("ArrowGlacier"), do: :london
-  defp parse_fork!("Paris"), do: :paris
-  defp parse_fork!("Merge"), do: :paris
-  defp parse_fork!("Shanghai"), do: :shanghai
-  defp parse_fork!("Cancun"), do: :cancun
-  defp parse_fork!("Prague"), do: :prague
-  defp parse_fork!("Osaka"), do: :osaka
-  defp parse_fork!(other), do: raise(ArgumentError, "unsupported network #{inspect(other)}")
+  defp parse_fork("ArrowGlacier"), do: :london
+  defp parse_fork("Paris"), do: :paris
+  defp parse_fork("Merge"), do: :paris
+  defp parse_fork("Shanghai"), do: :shanghai
+  defp parse_fork("Cancun"), do: :cancun
+  defp parse_fork("Prague"), do: :prague
+  defp parse_fork("Osaka"), do: :osaka
+  defp parse_fork(other), do: {:unsupported, other}
 
   defp parse_address!(value) do
     value

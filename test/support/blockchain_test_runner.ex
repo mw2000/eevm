@@ -34,6 +34,11 @@ defmodule EEVM.TestSupport.BlockchainTestRunner do
   alias EEVM.TestSupport.BlockchainTestFixture.Block, as: FixtureBlock
 
   @spec run_case(Case.t()) :: :ok | {:error, term()}
+  def run_case(%Case{network: {:unsupported, name}}), do: {:error, {:unsupported_network, name}}
+
+  def run_case(%Case{transition: %{from: {:unsupported, name}}}),
+    do: {:error, {:unsupported_network, name}}
+
   def run_case(%Case{} = test) do
     with {:ok, %Block{header: genesis}} <- Block.decode(test.genesis_rlp),
          :ok <- verify_hash(:genesis, genesis, test.genesis_hash),

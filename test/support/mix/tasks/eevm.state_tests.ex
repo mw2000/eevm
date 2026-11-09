@@ -6,6 +6,7 @@ defmodule Mix.Tasks.Eevm.StateTests do
 
       mix eevm.state_tests [GLOB...] [--known-failures FILE] [--write-known-failures FILE]
                            [--report FILE.json] [--timeout MS] [--max-heap-mb MB] [--jobs N]
+                           [--fork NAME]
 
   With no glob, runs every file under `GeneralStateTests/`. Files and test names
   listed in `test/fixtures/state_tests/skip.txt` are not run. Each post-state
