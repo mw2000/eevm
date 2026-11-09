@@ -176,6 +176,7 @@ defmodule EEVM.Interpreter.Instructions.System.Creation do
                       accessed_storage_keys: state_after_touch.substate.accessed_storage_keys,
                       created_addresses:
                         MapSet.put(state_after_touch.substate.created_addresses, new_address),
+                      transient_storage: state_after_touch.substate.transient_storage,
                       is_static: state_after_touch.frame.is_static,
                       depth: state_after_touch.frame.depth + 1,
                       tracer: state_after_touch.tracer

@@ -108,11 +108,13 @@ defmodule EEVM.Interpreter.Instructions.StackMemoryStorage.StorageOps do
   end
 
   # TLOAD (EIP-1153, Cancun+): reads from transient storage — a key-value map
-  # cleared at the end of each transaction. Pre-Cancun, 0x5C is undefined → :invalid.
+  # per account, shared by every frame of the transaction and cleared at its end.
+  # Pre-Cancun, 0x5C is undefined → :invalid.
   def execute(0x5C, %{env: %{config: %{hardfork: hardfork}}} = state) do
     if HardforkConfig.enabled?(hardfork, :eip_1153) do
       with {:ok, key, s1} <- Stack.pop(state.frame.stack),
-           value = Map.get(state.substate.transient_storage, key, 0),
+           value =
+             Map.get(state.substate.transient_storage, {state.frame.contract.address, key}, 0),
            {:ok, s2} <- Stack.push(s1, value) do
         {:ok, state |> MachineState.update_frame(&%{&1 | stack: s2}) |> MachineState.advance_pc()}
       else
@@ -131,7 +133,8 @@ defmodule EEVM.Interpreter.Instructions.StackMemoryStorage.StorageOps do
       with {:ok, key, s1} <- Stack.pop(state.frame.stack),
            {:ok, value, s2} <- Stack.pop(s1) do
         sub = state.substate
-        new_sub = %{sub | transient_storage: Map.put(sub.transient_storage, key, value)}
+        slot = {state.frame.contract.address, key}
+        new_sub = %{sub | transient_storage: Map.put(sub.transient_storage, slot, value)}
 
         state_after =
           state

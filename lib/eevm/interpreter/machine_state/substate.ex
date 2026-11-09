@@ -14,7 +14,8 @@ defmodule EEVM.Interpreter.MachineState.Substate do
     during init deletes it, and leaves the set if that creation fails.
   - `original_storage` — per-tx snapshot of the first-observed value of
     each storage slot, used by EIP-2200 `SSTORE` accounting.
-  - `transient_storage` — EIP-1153 per-tx key/value store cleared at tx end.
+  - `transient_storage` — EIP-1153 per-tx store keyed by `{address, slot}`,
+    passed into every child frame and cleared at tx end.
   - `logs` — emitted log entries, parent-then-child on success.
 
   All seven fields revert together when a child frame fails (see
@@ -34,7 +35,7 @@ defmodule EEVM.Interpreter.MachineState.Substate do
           accessed_storage_keys: MapSet.t({non_neg_integer(), non_neg_integer()}),
           created_addresses: MapSet.t(non_neg_integer()),
           original_storage: %{non_neg_integer() => non_neg_integer()},
-          transient_storage: %{non_neg_integer() => non_neg_integer()},
+          transient_storage: %{{non_neg_integer(), non_neg_integer()} => non_neg_integer()},
           logs: [log_entry()]
         }
 

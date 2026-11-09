@@ -283,6 +283,7 @@ defmodule EEVM.Interpreter.Instructions.System.Calls do
                 accessed_addresses: state_after_touch.substate.accessed_addresses,
                 accessed_storage_keys: state_after_touch.substate.accessed_storage_keys,
                 created_addresses: state_after_touch.substate.created_addresses,
+                transient_storage: state_after_touch.substate.transient_storage,
                 is_static: child_static?,
                 depth: state_after_touch.frame.depth + 1,
                 tracer: state_after_touch.tracer
@@ -438,6 +439,7 @@ defmodule EEVM.Interpreter.Instructions.System.Calls do
                 accessed_addresses: state_after_touch.substate.accessed_addresses,
                 accessed_storage_keys: state_after_touch.substate.accessed_storage_keys,
                 created_addresses: state_after_touch.substate.created_addresses,
+                transient_storage: state_after_touch.substate.transient_storage,
                 is_static: state_after_touch.frame.is_static,
                 depth: state_after_touch.frame.depth + 1,
                 tracer: state_after_touch.tracer
