@@ -37,6 +37,13 @@ bn_g2 =
 bn_neg_g1 = <<1::256, 0x30644E72E131A029B85045B68181585D97816A916871CA8D3C208C16D87CFD45::256>>
 bn_pairing_input = bn_g1 <> bn_g2 <> bn_neg_g1 <> bn_g2
 
+# BN256 ecAdd (0x06) and ecMul (0x07): G1 + 2·G1, and G1 times a random 256-bit scalar.
+bn_2g1 =
+  <<0x030644E72E131A029B85045B68181585D97816A916871CA8D3C208C16D87CFD3::256,
+    0x15ED738C0E0A7C92E7845F96B2AE9C0A68A6A449E3538FC7FF3EBF7A5A18A2C4::256>>
+
+bn_mul_input = bn_g1 <> :rand.bytes(32)
+
 # BLS12-381 pairing (0x0F): the G1 generator with the G2 generator.
 pad = fn hex -> <<0::128, Base.decode16!(hex, case: :lower)::binary>> end
 
@@ -83,6 +90,8 @@ inputs = %{
   "ripemd160 1 KiB (0x03)" => {0x03, :rand.bytes(1024)},
   "identity 1 KiB (0x04)" => {0x04, :rand.bytes(1024)},
   "modexp 2048-bit (0x05)" => {0x05, modexp_input},
+  "bn256 add (0x06)" => {0x06, bn_g1 <> bn_2g1},
+  "bn256 mul (0x07)" => {0x07, bn_mul_input},
   "bn256 pairing, 2 pairs (0x08)" => {0x08, bn_pairing_input},
   "blake2f 12 rounds (0x09)" => {0x09, blake2f_input.(12)},
   "blake2f 1M rounds (0x09)" => {0x09, blake2f_input.(1_000_000)},

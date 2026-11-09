@@ -1,7 +1,8 @@
-defmodule EEVM.Precompiles.BN256.Pairing do
+defmodule EEVM.Precompiles.BN256.Curve do
   @moduledoc """
-  Optimal ate pairing on BN254 (alt_bn128) for the ecPairing precompile
-  (EIP-197), plus the G2 curve and subgroup checks it needs.
+  Arithmetic on the BN254 (alt_bn128) curve for the ecAdd, ecMul, and
+  ecPairing precompiles (EIP-196, EIP-197): G1 point addition and scalar
+  multiplication, G2 curve and subgroup checks, and the optimal ate pairing.
 
   Field elements are plain integers in `[0, p)`, kept canonical after every
   operation. The extension fields form the usual tower:
@@ -10,8 +11,9 @@ defmodule EEVM.Precompiles.BN256.Pairing do
   - Fp6 = Fp2[v] / (v³ − ξ) with ξ = 9 + i, as `{c0, c1, c2}`
   - Fp12 = Fp6[w] / (w² − v), as `{c0, c1}`
 
-  G2 lives on the D-type sextic twist E': y² = x³ + 3/ξ over Fp2, which maps
-  into E(Fp12) by (x, y) ↦ (x·w², y·w³).
+  G1 is the curve E: y² = x³ + 3 over Fp, of prime order n. G2 lives on the
+  D-type sextic twist E': y² = x³ + 3/ξ over Fp2, which maps into E(Fp12) by
+  (x, y) ↦ (x·w², y·w³).
 
   `pairing_check/1` runs one Miller loop shared by every pair over the NAF of
   6u + 2, then a single final exponentiation, and compares the product with 1.
@@ -19,9 +21,11 @@ defmodule EEVM.Precompiles.BN256.Pairing do
   exponentiation follows go-ethereum's `crypto/bn256/cloudflare`.
   """
 
-  # Field modulus p and the BN parameter u, with p = 36u⁴ + 36u³ + 24u² + 6u + 1
+  # Field modulus p, group order n, and the BN parameter u, with
+  # p = 36u⁴ + 36u³ + 24u² + 6u + 1 and n = 36u⁴ + 36u³ + 18u² + 6u + 1
   # (u = 0x44E992B44A6909F1).
   @p 21_888_242_871_839_275_222_246_405_745_257_275_088_696_311_157_297_823_662_689_037_894_645_226_208_583
+  @n 21_888_242_871_839_275_222_246_405_745_257_275_088_548_364_400_416_034_343_698_204_186_575_808_495_617
   @u 4_965_661_367_192_848_881
 
   @typedoc "An element of Fp, in `[0, p)`."
@@ -30,6 +34,8 @@ defmodule EEVM.Precompiles.BN256.Pairing do
   @type fp2 :: {fp(), fp()}
   @typedoc "An affine G1 point (not the point at infinity)."
   @type g1 :: {fp(), fp()}
+  @typedoc "An affine G1 point or the point at infinity."
+  @type g1_or_infinity :: g1() | :infinity
   @typedoc "An affine point on the twist E' (not the point at infinity)."
   @type g2 :: {fp2(), fp2()}
 
@@ -102,6 +108,14 @@ defmodule EEVM.Precompiles.BN256.Pairing do
   @fp6_zero {@fp2_zero, @fp2_zero, @fp2_zero}
   @fp12_one {{@fp2_one, @fp2_zero, @fp2_zero}, @fp6_zero}
   @g2_infinity {@fp2_one, @fp2_one, @fp2_zero}
+  @g1_infinity {1, 1, 0}
+
+  # ecMul window: w = 5 keeps a table of 8 odd multiples (P, 3P, ..., 15P), and
+  # a width-5 NAF has on average one nonzero digit per 6 bits, so a 254-bit
+  # scalar costs about 254 doublings and 42 additions instead of the ~127
+  # additions of plain double-and-add. Wider windows save fewer additions than
+  # their larger tables cost to build.
+  @wnaf_width 5
 
   # --- Public API ---
 
@@ -117,6 +131,34 @@ defmodule EEVM.Precompiles.BN256.Pairing do
 
   def pairing_check(pairs) do
     pairs |> miller_loop() |> final_exponentiation() == @fp12_one
+  end
+
+  @doc "Returns whether `point` lies on E: y² = x³ + 3."
+  @spec g1_on_curve?(g1()) :: boolean()
+  def g1_on_curve?({x, y}), do: rem(y * y, @p) == rem(x * x * x + 3, @p)
+
+  @doc "Adds two G1 points (ecAdd), both on the curve."
+  @spec g1_add(g1_or_infinity(), g1_or_infinity()) :: g1_or_infinity()
+  def g1_add(:infinity, q), do: q
+  def g1_add(p, :infinity), do: p
+  def g1_add(p, q), do: p |> g1_jacobian() |> g1_add_jacobian(g1_jacobian(q)) |> g1_affine()
+
+  @doc """
+  Multiplies a G1 point on the curve by a scalar (ecMul).
+
+  E(Fp) has prime order n, so k·P = (k mod n)·P for every point on the curve,
+  and the scalar is reduced first. The product uses a width-5 NAF over a table
+  of odd multiples of P, all in Jacobian coordinates, with one inversion at
+  the end to return an affine point.
+  """
+  @spec g1_mul(g1_or_infinity(), non_neg_integer()) :: g1_or_infinity()
+  def g1_mul(:infinity, _scalar), do: :infinity
+
+  def g1_mul(point, scalar) do
+    case rem(scalar, @n) do
+      0 -> :infinity
+      k -> point |> g1_jacobian() |> g1_mul_wnaf(k) |> g1_affine()
+    end
   end
 
   @doc "Returns whether `point` lies on the twist E': y² = x³ + 3/ξ."
@@ -458,9 +500,124 @@ defmodule EEVM.Precompiles.BN256.Pairing do
   defp frobenius_coefficients(1), do: @frobenius1
   defp frobenius_coefficients(2), do: @frobenius2
 
+  # --- G1 arithmetic for ecAdd and ecMul ---
+  #
+  # Jacobian coordinates (x = X/Z², y = Y/Z³) over Fp, so additions and
+  # doublings need no inversion; the point at infinity has Z = 0. The formulas
+  # are the Fp versions of the G2 ones below.
+
+  defp g1_jacobian({x, y}), do: {x, y, 1}
+
+  defp g1_affine({_x, _y, 0}), do: :infinity
+
+  defp g1_affine({x, y, z}) do
+    z_inv = fp_inv(z)
+    z_inv2 = rem(z_inv * z_inv, @p)
+    {rem(x * z_inv2, @p), rem(y * rem(z_inv2 * z_inv, @p), @p)}
+  end
+
+  defp g1_neg({x, y, z}), do: {x, fp_neg(y), z}
+
+  # k·P for 0 < k < n, scanning the width-5 NAF of k from its top digit. A
+  # negative digit −d adds −(d·P), which costs nothing extra: negating a point
+  # negates Y.
+  defp g1_mul_wnaf(point, k) do
+    table = g1_odd_multiples(point)
+    neg_table = table |> Tuple.to_list() |> Enum.map(&g1_neg/1) |> List.to_tuple()
+
+    k
+    |> wnaf()
+    |> Enum.reduce(@g1_infinity, fn
+      0, acc -> g1_double(acc)
+      d, acc when d > 0 -> g1_add_jacobian(g1_double(acc), elem(table, div(d, 2)))
+      d, acc -> g1_add_jacobian(g1_double(acc), elem(neg_table, div(-d, 2)))
+    end)
+  end
+
+  # {P, 3P, 5P, ..., 15P}: the odd multiples a width-5 NAF digit can name,
+  # indexed by div(d, 2).
+  defp g1_odd_multiples(point) do
+    twice = g1_double(point)
+    count = Bitwise.bsl(1, @wnaf_width - 2)
+
+    1..(count - 1)//1
+    |> Enum.map_reduce(point, fn _, prev ->
+      next = g1_add_jacobian(prev, twice)
+      {next, next}
+    end)
+    |> then(fn {rest, _last} -> List.to_tuple([point | rest]) end)
+  end
+
+  # Width-w NAF digits of k, most significant first: each digit is 0 or odd
+  # with |d| < 2^(w−1), and any w consecutive digits hold at most one nonzero.
+  defp wnaf(k) do
+    modulus = Bitwise.bsl(1, @wnaf_width)
+    half = Bitwise.bsl(1, @wnaf_width - 1)
+
+    k
+    |> Stream.unfold(fn
+      0 ->
+        nil
+
+      x when rem(x, 2) == 0 ->
+        {0, div(x, 2)}
+
+      x ->
+        d = rem(x, modulus)
+        d = if d >= half, do: d - modulus, else: d
+        {d, div(x - d, 2)}
+    end)
+    |> Enum.reverse()
+  end
+
+  # "dbl-2009-l" for a = 0. Z3 = 2·Y·Z, so infinity doubles to infinity.
+  defp g1_double({x, y, z}) do
+    a = rem(x * x, @p)
+    b = rem(y * y, @p)
+    c = rem(b * b, @p)
+    x_plus_b = x + b
+    d = Integer.mod(2 * (x_plus_b * x_plus_b - a - c), @p)
+    e = 3 * a
+    x3 = Integer.mod(e * e - 2 * d, @p)
+    y3 = Integer.mod(e * (d - x3) - 8 * c, @p)
+    {x3, y3, rem(2 * y * z, @p)}
+  end
+
+  # "add-2007-bl", with the infinity, equal, and opposite cases handled.
+  defp g1_add_jacobian({_, _, 0}, q), do: q
+  defp g1_add_jacobian(p, {_, _, 0}), do: p
+
+  defp g1_add_jacobian({x1, y1, z1} = p, {x2, y2, z2}) do
+    z1z1 = rem(z1 * z1, @p)
+    z2z2 = rem(z2 * z2, @p)
+    u1 = rem(x1 * z2z2, @p)
+    u2 = rem(x2 * z1z1, @p)
+    s1 = rem(y1 * rem(z2 * z2z2, @p), @p)
+    s2 = rem(y2 * rem(z1 * z1z1, @p), @p)
+
+    cond do
+      u1 == u2 and s1 == s2 -> g1_double(p)
+      u1 == u2 -> @g1_infinity
+      true -> g1_add_distinct(z1, z2, z1z1, z2z2, u1, u2, s1, s2)
+    end
+  end
+
+  defp g1_add_distinct(z1, z2, z1z1, z2z2, u1, u2, s1, s2) do
+    h = fp_sub(u2, u1)
+    i = rem(4 * h * h, @p)
+    j = rem(h * i, @p)
+    r = rem(2 * fp_sub(s2, s1), @p)
+    v = rem(u1 * i, @p)
+    x3 = Integer.mod(r * r - j - 2 * v, @p)
+    y3 = Integer.mod(r * (v - x3) - 2 * s1 * j, @p)
+    z1_plus_z2 = z1 + z2
+    z3 = Integer.mod((z1_plus_z2 * z1_plus_z2 - z1z1 - z2z2) * h, @p)
+    {x3, y3, z3}
+  end
+
   # --- G2 arithmetic for the subgroup check ---
   #
-  # Jacobian coordinates (x = X/Z², y = Y/Z³); the point at infinity has Z = 0.
+  # Jacobian coordinates over Fp2, as for G1 above.
 
   defp g2_jacobian({x, y}), do: {x, y, @fp2_one}
 

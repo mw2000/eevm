@@ -8,7 +8,9 @@ defmodule EEVM.Precompiles.BN256 do
   - **ecAdd** (`0x06`) — adds two G1 points on the curve.
   - **ecMul** (`0x07`) — performs scalar multiplication on a G1 point.
   - **ecPairing** (`0x08`) — evaluates an optimal ate pairing check over a list
-    of (G1, G2) point pairs, implemented in `EEVM.Precompiles.BN256.Pairing`.
+    of (G1, G2) point pairs.
+
+  The curve arithmetic for all three is in `EEVM.Precompiles.BN256.Curve`.
 
   ### Gas schedule
 
@@ -35,9 +37,8 @@ defmodule EEVM.Precompiles.BN256 do
   The identity/infinity point is encoded as `(0, 0)`.
   """
 
-  alias BN.{BN128Arithmetic, FQ}
   alias EEVM.HardforkConfig
-  alias EEVM.Precompiles.BN256.Pairing
+  alias EEVM.Precompiles.BN256.Curve
 
   @field_modulus 21_888_242_871_839_275_222_246_405_745_257_275_088_696_311_157_297_823_662_689_037_894_645_226_208_583
   @byzantium_gas %{add: 500, mul: 40_000, pairing_base: 100_000, pairing_per_pair: 80_000}
@@ -60,11 +61,8 @@ defmodule EEVM.Precompiles.BN256 do
     <<x1_bin::binary-32, y1_bin::binary-32, x2_bin::binary-32, y2_bin::binary-32>> = padded
 
     with {:ok, p1} <- decode_g1_point(x1_bin, y1_bin),
-         {:ok, p2} <- decode_g1_point(x2_bin, y2_bin),
-         {:ok, result} <- BN128Arithmetic.add(p1, p2) do
-      {:ok, encode_g1_point(result), gas_cost}
-    else
-      {:error, _} -> {:error, :invalid_point}
+         {:ok, p2} <- decode_g1_point(x2_bin, y2_bin) do
+      {:ok, encode_g1_point(Curve.g1_add(p1, p2)), gas_cost}
     end
   end
 
@@ -83,11 +81,8 @@ defmodule EEVM.Precompiles.BN256 do
     <<x_bin::binary-32, y_bin::binary-32, scalar_bin::binary-32>> = padded
     scalar = :binary.decode_unsigned(scalar_bin)
 
-    with {:ok, point} <- decode_g1_point(x_bin, y_bin),
-         {:ok, result} <- BN128Arithmetic.mult(point, scalar) do
-      {:ok, encode_g1_point(result), gas_cost}
-    else
-      {:error, _} -> {:error, :invalid_point}
+    with {:ok, point} <- decode_g1_point(x_bin, y_bin) do
+      {:ok, encode_g1_point(Curve.g1_mul(point, scalar)), gas_cost}
     end
   end
 
@@ -115,7 +110,7 @@ defmodule EEVM.Precompiles.BN256 do
       true ->
         case decode_pairs(input, []) do
           {:ok, pairs} ->
-            result = if Pairing.pairing_check(pairs), do: 1, else: 0
+            result = if Curve.pairing_check(pairs), do: 1, else: 0
             {:ok, <<result::256>>, gas_cost}
 
           {:error, _} ->
@@ -134,32 +129,20 @@ defmodule EEVM.Precompiles.BN256 do
     x = :binary.decode_unsigned(x_bin)
     y = :binary.decode_unsigned(y_bin)
 
-    if x == 0 and y == 0 do
-      {:ok, {FQ.new(0), FQ.new(0)}}
-    else
-      if x >= @field_modulus or y >= @field_modulus do
-        {:error, :invalid_point}
-      else
-        point = {FQ.new(x), FQ.new(y)}
-
-        if BN128Arithmetic.on_curve?(point) do
-          {:ok, point}
-        else
-          {:error, :invalid_point}
-        end
-      end
+    cond do
+      x == 0 and y == 0 -> {:ok, :infinity}
+      x >= @field_modulus or y >= @field_modulus -> {:error, :invalid_point}
+      Curve.g1_on_curve?({x, y}) -> {:ok, {x, y}}
+      true -> {:error, :invalid_point}
     end
   end
 
-  defp encode_g1_point({x, y}) do
-    x_val = if is_struct(x, FQ), do: x.value, else: 0
-    y_val = if is_struct(y, FQ), do: y.value, else: 0
-    <<x_val::unsigned-big-256, y_val::unsigned-big-256>>
-  end
+  defp encode_g1_point(:infinity), do: <<0::512>>
+  defp encode_g1_point({x, y}), do: <<x::unsigned-big-256, y::unsigned-big-256>>
 
   # --- ecPairing input decoding ---
 
-  # Decodes the (G1, G2) pairs as plain integers for `BN256.Pairing`, leaving
+  # Decodes the (G1, G2) pairs as plain integers for `BN256.Curve`, leaving
   # out pairs with a point at infinity, since they contribute 1 to the product.
   defp decode_pairs(<<>>, acc), do: {:ok, acc}
 
@@ -168,12 +151,12 @@ defmodule EEVM.Precompiles.BN256 do
            g2_y_imag::binary-32, g2_y_real::binary-32, rest::binary>>,
          acc
        ) do
-    with {:ok, {x, y}} <- decode_g1_point(g1_x, g1_y),
+    with {:ok, g1} <- decode_g1_point(g1_x, g1_y),
          {:ok, g2} <- decode_g2_point(g2_x_imag, g2_x_real, g2_y_imag, g2_y_real) do
-      if g2 == :infinity or BN128Arithmetic.infinity?({x, y}) do
+      if g1 == :infinity or g2 == :infinity do
         decode_pairs(rest, acc)
       else
-        decode_pairs(rest, [{{x.value, y.value}, g2} | acc])
+        decode_pairs(rest, [{g1, g2} | acc])
       end
     end
   end
@@ -194,11 +177,11 @@ defmodule EEVM.Precompiles.BN256 do
 
       true ->
         # EIP-197 encodes each Fp2 coordinate imaginary part first;
-        # `BN256.Pairing` takes {real, imaginary}.
+        # `BN256.Curve` takes {real, imaginary}.
         point = {{x_real, x_imag}, {y_real, y_imag}}
 
         # EIP-197 also requires G2 points to lie in the order-n subgroup.
-        if Pairing.g2_on_curve?(point) and Pairing.g2_in_subgroup?(point) do
+        if Curve.g2_on_curve?(point) and Curve.g2_in_subgroup?(point) do
           {:ok, point}
         else
           {:error, :invalid_point}

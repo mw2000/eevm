@@ -1,7 +1,7 @@
-defmodule EEVM.Precompiles.BN256.PairingTest do
+defmodule EEVM.Precompiles.BN256.CurveTest do
   use ExUnit.Case, async: true
 
-  alias EEVM.Precompiles.BN256.Pairing
+  alias EEVM.Precompiles.BN256.Curve
 
   # G2 generator (EIP-197), as {{x_real, x_imag}, {y_real, y_imag}}.
   @g2 {{10_857_046_999_023_057_135_944_570_762_232_829_481_370_756_359_578_518_086_990_519_993_285_655_852_781,
@@ -37,8 +37,8 @@ defmodule EEVM.Precompiles.BN256.PairingTest do
 
   describe "g2_in_subgroup?/1" do
     test "accepts the G2 generator" do
-      assert Pairing.g2_on_curve?(@g2)
-      assert Pairing.g2_in_subgroup?(@g2)
+      assert Curve.g2_on_curve?(@g2)
+      assert Curve.g2_in_subgroup?(@g2)
     end
 
     # The endomorphism test accepts exactly the kernel of a group endomorphism
@@ -48,26 +48,26 @@ defmodule EEVM.Precompiles.BN256.PairingTest do
     for {order, point} <- @cofactor_points do
       @point point
       test "rejects an on-curve point of order #{order}" do
-        assert Pairing.g2_on_curve?(@point)
-        refute Pairing.g2_in_subgroup?(@point)
+        assert Curve.g2_on_curve?(@point)
+        refute Curve.g2_in_subgroup?(@point)
       end
     end
   end
 
   describe "pairing_check/1" do
     test "an empty product is 1" do
-      assert Pairing.pairing_check([])
+      assert Curve.pairing_check([])
     end
 
     test "e(G1, G2) is not 1 (non-degenerate)" do
-      refute Pairing.pairing_check([{{1, 2}, @g2}])
+      refute Curve.pairing_check([{{1, 2}, @g2}])
     end
 
     test "e(G1, G2) · e(−G1, G2) is 1" do
       p =
         21_888_242_871_839_275_222_246_405_745_257_275_088_696_311_157_297_823_662_689_037_894_645_226_208_583
 
-      assert Pairing.pairing_check([{{1, 2}, @g2}, {{1, p - 2}, @g2}])
+      assert Curve.pairing_check([{{1, 2}, @g2}, {{1, p - 2}, @g2}])
     end
   end
 end

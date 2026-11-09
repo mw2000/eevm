@@ -177,19 +177,23 @@ defmodule EEVM.Precompiles.BN256Test do
     end
   end
 
-  describe "ecPairing (0x08) official EIP-197 vectors" do
-    # geth's bn256Pairing.json (see test/fixtures/precompiles/README.md).
-    for vector <-
-          "test/fixtures/precompiles/bn256_pairing_eip197_vectors.json"
-          |> File.read!()
-          |> Jason.decode!() do
+  describe "official EIP-196/197 vectors" do
+    # go-ethereum's bn256Add.json, bn256ScalarMul.json, and bn256Pairing.json
+    # (see test/fixtures/precompiles/README.md).
+    for {file, function} <- [
+          {"bn256_add_eip196_vectors.json", :execute_add},
+          {"bn256_scalar_mul_eip196_vectors.json", :execute_mul},
+          {"bn256_pairing_eip197_vectors.json", :execute_pairing}
+        ],
+        vector <- "test/fixtures/precompiles/#{file}" |> File.read!() |> Jason.decode!() do
       @vector vector
-      test @vector["Name"] do
+      @function function
+      test "#{function} #{@vector["Name"]}" do
         input = Base.decode16!(@vector["Input"], case: :mixed)
         expected = Base.decode16!(@vector["Expected"], case: :mixed)
         gas = @vector["Gas"]
 
-        assert {:ok, ^expected, ^gas} = BN256.execute_pairing(input, gas)
+        assert {:ok, ^expected, ^gas} = apply(BN256, @function, [input, gas])
       end
     end
   end

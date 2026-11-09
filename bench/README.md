@@ -33,8 +33,8 @@ small assembler in `bench/support/asm.exs`.
 | erc20: transfer via Handler | A signed legacy `transfer(address,uint256)` with two SLOAD/SSTOREs and a LOG3 |
 
 `bench/precompiles_bench.exs` calls `EEVM.Precompiles.execute/4` directly with valid
-inputs: ecrecover, sha256, ripemd160, and identity (1 KiB), a 2048-bit ModExp, a
-two-pair BN256 pairing, BLAKE2F at 12 and 1M rounds, and a one-pair BLS12-381 pairing.
+inputs: ecrecover, sha256, ripemd160, and identity (1 KiB), a 2048-bit ModExp, BN256
+ecAdd, ecMul with a random 256-bit scalar, a two-pair BN256 pairing, BLAKE2F at 12 and 1M rounds, and a one-pair BLS12-381 pairing.
 
 ## Profiling
 
@@ -75,17 +75,22 @@ which an in-memory database doesn't pay. Compare the compute scenarios with othe
 | ripemd160 1 KiB (0x03) | 4,440 | 210,151 | 933 |
 | identity 1 KiB (0x04) | 111 | 2,347,937 | 261 |
 | modexp 2048-bit (0x05) | 698,368 | 145 | 101 |
+| bn256 add (0x06), before #182 | 150 | 11,597 | 1.74 |
+| bn256 add (0x06) | 150 | 175,448 | 26.3 |
+| bn256 mul (0x07), before #182 | 6,000 | 68.0 | 0.41 |
+| bn256 mul (0x07) | 6,000 | 1,028 | 6.17 |
 | bn256 pairing, 2 pairs (0x08), before #181 | 113,000 | 0.41 | 0.05 |
 | bn256 pairing, 2 pairs (0x08) | 113,000 | 119 | 13.5 |
 | blake2f 12 rounds (0x09) | 12 | 54,868 | 0.66 |
 | blake2f 1M rounds (0x09) | 1,000,000 | 2.40 | 2.40 |
 | bls12-381 pairing, 1 pair (0x0F) | 70,300 | 557 | 39.2 |
 
-The BN256 pairing and BLAKE2F rows were measured later, on the same kind of orb: after
+The BN256 and BLAKE2F rows were measured later, on the same kind of orb: after
 [#169](https://github.com/mw2000/eevm/issues/169) and
 [#171](https://github.com/mw2000/eevm/issues/171) were fixed, and before and after
-[#181](https://github.com/mw2000/eevm/issues/181) replaced the `bn` library's pairing
-with `EEVM.Precompiles.BN256.Pairing`.
+[#181](https://github.com/mw2000/eevm/issues/181) and
+[#182](https://github.com/mw2000/eevm/issues/182) replaced the `bn` library's pairing,
+ecAdd, and ecMul with `EEVM.Precompiles.BN256.Curve`.
 
 ### Hot spots
 

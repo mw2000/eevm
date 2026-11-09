@@ -11,3 +11,9 @@ Official vectors, checked in verbatim:
 - `bn256_pairing_eip197_vectors.json` — alt_bn128 pairing (EIP-197) vectors with
   Istanbul gas costs, from go-ethereum's
   [`core/vm/testdata/precompiles/bn256Pairing.json`](https://github.com/ethereum/go-ethereum/blob/master/core/vm/testdata/precompiles/bn256Pairing.json).
+- `bn256_add_eip196_vectors.json` and `bn256_scalar_mul_eip196_vectors.json` —
+  alt_bn128 ecAdd and ecMul (EIP-196) vectors with Istanbul gas costs, from
+  go-ethereum's
+  [`bn256Add.json`](https://github.com/ethereum/go-ethereum/blob/master/core/vm/testdata/precompiles/bn256Add.json)
+  and
+  [`bn256ScalarMul.json`](https://github.com/ethereum/go-ethereum/blob/master/core/vm/testdata/precompiles/bn256ScalarMul.json).
