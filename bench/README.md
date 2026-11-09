@@ -4,9 +4,10 @@ eevm's benchmark suite uses [Benchee](https://github.com/bencheeorg/benchee). Ru
 from the repository root:
 
 ```bash
-mix bench                  # every suite in bench/*_bench.exs
+mix bench                  # every suite in bench/*_bench.exs except state_fixtures
 mix bench interpreter      # only bench/interpreter_bench.exs
 mix bench precompiles      # only bench/precompiles_bench.exs
+mix bench state_fixtures   # the slow ethereum/tests fixtures (needs the submodule)
 ```
 
 `mix bench` always runs with `MIX_ENV=prod`, the build users run. Before timing, each
@@ -36,6 +37,18 @@ small assembler in `bench/support/asm.exs`.
 `bench/precompiles_bench.exs` calls `EEVM.Precompiles.execute/4` directly with valid
 inputs: ecrecover, sha256, ripemd160, and identity (1 KiB), a 2048-bit ModExp, BN256
 ecAdd, ecMul with a random 256-bit scalar, a two-pair BN256 pairing, BLAKE2F at 12 and 1M rounds, and a one-pair BLS12-381 pairing.
+
+`bench/state_fixtures_bench.exs` times the ethereum/tests GeneralStateTests fixtures
+that `test/fixtures/state_tests/skip.txt` skipped as too slow for the conformance
+runner: the stQuadraticComplexityTest and stStaticCall 50,000-call and 50,000-return
+loops, `static_Call1MB1024Calldepth`, and `VMTests/vmPerformance/loopMul`, a
+10-million-iteration Solidity loop. It needs the ethereum-tests submodule. Their cases
+run for seconds to minutes, too long for Benchee's repeated sampling, so the suite runs
+each fixture's heaviest Prague case once, checks its post-state root, and prints gas
+used, seconds, and Mgas/s. Cases that end in an exceptional halt burn their remaining
+gas at once, so for those compare seconds, not Mgas/s. The BLAKE2F fixtures, also
+skipped, measure the precompile instead
+([#171](https://github.com/mw2000/eevm/issues/171)).
 
 ## Profiling
 

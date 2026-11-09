@@ -78,14 +78,14 @@ defmodule EEVM.MixProject do
     ]
   end
 
-  # `mix bench` runs every bench/*_bench.exs suite; `mix bench interpreter precompiles`
-  # runs only the named ones.
+  # `mix bench` runs every bench/*_bench.exs suite except state_fixtures, which needs the
+  # ethereum-tests submodule; `mix bench interpreter state_fixtures` runs only the named ones.
   defp bench(suites) do
     Mix.Task.run("app.start")
 
     files =
       case suites do
-        [] -> Path.wildcard("bench/*_bench.exs")
+        [] -> Path.wildcard("bench/*_bench.exs") -- ["bench/state_fixtures_bench.exs"]
         names -> Enum.map(names, &"bench/#{&1}_bench.exs")
       end
 

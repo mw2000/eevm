@@ -221,6 +221,7 @@ they abort the VM or cannot finish within the per-case timeout.
 
 `mix bench` runs a Benchee suite of interpreter workloads (compute loops, memory,
 Keccak, storage, calls, an ERC-20 transfer) and precompiles, and prints gas/s for each.
+`mix bench state_fixtures` times the slowest ethereum/tests state-test fixtures.
 [bench/README.md](bench/README.md) describes the workloads and lists baseline numbers
 and profiling results.
 
