@@ -15,8 +15,6 @@
 # most of the suite's wall time and makes CI timing-dependent, so they are not
 # run. Re-enable as the interpreter gets faster.
 test/fixtures/state_tests/ethereum-tests/GeneralStateTests/VMTests/vmPerformance/loopMul.json
-test/fixtures/state_tests/ethereum-tests/GeneralStateTests/stPreCompiledContracts2/CALLBlake2f.json
-test/fixtures/state_tests/ethereum-tests/GeneralStateTests/stPreCompiledContracts2/CALLCODEBlake2f.json
 test/fixtures/state_tests/ethereum-tests/GeneralStateTests/stQuadraticComplexityTest/Call50000.json
 test/fixtures/state_tests/ethereum-tests/GeneralStateTests/stQuadraticComplexityTest/Call50000_identity2.json
 test/fixtures/state_tests/ethereum-tests/GeneralStateTests/stQuadraticComplexityTest/Callcode50000.json

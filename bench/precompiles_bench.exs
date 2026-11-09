@@ -62,6 +62,21 @@ bls_g2 =
       "0606c4a02ea734cc32acd2b02bc28b99cb3e287e85a763af267492ab572e99ab3f370d275cec1da1aaa9075ff05f79be"
     )
 
+# BLAKE2F (0x09): EIP-152 test vector 5 ("abc", final block), with the round count
+# replaced. 12 rounds is one BLAKE2b compression; 1M rounds is the per-round cost that
+# dominates the stPreCompiledContracts2 Blake2f fixtures (8M rounds per call).
+blake2f_h =
+  Base.decode16!(
+    "48c9bdf267e6096a3ba7ca8485ae67bb2bf894fe72f36e3cf1361d5f3af54fa5" <>
+      "d182e6ad7f520e511f6c3e2b8c68059b6bbd41fbabd9831f79217e1319cde05b",
+    case: :lower
+  )
+
+# rounds | h | m = "abc" zero-padded to 128 bytes | t = (3, 0) | f = 1
+blake2f_input = fn rounds ->
+  <<rounds::32, blake2f_h::binary, "abc", 0::size(125 * 8), 3::little-64, 0::little-64, 1>>
+end
+
 inputs = %{
   "ecrecover (0x01)" => {0x01, ecrecover_input},
   "sha256 1 KiB (0x02)" => {0x02, :rand.bytes(1024)},
@@ -69,6 +84,8 @@ inputs = %{
   "identity 1 KiB (0x04)" => {0x04, :rand.bytes(1024)},
   "modexp 2048-bit (0x05)" => {0x05, modexp_input},
   "bn256 pairing, 2 pairs (0x08)" => {0x08, bn_pairing_input},
+  "blake2f 12 rounds (0x09)" => {0x09, blake2f_input.(12)},
+  "blake2f 1M rounds (0x09)" => {0x09, blake2f_input.(1_000_000)},
   "bls12-381 pairing, 1 pair (0x0F)" => {0x0F, bls_g1 <> bls_g2}
 }
 
