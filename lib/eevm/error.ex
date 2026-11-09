@@ -102,7 +102,7 @@ defmodule EEVM.Error do
   | `:invalid_gas_limit` | `gas_limit` is below 5,000 or moves by `parent_gas_limit / 1024` or more |
   | `:gas_limit_too_big` | `gas_limit` exceeds the signed 64-bit maximum |
   | `:invalid_base_fee` | `base_fee_per_gas` differs from the value derived from the parent (EIP-1559, from London) |
-  | `:invalid_difficulty` | `difficulty` isn't 0 (EIP-3675, from Paris) |
+  | `:invalid_difficulty` | `difficulty` is 0 before Paris or not 0 from Paris (EIP-3675) |
   | `:invalid_nonce` | `nonce` isn't eight zero bytes (EIP-3675, from Paris) |
   | `:invalid_ommers_hash` | `ommers_hash` isn't the empty-list hash (EIP-3675, from Paris) |
   | `:missing_header_fields` | A field the fork defines (`base_fee_per_gas`, `withdrawals_root`, the blob fields, `parent_beacon_block_root`, `requests_hash`) is `nil` |
@@ -293,7 +293,7 @@ defmodule EEVM.Error do
     invalid_gas_limit: "gas limit out of range",
     gas_limit_too_big: "gas limit above 2^63 - 1",
     invalid_base_fee: "wrong base fee",
-    invalid_difficulty: "nonzero difficulty after the Merge",
+    invalid_difficulty: "zero difficulty before the Merge or nonzero difficulty after it",
     invalid_nonce: "nonzero header nonce after the Merge",
     invalid_ommers_hash: "wrong ommers hash",
     missing_header_fields: "header is missing a field its fork defines",

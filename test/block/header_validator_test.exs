@@ -36,12 +36,13 @@ defmodule EEVM.Block.HeaderValidatorTest do
     )
   end
 
-  # Clears the fields a fork earlier than Cancun doesn't define.
+  # Clears the fields a fork earlier than Cancun doesn't define. Blocks before
+  # Paris are proof-of-work blocks, so they carry a difficulty.
   defp before(%Header{} = header, :shanghai),
     do: %{header | blob_gas_used: nil, excess_blob_gas: nil, parent_beacon_block_root: nil}
 
   defp before(%Header{} = header, :london),
-    do: %{before(header, :shanghai) | withdrawals_root: nil}
+    do: %{before(header, :shanghai) | withdrawals_root: nil, difficulty: 131_072}
 
   defp before(%Header{} = header, :berlin), do: %{before(header, :london) | base_fee_per_gas: nil}
 
@@ -225,8 +226,8 @@ defmodule EEVM.Block.HeaderValidatorTest do
     end
   end
 
-  describe "post-Merge fields (EIP-3675, from Paris)" do
-    test "rejects non-zero difficulty or nonce and non-empty ommers" do
+  describe "proof-of-work and proof-of-stake fields (EIP-3675)" do
+    test "from Paris, rejects non-zero difficulty or nonce and non-empty ommers" do
       assert {:error, :invalid_difficulty} =
                HeaderValidator.validate(child(difficulty: 1), @parent)
 
@@ -243,6 +244,19 @@ defmodule EEVM.Block.HeaderValidatorTest do
         before(child(difficulty: 131_072, nonce: <<1::64>>, ommers_hash: <<1::256>>), :london)
 
       assert :ok = HeaderValidator.validate(header, london_parent, HardforkConfig.new(:london))
+    end
+
+    test "before Paris, rejects a zero-difficulty (proof-of-stake) block" do
+      # bcArrowGlacierToParis/powToPosBlockRejection: a PoS block whose parent
+      # is below the terminal total difficulty is IMPORT_IMPOSSIBLE_PARIS_WRONG_POS.
+      london_parent = before(@parent, :london)
+      header = before(child([]), :london)
+      london = HardforkConfig.new(:london)
+
+      assert {:error, :invalid_difficulty} =
+               HeaderValidator.validate(%{header | difficulty: 0}, london_parent, london)
+
+      assert :ok = HeaderValidator.validate(%{header | difficulty: 1}, london_parent, london)
     end
   end
 

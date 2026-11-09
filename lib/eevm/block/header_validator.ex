@@ -17,8 +17,12 @@ defmodule EEVM.Block.HeaderValidator do
       (Cancun), `requests_hash` (Prague).
     * From London, `base_fee_per_gas` equals the value derived from the
       parent's base fee, gas used, and gas target (EIP-1559).
-    * From Paris, `difficulty` is 0, `nonce` is eight zero bytes, and
-      `ommers_hash` is `EEVM.Block.Header.empty_ommers_hash/0` (EIP-3675).
+    * Before Paris, `difficulty` is not 0: a proof-of-stake block before the
+      terminal total difficulty is invalid. From Paris, `difficulty` is 0,
+      `nonce` is eight zero bytes, and `ommers_hash` is
+      `EEVM.Block.Header.empty_ommers_hash/0`, so a proof-of-work block after
+      it is invalid (EIP-3675). The caller picks Paris for a block once its
+      parent's total difficulty reaches the terminal total difficulty.
     * From Cancun, `blob_gas_used` is a multiple of the per-blob gas
       and at most `EEVM.Gas.Blob.max_blob_gas_per_block/1`. `excess_blob_gas`
       equals `EEVM.Gas.Blob.calc_excess_blob_gas/2` of the parent (EIP-4844,
@@ -86,7 +90,7 @@ defmodule EEVM.Block.HeaderValidator do
          :ok <- check_gas_limit(child, parent, hardfork),
          :ok <- check_fork_fields(child, hardfork),
          :ok <- check_base_fee(child, parent, hardfork),
-         :ok <- check_post_merge_fields(child, hardfork) do
+         :ok <- check_consensus_fields(child, hardfork) do
       check_blob_gas(child, parent, hardfork)
     end
   end
@@ -146,10 +150,12 @@ defmodule EEVM.Block.HeaderValidator do
        else: {:error, :invalid_base_fee}
   end
 
-  defp check_post_merge_fields(%Header{} = child, hardfork) do
+  defp check_consensus_fields(%Header{} = child, hardfork) do
+    post_merge? = HardforkConfig.enabled?(hardfork, :eip_3675)
+
     cond do
-      not HardforkConfig.enabled?(hardfork, :eip_3675) -> :ok
-      child.difficulty != 0 -> {:error, :invalid_difficulty}
+      post_merge? != (child.difficulty == 0) -> {:error, :invalid_difficulty}
+      not post_merge? -> :ok
       child.nonce != <<0::64>> -> {:error, :invalid_nonce}
       child.ommers_hash != Header.empty_ommers_hash() -> {:error, :invalid_ommers_hash}
       true -> :ok
