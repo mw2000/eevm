@@ -27,7 +27,7 @@ defmodule EEVM.Interpreter.Instructions.System.Creation do
 
   alias EEVM.Context.Contract
   alias EEVM.Database
-  alias EEVM.Gas.Dynamic
+  alias EEVM.Gas.{Access, Dynamic}
   alias EEVM.Gas.Memory, as: GasMemory
   alias EEVM.HardforkConfig
   alias EEVM.Interpreter
@@ -117,6 +117,16 @@ defmodule EEVM.Interpreter.Instructions.System.Creation do
                 if salt == nil,
                   do: derive_create_address(creator, nonce),
                   else: derive_create2_address(creator, salt, init_code)
+
+              # EIP-2929: the new address is warm from here on, even if the
+              # creation fails (execution-specs `generic_create`).
+              state_after_initcode_cost =
+                if HardforkConfig.enabled?(
+                     state_after_initcode_cost.env.config.hardfork,
+                     :eip_2929
+                   ),
+                   do: Access.mark_address_warm(state_after_initcode_cost, new_address),
+                   else: state_after_initcode_cost
 
               state_after_touch =
                 MachineState.touch_address(state_after_initcode_cost, new_address)

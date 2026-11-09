@@ -122,6 +122,22 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
       assert Database.get_nonce(result.db, 0) == 0
     end
 
+    test "CREATE warms the new address, even when the creation fails (EIP-2929)" do
+      # CREATE(value, 0, 0) with empty initcode from address 0 at nonce 0.
+      <<_::96, created::160>> = ExKeccak.hash_256(ExRLP.encode([<<0::160>>, <<>>]))
+      balance_of = fn address -> <<0x50, 0x73, address::160, 0x31, 0x00>> end
+
+      for {value, balance} <- [{0, 0}, {1, 0}] do
+        create = <<0x60, 0x00, 0x60, 0x00, 0x60, value, 0xF0>>
+        world_state = WorldState.new(%{0 => %{balance: balance}})
+        run = &EEVM.execute(create <> balance_of.(&1), world_state: world_state, gas: 100_000)
+
+        # Same code except the BALANCE target: the new address costs the warm
+        # 100, an untouched one the cold 2,600.
+        assert run.(created).frame.gas - run.(0xC01D).frame.gas == 2_500
+      end
+    end
+
     test "CREATE2 onto an account with code pushes 0, bumps the nonce, and burns the forwarded gas" do
       init_code = <<0x00>>
       target = create2_address(0, 0, init_code)
