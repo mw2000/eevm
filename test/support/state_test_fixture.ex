@@ -2,6 +2,8 @@ defmodule EEVM.TestSupport.StateTestFixture do
   @moduledoc "Parses official StateTest JSON fixtures into typed structs for the test runner."
 
   alias EEVM.Context.{Block, Transaction}
+  alias EEVM.Gas.Blob
+  alias EEVM.HardforkConfig
 
   @empty_logs_hash "0x1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347"
 
@@ -33,7 +35,8 @@ defmodule EEVM.TestSupport.StateTestFixture do
             timestamp: non_neg_integer(),
             gas_limit: non_neg_integer(),
             base_fee: non_neg_integer(),
-            blob_base_fee: non_neg_integer(),
+            blob_base_fee: non_neg_integer() | nil,
+            excess_blob_gas: non_neg_integer() | nil,
             prevrandao: non_neg_integer(),
             chain_id: non_neg_integer(),
             hashes: %{non_neg_integer() => non_neg_integer()}
@@ -46,6 +49,7 @@ defmodule EEVM.TestSupport.StateTestFixture do
       :gas_limit,
       :base_fee,
       :blob_base_fee,
+      :excess_blob_gas,
       :prevrandao,
       :chain_id,
       :hashes
@@ -119,20 +123,28 @@ defmodule EEVM.TestSupport.StateTestFixture do
     end)
   end
 
-  @spec block(Env.t()) :: Block.t()
-  def block(%Env{} = env) do
+  # Older fixtures give `currentBlobBaseFee`; EEST fixtures give
+  # `currentExcessBlobGas`, from which the fee depends on the fork's schedule.
+  @spec block(Env.t(), HardforkConfig.t()) :: Block.t()
+  def block(%Env{} = env, %HardforkConfig{} = hardfork) do
     Block.new(
       coinbase: env.coinbase,
       number: env.number,
       timestamp: env.timestamp,
       gaslimit: env.gas_limit,
       basefee: env.base_fee,
-      blob_base_fee: env.blob_base_fee,
+      blob_base_fee: blob_base_fee(env, hardfork),
       prevrandao: env.prevrandao,
       chain_id: env.chain_id,
       hashes: env.hashes
     )
   end
+
+  defp blob_base_fee(%Env{blob_base_fee: fee}, _hardfork) when is_integer(fee), do: fee
+  defp blob_base_fee(%Env{excess_blob_gas: nil}, _hardfork), do: 0
+
+  defp blob_base_fee(%Env{excess_blob_gas: excess}, hardfork),
+    do: Blob.base_fee_per_blob_gas(excess, hardfork)
 
   @spec expectations(Case.t()) :: [PostExpectation.t()]
   def expectations(%Case{post: post}) do
@@ -173,7 +185,8 @@ defmodule EEVM.TestSupport.StateTestFixture do
       timestamp: parse_quantity!(Map.get(env, "currentTimestamp", "0x0")),
       gas_limit: parse_quantity!(Map.get(env, "currentGasLimit", "0x0")),
       base_fee: parse_quantity!(Map.get(env, "currentBaseFee", "0x0")),
-      blob_base_fee: parse_quantity!(Map.get(env, "currentBlobBaseFee", "0x0")),
+      blob_base_fee: parse_optional_quantity(Map.get(env, "currentBlobBaseFee")),
+      excess_blob_gas: parse_optional_quantity(Map.get(env, "currentExcessBlobGas")),
       prevrandao:
         parse_quantity!(Map.get(env, "currentRandom", Map.get(env, "currentDifficulty", "0x0"))),
       chain_id: parse_quantity!(Map.get(env, "currentChainId", "0x1")),
@@ -313,6 +326,9 @@ defmodule EEVM.TestSupport.StateTestFixture do
     |> parse_bytes!()
     |> :binary.decode_unsigned()
   end
+
+  defp parse_optional_quantity(nil), do: nil
+  defp parse_optional_quantity(value), do: parse_quantity!(value)
 
   defp parse_quantity!("0x"), do: 0
   defp parse_quantity!(""), do: 0

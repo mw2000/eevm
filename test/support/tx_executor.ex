@@ -4,14 +4,14 @@ defmodule EEVM.TestSupport.TxExecutor do
   runners.
 
   Performs the steps a real client folds into block processing:
-  validate → bump nonce → run the interpreter top-level → settle gas fees
-  (sender debit, coinbase credit). Each runner wraps the result for its own
-  post-state assertions.
+  validate → burn the EIP-4844 blob gas fee and bump nonce → run the
+  interpreter top-level → settle gas fees (sender debit, coinbase credit).
+  Each runner wraps the result for its own post-state assertions.
   """
 
   alias EEVM.{Config, Database}
   alias EEVM.Context.{Block, Transaction}
-  alias EEVM.Handler.Execution
+  alias EEVM.Handler.{Execution, PreExecution}
   alias EEVM.Interpreter.MachineState
   alias EEVM.Transaction.{IntrinsicGas, Validator}
 
@@ -25,8 +25,10 @@ defmodule EEVM.TestSupport.TxExecutor do
   @spec execute(Transaction.t(), Database.t(), Block.t(), Config.t()) ::
           {:ok, result()} | {:error, term()}
   def execute(%Transaction{} = tx, %Database{} = db, %Block{} = block, %Config{} = config) do
-    with :ok <- validate(tx, db, block, config) do
-      db_after_nonce = Database.increment_nonce(db, tx.origin)
+    with :ok <- validate(tx, db, block, config),
+         {:ok, db_after_blob_fee} <-
+           debit_balance(db, tx.origin, PreExecution.blob_gas_fee(tx, block)) do
+      db_after_nonce = Database.increment_nonce(db_after_blob_fee, tx.origin)
       machine = run_interpreter(tx, db_after_nonce, block, config)
       failed? = failed?(machine.status)
       settled = if failed?, do: db_after_nonce, else: machine.db

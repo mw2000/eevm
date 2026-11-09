@@ -2,7 +2,8 @@ defmodule EEVM.Handler.PreExecution do
   @moduledoc """
   Steps 4-7 of the transaction pipeline (Yellow Paper §6):
 
-  - **Charge upfront** — debit `gas_limit * max_price` from the sender. The
+  - **Charge upfront** — debit `gas_limit * max_price` from the sender, plus
+    the EIP-4844 blob gas fee, which is burned and never refunded. The
     `value` portion is *not* debited here; it is moved by `Execution` when
     the call frame is set up so the same wei is not deducted twice.
   - **Intrinsic gas** — verify `tx.gas_limit >= IntrinsicGas.calculate(tx)`
@@ -14,11 +15,13 @@ defmodule EEVM.Handler.PreExecution do
 
   Also exposes `gas_upfront/1` and `effective_gas_price/2` because both
   `PostExecution` settlement and the upfront balance check share the same
-  fee-market formula.
+  fee-market formula, and `blob_gas_fee/2` for runners that settle fees
+  themselves.
   """
 
   alias EEVM.Context.{Block, Contract, Transaction}
   alias EEVM.Database
+  alias EEVM.Gas.Blob
   alias EEVM.Precompiles
   alias EEVM.Transaction.IntrinsicGas
 
@@ -26,7 +29,7 @@ defmodule EEVM.Handler.PreExecution do
           {:ok, Database.t()} | {:error, atom()}
   def charge_upfront(%Database{} = db, %Transaction{} = tx, %Block{} = block) do
     sender_balance = Database.get_balance(db, tx.origin)
-    gas_charge = gas_upfront(tx)
+    gas_charge = gas_upfront(tx) + blob_gas_fee(tx, block)
 
     cond do
       sender_balance < gas_charge + tx.value ->
@@ -65,6 +68,21 @@ defmodule EEVM.Handler.PreExecution do
   end
 
   def gas_upfront(%Transaction{} = tx), do: tx.gas_limit * tx.gasprice
+
+  @doc """
+  EIP-4844 blob gas fee: `GAS_PER_BLOB * blob count * blob_base_fee`. Zero for
+  transactions without blobs.
+
+  ## Example
+
+      iex> tx = EEVM.Context.Transaction.new(type: :eip4844, blob_hashes: [1, 2])
+      iex> EEVM.Handler.PreExecution.blob_gas_fee(tx, EEVM.Context.Block.new(blob_base_fee: 3))
+      786_432
+  """
+  @spec blob_gas_fee(Transaction.t(), Block.t()) :: non_neg_integer()
+  def blob_gas_fee(%Transaction{blob_hashes: hashes}, %Block{blob_base_fee: blob_base_fee}) do
+    length(hashes) * Blob.gas_per_blob() * blob_base_fee
+  end
 
   @spec effective_gas_price(Transaction.t(), Block.t()) :: non_neg_integer()
   def effective_gas_price(%Transaction{type: type} = tx, %Block{} = block)

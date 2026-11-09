@@ -14,8 +14,8 @@ defmodule EEVM.TestSupport.StateTestRunner do
   def run_case(%Case{} = state_test, %PostExpectation{} = expectation) do
     db = InMemory.new(accounts: state_test.pre_accounts, storage: state_test.pre_storage)
     tx = StateTestFixture.build_transaction(state_test, expectation)
-    block = StateTestFixture.block(state_test.env)
     config = Config.new(expectation.hardfork)
+    block = StateTestFixture.block(state_test.env, config.hardfork)
 
     case TxExecutor.execute(tx, db, block, config) do
       {:ok, %{db: db, machine: machine, failed?: failed?}} ->

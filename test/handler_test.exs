@@ -4,7 +4,9 @@ defmodule EEVM.HandlerTest do
   alias EEVM.Context.Block
   alias EEVM.{Database, Handler, TransactionResult}
   alias EEVM.Database.InMemory
-  alias EEVM.Transaction.{FeeMarket, Legacy, Signer}
+  alias EEVM.Transaction.{Blob, FeeMarket, Legacy, Signer}
+
+  doctest EEVM.Handler.PreExecution
 
   @priv_key <<
     120,
@@ -130,6 +132,36 @@ defmodule EEVM.HandlerTest do
     end
   end
 
+  describe "execute/4 — eip-4844 blob fee" do
+    # EIP-4844: the sender burns get_total_blob_gas(tx) * blob_base_fee up front,
+    # where get_total_blob_gas = GAS_PER_BLOB (131_072) * blob count. Validity
+    # requires balance >= gas_limit * max_fee_per_gas
+    # + total_blob_gas * max_fee_per_blob_gas + value.
+    @blob_gas 2 * 131_072
+    # 21_000 * 10 + 262_144 * 4
+    @max_upfront 1_258_576
+
+    test "burns blob gas at the block's blob base fee; coinbase gets only the tip" do
+      block = simple_block(basefee: 5, blob_base_fee: 3)
+
+      assert {:ok, %TransactionResult{post_state_db: post_db, gas_used: 21_000}} =
+               run(blob_tx(), db_with_sender(balance: @max_upfront), block)
+
+      # gas: 21_000 * min(10, 5 + 2) = 147_000; blob: 262_144 * 3 = 786_432
+      assert Database.get_balance(post_db, sender_address()) ==
+               @max_upfront - 147_000 - @blob_gas * 3
+
+      assert Database.get_balance(post_db, @coinbase) == 21_000 * 2
+    end
+
+    test "requires the balance to cover blob gas at max_fee_per_blob_gas" do
+      block = simple_block(basefee: 5, blob_base_fee: 3)
+
+      assert {:error, :insufficient_balance} =
+               run(blob_tx(), db_with_sender(balance: @max_upfront - 1), block)
+    end
+  end
+
   describe "execute/4 — CREATE" do
     test "deploys runtime code at CREATE-derived address" do
       # Initcode that returns a single STOP byte as runtime code:
@@ -218,6 +250,32 @@ defmodule EEVM.HandlerTest do
   end
 
   defp sign_eip1559(%FeeMarket{} = tx) do
+    hash = Signer.signing_hash(tx, tx.chain_id)
+
+    {:ok, {<<r::unsigned-big-256, s::unsigned-big-256>>, recovery_id}} =
+      ExSecp256k1.sign_compact(hash, @priv_key)
+
+    %{tx | y_parity: recovery_id, r: r, s: s}
+  end
+
+  defp blob_tx do
+    tx = %Blob{
+      chain_id: @chain_id,
+      nonce: 0,
+      max_priority_fee_per_gas: 2,
+      max_fee_per_gas: 10,
+      gas_limit: 21_000,
+      to: <<@recipient::unsigned-big-160>>,
+      value: 0,
+      data: <<>>,
+      access_list: [],
+      max_fee_per_blob_gas: 4,
+      blob_versioned_hashes: [<<1, 1::248>>, <<1, 2::248>>],
+      y_parity: 0,
+      r: 0,
+      s: 0
+    }
+
     hash = Signer.signing_hash(tx, tx.chain_id)
 
     {:ok, {<<r::unsigned-big-256, s::unsigned-big-256>>, recovery_id}} =
