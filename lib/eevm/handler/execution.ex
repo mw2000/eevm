@@ -5,7 +5,8 @@ defmodule EEVM.Handler.Execution do
   Two paths:
 
   - **Call** (`tx.to` is a 20-byte address): transfer `tx.value`, fetch the
-    code at `to`, and run the interpreter against it.
+    code at `to`, and run the interpreter against it. When `to` is an active
+    precompile with no code, the precompile runs on `tx.data` instead.
   - **Create** (`tx.to` is `nil`): derive the new contract address, fail
     with all execution gas consumed if it collides with an existing account
     (EIP-684, EIP-7610), transfer `tx.value`, run `tx.data` as initcode,
@@ -20,7 +21,7 @@ defmodule EEVM.Handler.Execution do
   designator runs the delegate's code instead, with the delegate pre-warmed.
   """
 
-  alias EEVM.{Config, Database, Delegation, HardforkConfig}
+  alias EEVM.{Config, Database, Delegation, HardforkConfig, Precompiles}
   alias EEVM.Context.{Block, Contract, Transaction}
   alias EEVM.Handler.PreExecution
   alias EEVM.Interpreter.Instructions.System.Creation
@@ -58,6 +59,21 @@ defmodule EEVM.Handler.Execution do
     db_after_value = transfer_value(db, tx.origin, to, tx.value)
     {code, delegate} = resolve_code(db_after_value, to, config)
 
+    # EIP-7702: a delegation to a precompile runs the (empty) delegate code,
+    # not the precompile, so only an undelegated `to` qualifies.
+    precompile_result =
+      if delegate == nil and code == <<>> and Precompiles.precompile?(to, config),
+        do: Precompiles.execute(to, tx.data, execution_gas, config)
+
+    # A precompile's gas is deducted up front so that the interpreter's
+    # finalization (refund cap, EIP-7623 calldata floor, EIP-161 cleanup)
+    # sees the transaction's real gas usage.
+    gas =
+      case precompile_result do
+        {:ok, _output, gas_used} -> execution_gas - gas_used
+        _no_precompile_or_error -> execution_gas
+      end
+
     contract_ctx =
       Contract.new(
         address: to,
@@ -68,7 +84,7 @@ defmodule EEVM.Handler.Execution do
 
     final_state =
       EEVM.execute(code,
-        gas: execution_gas,
+        gas: gas,
         db: db_after_value,
         tx: tx,
         block: block,
@@ -83,7 +99,7 @@ defmodule EEVM.Handler.Execution do
         authorization_refund: authorization.refund
       )
 
-    {final_state, nil}
+    {apply_precompile_result(final_state, precompile_result), nil}
   end
 
   def run_top_level(%Transaction{to: nil} = tx, db, block, config, execution_gas, _authorization) do
@@ -99,6 +115,18 @@ defmodule EEVM.Handler.Execution do
       run_initcode(tx, db, block, config, execution_gas, new_address)
     end
   end
+
+  defp apply_precompile_result(state, nil), do: state
+
+  defp apply_precompile_result(state, {:ok, output, _gas_used}),
+    do: MachineState.update_frame(state, &%{&1 | return_data: output})
+
+  # A failed precompile is an exceptional halt: it consumes all execution gas.
+  defp apply_precompile_result(state, {:error, :out_of_gas}),
+    do: MachineState.halt(state, :out_of_gas)
+
+  defp apply_precompile_result(state, {:error, reason}),
+    do: MachineState.halt(state, {:error, reason})
 
   defp run_initcode(tx, db, block, config, execution_gas, new_address) do
     creator = tx.origin

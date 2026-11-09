@@ -246,6 +246,28 @@ defmodule EEVM.HandlerTest do
     end
   end
 
+  describe "execute/4 — precompile as the transaction target" do
+    # SHA256 (0x02) costs 60 + 12 per word; "abc" is one word → 72 gas.
+    # Intrinsic gas: 21_000 + 3 non-zero calldata bytes × 16 = 21_048.
+    test "runs the precompile, charges its gas, and returns its output" do
+      tx = legacy_value_transfer(to: <<0x02::unsigned-big-160>>, data: "abc", gas_limit: 30_000)
+
+      assert {:ok, result} = run(tx, db_with_sender())
+      assert result.status == :success
+      assert result.gas_used == 21_048 + 72
+      assert result.return_data == :crypto.hash(:sha256, "abc")
+    end
+
+    test "a precompile that runs out of gas consumes the whole gas limit" do
+      tx = legacy_value_transfer(to: <<0x02::unsigned-big-160>>, data: "abc", gas_limit: 21_100)
+
+      assert {:ok, result} = run(tx, db_with_sender())
+      assert result.status != :success
+      assert result.gas_used == 21_100
+      assert result.return_data == <<>>
+    end
+  end
+
   describe "execute/4 — REVERT" do
     test "marks status :reverted and emits no logs" do
       # PUSH1 0 PUSH1 0 REVERT
