@@ -2,21 +2,22 @@ defmodule EEVM.Interpreter.Instructions.TransientStorageTest do
   use ExUnit.Case, async: true
 
   alias EEVM.Context.Contract
-  alias EEVM.{Database, WorldState}
+  alias EEVM.Database
+  alias EEVM.Database.InMemory
   alias EEVM.Gas.Static
 
   describe "TLOAD and TSTORE (EIP-1153)" do
     test "TLOAD returns 0 for unset key" do
       # PUSH1 0 (key), TLOAD, STOP
       code = <<0x60, 0x00, 0x5C, 0x00>>
-      result = EEVM.execute(code)
+      result = EEVM.Interpreter.run(code)
       assert EEVM.stack_values(result) == [0]
     end
 
     test "TSTORE then TLOAD reads back value" do
       # PUSH1 0xFF (value), PUSH1 0x01 (key), TSTORE, PUSH1 0x01 (key), TLOAD, STOP
       code = <<0x60, 0xFF, 0x60, 0x01, 0x5D, 0x60, 0x01, 0x5C, 0x00>>
-      result = EEVM.execute(code)
+      result = EEVM.Interpreter.run(code)
       assert EEVM.stack_values(result) == [0xFF]
     end
 
@@ -34,7 +35,7 @@ defmodule EEVM.Interpreter.Instructions.TransientStorageTest do
           <<0x00>>
         ])
 
-      result = EEVM.execute(code)
+      result = EEVM.Interpreter.run(code)
       assert EEVM.stack_values(result) == [0xBB]
     end
 
@@ -53,34 +54,34 @@ defmodule EEVM.Interpreter.Instructions.TransientStorageTest do
           <<0x00>>
         ])
 
-      result = EEVM.execute(code)
+      result = EEVM.Interpreter.run(code)
       assert EEVM.stack_values(result) == [0xBB, 0xAA]
     end
 
     test "TSTORE halts exceptionally in static context" do
       code = <<0x60, 0xFF, 0x60, 0x01, 0x5D, 0x00>>
-      result = EEVM.execute(code, is_static: true)
+      result = EEVM.Interpreter.run(code, is_static: true)
       assert result.status == {:error, :static_state_modification}
       assert result.frame.gas == 0
     end
 
     test "TLOAD works in static context" do
       code = <<0x60, 0x00, 0x5C, 0x00>>
-      result = EEVM.execute(code, is_static: true)
+      result = EEVM.Interpreter.run(code, is_static: true)
       assert result.status == :stopped
       assert EEVM.stack_values(result) == [0]
     end
 
     test "TLOAD costs 100 gas (warm access)" do
       code = <<0x60, 0x00, 0x5C, 0x00>>
-      result = EEVM.execute(code, gas: 10_000)
+      result = EEVM.Interpreter.run(code, gas: 10_000)
       expected_cost = Static.static_cost(0x60) + Static.static_cost(0x5C)
       assert result.frame.gas == 10_000 - expected_cost
     end
 
     test "TSTORE costs 100 gas (warm access)" do
       code = <<0x60, 0xFF, 0x60, 0x01, 0x5D, 0x00>>
-      result = EEVM.execute(code, gas: 10_000)
+      result = EEVM.Interpreter.run(code, gas: 10_000)
       expected_cost = Static.static_cost(0x60) * 2 + Static.static_cost(0x5D)
       assert result.frame.gas == 10_000 - expected_cost
     end
@@ -96,7 +97,7 @@ defmodule EEVM.Interpreter.Instructions.TransientStorageTest do
           <<0x00>>
         ])
 
-      result = EEVM.execute(code)
+      result = EEVM.Interpreter.run(code)
       assert EEVM.stack_values(result) == [0]
     end
   end
@@ -144,8 +145,8 @@ defmodule EEVM.Interpreter.Instructions.TransientStorageTest do
     end
 
     defp run(code, callee_code) do
-      EEVM.execute(code,
-        world_state: WorldState.new(%{@callee => %{code: callee_code}}),
+      EEVM.Interpreter.run(code,
+        db: InMemory.new(accounts: %{@callee => %{code: callee_code}}),
         contract: Contract.new(address: @caller)
       )
     end

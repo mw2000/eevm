@@ -3,8 +3,8 @@ defmodule EEVM.HardforkConfigTest do
 
   alias EEVM.Context.{Block, Contract}
   alias EEVM.Database
+  alias EEVM.Database.InMemory
   alias EEVM.HardforkConfig
-  alias EEVM.WorldState
 
   # ---------------------------------------------------------------------------
   # HardforkConfig.enabled?/2 unit tests
@@ -232,8 +232,8 @@ defmodule EEVM.HardforkConfigTest do
         # Eight zero arguments satisfy every opcode's stack inputs.
         code = <<0x60, 0x00, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, unquote(opcode), 0x00>>
 
-        assert EEVM.execute(code, hardfork: unquote(previous_fork)).status == :invalid
-        refute EEVM.execute(code, hardfork: unquote(activation_fork)).status == :invalid
+        assert EEVM.Interpreter.run(code, hardfork: unquote(previous_fork)).status == :invalid
+        refute EEVM.Interpreter.run(code, hardfork: unquote(activation_fork)).status == :invalid
       end
     end
   end
@@ -246,20 +246,20 @@ defmodule EEVM.HardforkConfigTest do
     test "PUSH0 works on Cancun (default)" do
       # PUSH0, STOP
       code = <<0x5F, 0x00>>
-      result = EEVM.execute(code)
+      result = EEVM.Interpreter.run(code)
       assert result.status == :stopped
       assert EEVM.stack_values(result) == [0]
     end
 
     test "PUSH0 is invalid before Shanghai" do
       code = <<0x5F, 0x00>>
-      result = EEVM.execute(code, hardfork: :london)
+      result = EEVM.Interpreter.run(code, hardfork: :london)
       assert result.status == :invalid
     end
 
     test "PUSH0 works on Shanghai" do
       code = <<0x5F, 0x00>>
-      result = EEVM.execute(code, hardfork: :shanghai)
+      result = EEVM.Interpreter.run(code, hardfork: :shanghai)
       assert result.status == :stopped
       assert EEVM.stack_values(result) == [0]
     end
@@ -273,21 +273,21 @@ defmodule EEVM.HardforkConfigTest do
     test "TLOAD works on Cancun (default)" do
       # PUSH1 0 (key), TLOAD, STOP
       code = <<0x60, 0x00, 0x5C, 0x00>>
-      result = EEVM.execute(code)
+      result = EEVM.Interpreter.run(code)
       assert result.status == :stopped
       assert EEVM.stack_values(result) == [0]
     end
 
     test "TLOAD is invalid before Cancun" do
       code = <<0x60, 0x00, 0x5C, 0x00>>
-      result = EEVM.execute(code, hardfork: :shanghai)
+      result = EEVM.Interpreter.run(code, hardfork: :shanghai)
       assert result.status == :invalid
     end
 
     test "TSTORE is invalid before Cancun" do
       # PUSH1 0xFF (value), PUSH1 0x01 (key), TSTORE, STOP
       code = <<0x60, 0xFF, 0x60, 0x01, 0x5D, 0x00>>
-      result = EEVM.execute(code, hardfork: :shanghai)
+      result = EEVM.Interpreter.run(code, hardfork: :shanghai)
       assert result.status == :invalid
     end
   end
@@ -323,14 +323,14 @@ defmodule EEVM.HardforkConfigTest do
           0x00
         >>
 
-      result = EEVM.execute(code)
+      result = EEVM.Interpreter.run(code)
       assert result.status == :stopped
       assert EEVM.stack_values(result) == [0xDEAD]
     end
 
     test "MCOPY is invalid before Cancun" do
       code = <<0x60, 0x01, 0x60, 0x00, 0x60, 0x01, 0x5E, 0x00>>
-      result = EEVM.execute(code, hardfork: :shanghai)
+      result = EEVM.Interpreter.run(code, hardfork: :shanghai)
       assert result.status == :invalid
     end
   end
@@ -342,17 +342,19 @@ defmodule EEVM.HardforkConfigTest do
   describe "EIP-6780 SELFDESTRUCT hardfork guard" do
     test "post-Cancun: SELFDESTRUCT preserves account if not created this tx" do
       world_state =
-        WorldState.new(%{
-          0xAA => %{balance: 75, code: <<0xFE>>, nonce: 10},
-          0xBB => %{balance: 0}
-        })
+        InMemory.new(
+          accounts: %{
+            0xAA => %{balance: 75, code: <<0xFE>>, nonce: 10},
+            0xBB => %{balance: 0}
+          }
+        )
 
       contract = Contract.new(address: 0xAA)
       code = <<0x60, 0xBB, 0xFF>>
 
       result =
-        EEVM.execute(code,
-          world_state: world_state,
+        EEVM.Interpreter.run(code,
+          db: world_state,
           contract: contract,
           gas: 1_000_000
         )
@@ -366,17 +368,19 @@ defmodule EEVM.HardforkConfigTest do
 
     test "pre-Cancun: SELFDESTRUCT always fully deletes the account" do
       world_state =
-        WorldState.new(%{
-          0xAA => %{balance: 75, code: <<0xFE>>, nonce: 10},
-          0xBB => %{balance: 0}
-        })
+        InMemory.new(
+          accounts: %{
+            0xAA => %{balance: 75, code: <<0xFE>>, nonce: 10},
+            0xBB => %{balance: 0}
+          }
+        )
 
       contract = Contract.new(address: 0xAA)
       code = <<0x60, 0xBB, 0xFF>>
 
       result =
-        EEVM.execute(code,
-          world_state: world_state,
+        EEVM.Interpreter.run(code,
+          db: world_state,
           contract: contract,
           gas: 1_000_000,
           hardfork: :shanghai
@@ -390,17 +394,19 @@ defmodule EEVM.HardforkConfigTest do
 
     test "Cancun: SELFDESTRUCT fully deletes if created this tx" do
       world_state =
-        WorldState.new(%{
-          0xAA => %{balance: 100, code: <<0x60, 0x01>>, nonce: 3},
-          0xBB => %{balance: 50}
-        })
+        InMemory.new(
+          accounts: %{
+            0xAA => %{balance: 100, code: <<0x60, 0x01>>, nonce: 3},
+            0xBB => %{balance: 50}
+          }
+        )
 
       contract = Contract.new(address: 0xAA)
       code = <<0x60, 0xBB, 0xFF>>
 
       result =
-        EEVM.execute(code,
-          world_state: world_state,
+        EEVM.Interpreter.run(code,
+          db: world_state,
           contract: contract,
           created_addresses: MapSet.new([0xAA]),
           gas: 1_000_000
@@ -422,13 +428,13 @@ defmodule EEVM.HardforkConfigTest do
       code = <<0x60, 0x00, 0x54, 0x00>>
 
       # On Berlin, first SLOAD hits cold access (2100 extra on top of static 0)
-      berlin_result = EEVM.execute(code, hardfork: :berlin, gas: 100_000)
+      berlin_result = EEVM.Interpreter.run(code, hardfork: :berlin, gas: 100_000)
       # PUSH1 costs 3; static SLOAD is 0; cold access adds 2100
       berlin_gas_used = 100_000 - berlin_result.frame.gas
       assert berlin_gas_used == 3 + 2100
 
       # Pre-Berlin: no cold/warm distinction, only SLOAD's flat EIP-1884 price
-      istanbul_result = EEVM.execute(code, hardfork: :istanbul, gas: 100_000)
+      istanbul_result = EEVM.Interpreter.run(code, hardfork: :istanbul, gas: 100_000)
       istanbul_gas_used = 100_000 - istanbul_result.frame.gas
       assert istanbul_gas_used == 3 + 800
     end
@@ -442,7 +448,7 @@ defmodule EEVM.HardforkConfigTest do
     # Gas used by `PUSH1 0xAB, <opcode>, STOP` on each fork, minus the PUSH1.
     # 0xAB is a cold address and a cold slot.
     defp access_opcode_cost(opcode, fork) do
-      result = EEVM.execute(<<0x60, 0xAB, opcode, 0x00>>, hardfork: fork, gas: 100_000)
+      result = EEVM.Interpreter.run(<<0x60, 0xAB, opcode, 0x00>>, hardfork: fork, gas: 100_000)
       100_000 - result.frame.gas - 3
     end
 
@@ -474,10 +480,10 @@ defmodule EEVM.HardforkConfigTest do
       # CALL 0x42 with no value, STOP. 0x42 exists but is empty.
       code = <<0x60, 0, 0x60, 0, 0x60, 0, 0x60, 0, 0x60, 0, 0x60, 0x42, 0x61, 0xFF, 0xFF>>
       code = code <> <<0xF1, 0x00>>
-      world_state = WorldState.new(%{0x42 => %{balance: 0}})
+      world_state = InMemory.new(accounts: %{0x42 => %{balance: 0}})
 
       exists_after? = fn fork ->
-        result = EEVM.execute(code, gas: 100_000, hardfork: fork, world_state: world_state)
+        result = EEVM.Interpreter.run(code, gas: 100_000, hardfork: fork, db: world_state)
         Database.account_exists?(result.db, 0x42)
       end
 
@@ -493,7 +499,7 @@ defmodule EEVM.HardforkConfigTest do
       block = Block.new(coinbase: 0xC0FFEE)
 
       gas_used = fn fork ->
-        100_000 - EEVM.execute(code, gas: 100_000, block: block, hardfork: fork).frame.gas
+        100_000 - EEVM.Interpreter.run(code, gas: 100_000, block: block, hardfork: fork).frame.gas
       end
 
       assert gas_used.(:shanghai) == 2 + 100
@@ -517,7 +523,7 @@ defmodule EEVM.HardforkConfigTest do
           <<0x00>>
         ])
 
-      result = EEVM.execute(code, hardfork: :london, gas: 200_000)
+      result = EEVM.Interpreter.run(code, hardfork: :london, gas: 200_000)
       # Refund was accrued but then capped at 1/5 of gas used
       assert result.frame.refund == 0
     end
@@ -531,7 +537,7 @@ defmodule EEVM.HardforkConfigTest do
           <<0x00>>
         ])
 
-      result = EEVM.execute(code, hardfork: :berlin, gas: 200_000)
+      result = EEVM.Interpreter.run(code, hardfork: :berlin, gas: 200_000)
       # Refund was applied (1/2 cap) and then zeroed out
       assert result.frame.refund == 0
     end
@@ -543,14 +549,14 @@ defmodule EEVM.HardforkConfigTest do
 
   describe "Default hardfork is Cancun" do
     test "executing without :hardfork option uses Cancun rules" do
-      result = EEVM.execute(<<0x5F, 0x00>>)
+      result = EEVM.Interpreter.run(<<0x5F, 0x00>>)
       # PUSH0 works → Cancun is active
       assert result.status == :stopped
       assert EEVM.stack_values(result) == [0]
     end
 
     test "config.hardfork is set to Cancun by default" do
-      result = EEVM.execute(<<0x00>>)
+      result = EEVM.Interpreter.run(<<0x00>>)
       assert result.env.config.hardfork.spec_id == :cancun
     end
   end

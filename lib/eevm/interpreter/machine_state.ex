@@ -62,11 +62,9 @@ defmodule EEVM.Interpreter.MachineState do
     - `opts` — optional keyword list:
       - `:gas` — initial gas (default: 1,000,000)
       - `:db` — unified external database (default: empty in-memory DB)
-      - `:storage` — legacy initial storage (default: empty, backward-compat)
       - `:tx` — transaction context (default: empty)
       - `:block` — block context (default: empty)
       - `:hardfork` — hardfork spec id (e.g. `:cancun`, `:berlin`; default: `:cancun`)
-      - `:world_state` — legacy external account state (default: empty, backward-compat)
       - `:is_static` — static context flag for this frame (default: `false`)
       - `:depth` — current call depth (default: `0`)
       - `:refund` — gas refund counter (default: `0`)
@@ -114,7 +112,7 @@ defmodule EEVM.Interpreter.MachineState do
       frame: frame,
       env: Env.new(tx: tx, block: block, config: config),
       substate: substate,
-      db: init_db(opts, contract),
+      db: Keyword.get_lazy(opts, :db, &InMemoryDB.new/0),
       tracer: Keyword.get(opts, :tracer)
     }
   end
@@ -135,28 +133,6 @@ defmodule EEVM.Interpreter.MachineState do
     if HardforkConfig.enabled?(config.hardfork, :eip_3651),
       do: MapSet.put(addresses, block.coinbase),
       else: addresses
-  end
-
-  defp init_db(opts, contract) do
-    case Keyword.fetch(opts, :db) do
-      {:ok, db} ->
-        db
-
-      :error ->
-        world_state = Keyword.get(opts, :world_state, EEVM.WorldState.new())
-        storage = Keyword.get(opts, :storage, EEVM.Storage.new())
-
-        InMemoryDB.new(
-          accounts: world_state.accounts,
-          storage: convert_storage(storage, contract.address)
-        )
-    end
-  end
-
-  defp convert_storage(%EEVM.Storage{slots: slots}, _address) when map_size(slots) == 0, do: %{}
-
-  defp convert_storage(%EEVM.Storage{slots: slots}, address) do
-    %{address => slots}
   end
 
   @doc "Returns the opcode byte at the current program counter, or nil if past end."

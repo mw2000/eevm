@@ -103,23 +103,42 @@ defmodule EEVM.MixProject do
         {"bench/README.md", filename: "benchmarks", title: "Benchmarks"},
         "LICENSE"
       ],
+      # Public API first, then extension points; everything under
+      # "Internals" is an implementation detail and may change in any release.
       groups_for_modules: [
-        Interpreter: [~r/^EEVM\.Interpreter($|\.)/],
-        Instructions: [~r/^EEVM\.Interpreter\.Instructions/],
-        Precompiles: [~r/^EEVM\.Precompile($|s)/],
-        Block: [~r/^EEVM\.Block($|\.)/],
-        Transaction: [~r/^EEVM\.Transaction($|\.)/],
-        Context: [~r/^EEVM\.Context($|\.)/],
-        "System Contracts": [~r/^EEVM\.SystemContracts($|\.)/],
-        "State & Storage": [
-          EEVM.Database,
-          EEVM.Database.InMemory,
-          EEVM.Storage,
-          EEVM.WorldState,
-          EEVM.StateRoot,
-          ~r/^EEVM\.MPT($|\.)/
+        "Getting started": [
+          EEVM,
+          EEVM.Config,
+          EEVM.HardforkConfig,
+          EEVM.Error,
+          ~r/^EEVM\.Context\./
         ],
-        Gas: [~r/^EEVM\.Gas($|\.)/, EEVM.HardforkConfig]
+        Transactions: [
+          EEVM.Handler,
+          EEVM.TransactionResult,
+          ~r/^EEVM\.Transaction\.(Legacy|AccessList|FeeMarket|Blob|SetCode|Authorization)$/,
+          EEVM.Transaction,
+          EEVM.Transaction.Envelope,
+          EEVM.Transaction.Signer
+        ],
+        Blocks: [
+          EEVM.Block,
+          EEVM.Block.Header,
+          EEVM.Block.Withdrawal,
+          EEVM.Block.Receipt,
+          EEVM.Block.Result
+        ],
+        State: [EEVM.Database, EEVM.Database.InMemory, EEVM.StateRoot],
+        Extending: [
+          EEVM.Precompile,
+          EEVM.Tracer,
+          EEVM.Tracer.TraceStep,
+          EEVM.Block.Processor,
+          EEVM.Block.Requests,
+          EEVM.Block.Bloom,
+          ~r/^EEVM\.SystemContracts\./
+        ],
+        Internals: [~r/^EEVM\./]
       ]
     ]
   end

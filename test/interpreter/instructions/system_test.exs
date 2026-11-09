@@ -7,7 +7,6 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
   alias EEVM.Database
   alias EEVM.Database.InMemory
   alias EEVM.Interpreter.Memory
-  alias EEVM.WorldState
 
   # MSTORE8 0xAB at 0, then CALL the identity precompile (0x04) with that byte as
   # input, no value, and no output area, and POP: leaves 1 byte in the return data buffer.
@@ -17,26 +16,26 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
   describe "Executor - Return & Halt" do
     test "RETURN returns data from memory" do
       code = <<0x60, 0xAB, 0x60, 0, 0x53, 0x60, 1, 0x60, 0, 0xF3>>
-      result = EEVM.execute(code)
+      result = EEVM.Interpreter.run(code)
       assert result.status == :stopped
       assert result.frame.return_data == <<0xAB>>
     end
 
     test "REVERT halts with :reverted" do
       code = <<0x60, 0, 0x60, 0, 0xFD>>
-      result = EEVM.execute(code)
+      result = EEVM.Interpreter.run(code)
       assert result.status == :reverted
     end
 
     test "INVALID halts with :invalid" do
       code = <<0xFE>>
-      result = EEVM.execute(code)
+      result = EEVM.Interpreter.run(code)
       assert result.status == :invalid
     end
 
     test "implicit STOP at end of code" do
       code = <<0x60, 5>>
-      result = EEVM.execute(code)
+      result = EEVM.Interpreter.run(code)
       assert result.status == :stopped
       assert EEVM.stack_values(result) == [5]
     end
@@ -47,7 +46,7 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
       init_code = <<0x60, 0xAA, 0x60, 0x00, 0x53, 0x60, 0x01, 0x60, 0x00, 0xF3>>
       code = build_create_program(init_code, :create, 0x00)
 
-      result = EEVM.execute(code, world_state: WorldState.new(%{0 => %{balance: 10}}))
+      result = EEVM.Interpreter.run(code, db: InMemory.new(accounts: %{0 => %{balance: 10}}))
       [created_address] = EEVM.stack_values(result)
 
       assert result.status == :stopped
@@ -60,7 +59,7 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
       init_code = <<0x60, 0x00, 0x60, 0x00, 0xF3>>
       code = build_create_program(init_code, :create, 0x02)
 
-      result = EEVM.execute(code, world_state: WorldState.new(%{0 => %{balance: 7}}))
+      result = EEVM.Interpreter.run(code, db: InMemory.new(accounts: %{0 => %{balance: 7}}))
       [created_address] = EEVM.stack_values(result)
 
       assert Database.get_balance(result.db, 0) == 5
@@ -71,8 +70,8 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
       init_code = <<0x60, 0xBB, 0x60, 0x00, 0x53, 0x60, 0x01, 0x60, 0x00, 0xF3>>
       code = build_create_program(init_code, :create2, 0x00, 0x01)
 
-      result1 = EEVM.execute(code, world_state: WorldState.new(%{0 => %{balance: 10}}))
-      result2 = EEVM.execute(code, world_state: WorldState.new(%{0 => %{balance: 10}}))
+      result1 = EEVM.Interpreter.run(code, db: InMemory.new(accounts: %{0 => %{balance: 10}}))
+      result2 = EEVM.Interpreter.run(code, db: InMemory.new(accounts: %{0 => %{balance: 10}}))
 
       [address1] = EEVM.stack_values(result1)
       [address2] = EEVM.stack_values(result2)
@@ -91,7 +90,7 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
       init_code = create2_empty <> create2_empty <> <<0x00>>
       code = build_create_program(init_code, :create, 0x00)
 
-      result = EEVM.execute(code, world_state: WorldState.new(%{0 => %{balance: 10}}))
+      result = EEVM.Interpreter.run(code, db: InMemory.new(accounts: %{0 => %{balance: 10}}))
       [created_address] = EEVM.stack_values(result)
 
       assert created_address != 0
@@ -105,7 +104,7 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
       init_code = <<0x60, 0xBB, 0xFF>>
       code = build_create_program(init_code, :create2, 0x05, 0x00)
 
-      result = EEVM.execute(code, world_state: WorldState.new(%{0 => %{balance: 10}}))
+      result = EEVM.Interpreter.run(code, db: InMemory.new(accounts: %{0 => %{balance: 10}}))
       [created_address] = EEVM.stack_values(result)
 
       assert created_address != 0
@@ -119,10 +118,10 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
       code = <<0x60, 0x00, 0x60, 0x20, 0x60, 0x00, 0x60, 0x00, 0xF5, 0x59, 0x00>>
 
       result =
-        EEVM.execute(code,
+        EEVM.Interpreter.run(code,
           depth: 1024,
           gas: 1_000_000,
-          world_state: WorldState.new(%{0 => %{balance: 10}})
+          db: InMemory.new(accounts: %{0 => %{balance: 10}})
         )
 
       # The depth check runs inside the creation, after the dynamic gas (geth
@@ -138,7 +137,7 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
       init_code = @identity_call <> <<0x00>>
       code = build_create_program(init_code, :create, 0x00)
 
-      result = EEVM.execute(code, world_state: WorldState.new(%{0 => %{balance: 10}}))
+      result = EEVM.Interpreter.run(code, db: InMemory.new(accounts: %{0 => %{balance: 10}}))
       [created_address] = EEVM.stack_values(result)
 
       assert created_address != 0
@@ -155,7 +154,7 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
         # Replace the trailing STOP with RETURNDATASIZE, STOP.
         code = binary_part(code, 0, byte_size(code) - 1) <> <<0x3D, 0x00>>
 
-        result = EEVM.execute(code, world_state: WorldState.new(%{0 => %{balance: 10}}))
+        result = EEVM.Interpreter.run(code, db: InMemory.new(accounts: %{0 => %{balance: 10}}))
 
         assert [unquote(expected_size), _address] = EEVM.stack_values(result)
       end
@@ -165,7 +164,7 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
       create = build_create_program(<<0x00>>, :create, 0x09)
       code = @identity_call <> binary_part(create, 0, byte_size(create) - 1) <> <<0x3D, 0x00>>
 
-      result = EEVM.execute(code, world_state: WorldState.new(%{0 => %{balance: 1}}))
+      result = EEVM.Interpreter.run(code, db: InMemory.new(accounts: %{0 => %{balance: 1}}))
 
       assert EEVM.stack_values(result) == [0, 0]
     end
@@ -179,8 +178,8 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
       code = <<0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0xF0, 0x00>>
 
       for {nonce, created?} <- [{max, false}, {max - 1, true}] do
-        world_state = WorldState.new(%{0 => %{balance: 10, nonce: nonce}})
-        result = EEVM.execute(code, world_state: world_state, gas: 100_000)
+        world_state = InMemory.new(accounts: %{0 => %{balance: 10, nonce: nonce}})
+        result = EEVM.Interpreter.run(code, db: world_state, gas: 100_000)
         [address] = EEVM.stack_values(result)
 
         if created? do
@@ -198,7 +197,7 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
       init_code = <<0x60, 0x00, 0x60, 0x00, 0xF3>>
       code = build_create_program(init_code, :create, 0x09)
 
-      result = EEVM.execute(code, world_state: WorldState.new(%{0 => %{balance: 1}}))
+      result = EEVM.Interpreter.run(code, db: InMemory.new(accounts: %{0 => %{balance: 1}}))
 
       assert result.status == :stopped
       assert EEVM.stack_values(result) == [0]
@@ -217,8 +216,8 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
       # {value, balance, warm?}: the creation succeeds, or fails on its balance.
       for {value, balance, warm?} <- [{0, 0, true}, {1, 0, false}] do
         create = <<0x60, 0x00, 0x60, 0x00, 0x60, value, 0xF0>>
-        world_state = WorldState.new(%{0 => %{balance: balance}})
-        run = &EEVM.execute(create <> balance_of.(&1), world_state: world_state, gas: 100_000)
+        world_state = InMemory.new(accounts: %{0 => %{balance: balance}})
+        run = &EEVM.Interpreter.run(create <> balance_of.(&1), db: world_state, gas: 100_000)
 
         # Same code except the BALANCE target: a warm address costs 100, an
         # untouched one the cold 2,600.
@@ -232,8 +231,8 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
       target = create2_address(0, 0, init_code)
       code = build_create_program(init_code, :create2, 0x00, 0x00)
 
-      world_state = WorldState.new(%{0 => %{balance: 10}, target => %{code: <<0xFE>>}})
-      result = EEVM.execute(code, world_state: world_state, gas: 1_000_000)
+      world_state = InMemory.new(accounts: %{0 => %{balance: 10}, target => %{code: <<0xFE>>}})
+      result = EEVM.Interpreter.run(code, db: world_state, gas: 1_000_000)
 
       assert result.status == :stopped
       assert EEVM.stack_values(result) == [0]
@@ -252,7 +251,7 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
       code = build_create_program(init_code, :create2, 0x00, 0x00)
 
       db = InMemory.new(accounts: %{0 => %{balance: 10}}, storage: %{target => %{0 => 1}})
-      result = EEVM.execute(code, db: db)
+      result = EEVM.Interpreter.run(code, db: db)
 
       assert EEVM.stack_values(result) == [0]
       assert Database.get_nonce(result.db, 0) == 1
@@ -273,7 +272,8 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
 
   describe "CALL (0xF1)" do
     test "a zero-size argument region costs no memory expansion, whatever its offset" do
-      world_state = WorldState.new(%{0 => %{balance: 10}, 1 => %{balance: 0, code: <<0x00>>}})
+      world_state =
+        InMemory.new(accounts: %{0 => %{balance: 10}, 1 => %{balance: 0, code: <<0x00>>}})
 
       # CALL(gas 0xFFFF, to 1, value 0, argsOffset, argsSize 0, retOffset 0, retSize 0)
       gas_left = fn <<args_offset::24>> ->
@@ -281,7 +281,7 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
           <<0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x62, args_offset::24, 0x60, 0x00, 0x60, 0x01,
             0x61, 0xFF, 0xFF, 0xF1, 0x00>>
 
-        result = EEVM.execute(code, world_state: world_state)
+        result = EEVM.Interpreter.run(code, db: world_state)
         assert EEVM.stack_values(result) == [1]
         result.frame.gas
       end
@@ -293,16 +293,18 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
       child_code = <<0x60, 0x2A, 0x60, 0x00, 0x53, 0x60, 0x01, 0x60, 0x00, 0xF3>>
 
       world_state =
-        WorldState.new(%{
-          0 => %{balance: 10},
-          1 => %{balance: 0, code: child_code}
-        })
+        InMemory.new(
+          accounts: %{
+            0 => %{balance: 10},
+            1 => %{balance: 0, code: child_code}
+          }
+        )
 
       code =
         <<0x60, 0x01, 0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x01, 0x60, 0x64,
           0xF1, 0x00>>
 
-      result = EEVM.execute(code, world_state: world_state)
+      result = EEVM.Interpreter.run(code, db: world_state)
 
       assert result.status == :stopped
       assert EEVM.stack_values(result) == [1]
@@ -311,13 +313,14 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
     end
 
     test "pushes failure flag when caller has insufficient balance" do
-      world_state = WorldState.new(%{0 => %{balance: 0}, 1 => %{balance: 0, code: <<0x00>>}})
+      world_state =
+        InMemory.new(accounts: %{0 => %{balance: 0}, 1 => %{balance: 0, code: <<0x00>>}})
 
       code =
         <<0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x01, 0x60, 0x01, 0x60, 0x64,
           0xF1, 0x00>>
 
-      result = EEVM.execute(code, world_state: world_state)
+      result = EEVM.Interpreter.run(code, db: world_state)
 
       assert result.status == :stopped
       assert EEVM.stack_values(result) == [0]
@@ -326,13 +329,14 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
     end
 
     test "transfers value on successful call" do
-      world_state = WorldState.new(%{0 => %{balance: 9}, 1 => %{balance: 0, code: <<0x00>>}})
+      world_state =
+        InMemory.new(accounts: %{0 => %{balance: 9}, 1 => %{balance: 0, code: <<0x00>>}})
 
       code =
         <<0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x03, 0x60, 0x01, 0x60, 0x64,
           0xF1, 0x00>>
 
-      result = EEVM.execute(code, world_state: world_state)
+      result = EEVM.Interpreter.run(code, db: world_state)
 
       assert EEVM.stack_values(result) == [1]
       assert Database.get_balance(result.db, 0) == 6
@@ -343,16 +347,18 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
       child_code = <<0x60, 0x00, 0x60, 0x00, 0xFD>>
 
       world_state =
-        WorldState.new(%{
-          0 => %{balance: 8},
-          1 => %{balance: 1, code: child_code}
-        })
+        InMemory.new(
+          accounts: %{
+            0 => %{balance: 8},
+            1 => %{balance: 1, code: child_code}
+          }
+        )
 
       code =
         <<0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x02, 0x60, 0x01, 0x60, 0x64,
           0xF1, 0x00>>
 
-      result = EEVM.execute(code, world_state: world_state)
+      result = EEVM.Interpreter.run(code, db: world_state)
 
       assert result.status == :stopped
       assert EEVM.stack_values(result) == [0]
@@ -374,15 +380,17 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
         ] do
       test "#{halt} in child burns its gas, leaving the parent only its 1/64 reserve" do
         world_state =
-          WorldState.new(%{
-            0 => %{balance: 0},
-            0xAA => %{balance: 0, code: unquote(child_code)}
-          })
+          InMemory.new(
+            accounts: %{
+              0 => %{balance: 0},
+              0xAA => %{balance: 0, code: unquote(child_code)}
+            }
+          )
 
         result =
-          EEVM.execute(@call_with_all_gas,
+          EEVM.Interpreter.run(@call_with_all_gas,
             gas: 200_000,
-            world_state: world_state,
+            db: world_state,
             accessed_addresses: MapSet.new([0, 0xAA])
           )
 
@@ -395,15 +403,17 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
     test "reverted child returns its unused gas to the parent" do
       # Child: PUSH1 0, PUSH1 0, REVERT uses 6 gas.
       world_state =
-        WorldState.new(%{
-          0 => %{balance: 0},
-          0xAA => %{balance: 0, code: <<0x60, 0, 0x60, 0, 0xFD>>}
-        })
+        InMemory.new(
+          accounts: %{
+            0 => %{balance: 0},
+            0xAA => %{balance: 0, code: <<0x60, 0, 0x60, 0, 0xFD>>}
+          }
+        )
 
       result =
-        EEVM.execute(@call_with_all_gas,
+        EEVM.Interpreter.run(@call_with_all_gas,
           gas: 200_000,
-          world_state: world_state,
+          db: world_state,
           accessed_addresses: MapSet.new([0, 0xAA])
         )
 
@@ -420,14 +430,14 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
           {"INVALID", <<0xFE>>}
         ] do
       test "callee ending with #{ending} after its own call returns no data" do
-        world_state = WorldState.new(%{0xAA => %{code: @identity_call <> unquote(tail)}})
+        world_state = InMemory.new(accounts: %{0xAA => %{code: @identity_call <> unquote(tail)}})
 
         # CALL 0xAA with no value or data, POP, RETURNDATASIZE, STOP
         code =
           <<0x60, 0, 0x60, 0, 0x60, 0, 0x60, 0, 0x60, 0, 0x60, 0xAA, 0x61, 0xFF, 0xFF, 0xF1, 0x50,
             0x3D, 0x00>>
 
-        result = EEVM.execute(code, world_state: world_state)
+        result = EEVM.Interpreter.run(code, db: world_state)
 
         assert EEVM.stack_values(result) == [0]
       end
@@ -449,7 +459,7 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
             0x60, unquote(input_size), 0x60, 0x20, 0x60, 0x00, 0x60, unquote(callee), 0x61, 0xFF,
             0xFF, 0xF1, 0x50, 0x60, 0x00, 0x51, 0x59, 0x00>>
 
-        result = EEVM.execute(code)
+        result = EEVM.Interpreter.run(code)
 
         assert EEVM.stack_values(result) == [64, unquote(expected_word)]
       end
@@ -462,7 +472,7 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
           <<0x60, 0, 0x60, 0, 0x60, 0, 0x60, 0, 0x60, 0x05, 0x60, 0xAA, 0x61, 0xFF, 0xFF, 0xF1,
             0x50, 0x3D, 0x00>>
 
-      result = EEVM.execute(code, world_state: WorldState.new(%{0 => %{balance: 0}}))
+      result = EEVM.Interpreter.run(code, db: InMemory.new(accounts: %{0 => %{balance: 0}}))
 
       assert EEVM.stack_values(result) == [0]
     end
@@ -478,10 +488,12 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
       test "#{opcode} on #{reason} returns the forwarded gas and the stipend" do
         # Callee: PUSH1 1, PUSH1 0, SSTORE (would write slot 0 if it ran).
         world_state =
-          WorldState.new(%{
-            0 => %{balance: unquote(balance)},
-            0xAA => %{code: <<0x60, 1, 0x60, 0, 0x55>>}
-          })
+          InMemory.new(
+            accounts: %{
+              0 => %{balance: unquote(balance)},
+              0xAA => %{code: <<0x60, 1, 0x60, 0, 0x55>>}
+            }
+          )
 
         # CALL(gas 100, 0xAA, value 5, 0, 0, 0, 0), STOP
         code =
@@ -489,10 +501,10 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
             0x00>>
 
         result =
-          EEVM.execute(code,
+          EEVM.Interpreter.run(code,
             gas: 100_000,
             depth: unquote(depth),
-            world_state: world_state,
+            db: world_state,
             accessed_addresses: MapSet.new([0, 0xAA])
           )
 
@@ -512,15 +524,17 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
       child_code = <<0x60, 0x2A, 0x60, 0x00, 0x53, 0x60, 0x01, 0x60, 0x00, 0xF3>>
 
       world_state =
-        WorldState.new(%{
-          0 => %{balance: 10},
-          1 => %{balance: 0, code: child_code}
-        })
+        InMemory.new(
+          accounts: %{
+            0 => %{balance: 10},
+            1 => %{balance: 0, code: child_code}
+          }
+        )
 
       code =
         <<0x60, 0x01, 0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x01, 0x60, 0x64, 0xFA, 0x00>>
 
-      result = EEVM.execute(code, world_state: world_state)
+      result = EEVM.Interpreter.run(code, db: world_state)
 
       assert result.status == :stopped
       assert EEVM.stack_values(result) == [1]
@@ -532,15 +546,17 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
       child_code = <<0x60, 0x01, 0x60, 0x00, 0x55, 0x00>>
 
       world_state =
-        WorldState.new(%{
-          0 => %{balance: 10},
-          1 => %{balance: 0, code: child_code}
-        })
+        InMemory.new(
+          accounts: %{
+            0 => %{balance: 10},
+            1 => %{balance: 0, code: child_code}
+          }
+        )
 
       code =
         <<0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x01, 0x60, 0x64, 0xFA, 0x00>>
 
-      result = EEVM.execute(code, world_state: world_state)
+      result = EEVM.Interpreter.run(code, db: world_state)
 
       assert result.status == :stopped
       assert EEVM.stack_values(result) == [0]
@@ -551,15 +567,17 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
       child_code = <<0x60, 0x00, 0x60, 0x00, 0xA0, 0x00>>
 
       world_state =
-        WorldState.new(%{
-          0 => %{balance: 10},
-          1 => %{balance: 0, code: child_code}
-        })
+        InMemory.new(
+          accounts: %{
+            0 => %{balance: 10},
+            1 => %{balance: 0, code: child_code}
+          }
+        )
 
       code =
         <<0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x01, 0x60, 0x64, 0xFA, 0x00>>
 
-      result = EEVM.execute(code, world_state: world_state)
+      result = EEVM.Interpreter.run(code, db: world_state)
 
       assert result.status == :stopped
       assert EEVM.stack_values(result) == [0]
@@ -573,17 +591,19 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
           0x30, 0xF1, 0x60, 0x00, 0x53, 0x60, 0x01, 0x60, 0x00, 0xF3>>
 
       world_state =
-        WorldState.new(%{
-          0 => %{balance: 10},
-          1 => %{balance: 0, code: child_code},
-          2 => %{balance: 0, code: grandchild_code}
-        })
+        InMemory.new(
+          accounts: %{
+            0 => %{balance: 10},
+            1 => %{balance: 0, code: child_code},
+            2 => %{balance: 0, code: grandchild_code}
+          }
+        )
 
       code =
         <<0x60, 0x01, 0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x01, 0x61, 0xC3, 0x50, 0xFA,
           0x00>>
 
-      result = EEVM.execute(code, world_state: world_state)
+      result = EEVM.Interpreter.run(code, db: world_state)
 
       assert result.status == :stopped
       assert EEVM.stack_values(result) == [1]
@@ -594,10 +614,12 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
 
     test "SSTORE in a static child is an exceptional halt that consumes the forwarded gas" do
       world_state =
-        WorldState.new(%{
-          0 => %{balance: 0},
-          0xAA => %{balance: 0, code: <<0x60, 1, 0x60, 0, 0x55, 0x00>>}
-        })
+        InMemory.new(
+          accounts: %{
+            0 => %{balance: 0},
+            0xAA => %{balance: 0, code: <<0x60, 1, 0x60, 0, 0x55, 0x00>>}
+          }
+        )
 
       # STATICCALL(gas: GAS, to: 0xAA, in/out: 0), RETURNDATASIZE, STOP. Before forwarding the
       # caller has 200_000 - 5 * 3 (PUSH1) - 2 (GAS) - 100 (STATICCALL) = 199_883 gas and keeps
@@ -605,9 +627,9 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
       code = <<0x60, 0, 0x60, 0, 0x60, 0, 0x60, 0, 0x60, 0xAA, 0x5A, 0xFA, 0x3D, 0x00>>
 
       result =
-        EEVM.execute(code,
+        EEVM.Interpreter.run(code,
           gas: 200_000,
-          world_state: world_state,
+          db: world_state,
           accessed_addresses: MapSet.new([0, 0xAA])
         )
 
@@ -618,30 +640,33 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
 
     # EIP-214 forbids only CALL with value in a static frame; CALLCODE with value is allowed.
     test "CALL with value in a static frame halts exceptionally; CALLCODE with value succeeds" do
-      world_state = WorldState.new(%{0 => %{balance: 5}, 0xAA => %{balance: 0, code: <<0x00>>}})
+      world_state =
+        InMemory.new(accounts: %{0 => %{balance: 5}, 0xAA => %{balance: 0, code: <<0x00>>}})
+
       # <op>(gas: 0xFFFF, to: 0xAA, value: 1, in/out: 0), STOP
       call_with_value = fn op ->
         <<0x60, 0, 0x60, 0, 0x60, 0, 0x60, 0, 0x60, 1, 0x60, 0xAA, 0x61, 0xFF, 0xFF, op, 0x00>>
       end
 
-      call = EEVM.execute(call_with_value.(0xF1), world_state: world_state, is_static: true)
+      call = EEVM.Interpreter.run(call_with_value.(0xF1), db: world_state, is_static: true)
       assert call.status == {:error, :static_state_modification}
       assert call.frame.gas == 0
 
-      callcode = EEVM.execute(call_with_value.(0xF2), world_state: world_state, is_static: true)
+      callcode = EEVM.Interpreter.run(call_with_value.(0xF2), db: world_state, is_static: true)
       assert callcode.status == :stopped
       assert EEVM.stack_values(callcode) == [1]
     end
 
     test "does not leave the caller in static mode" do
-      world_state = WorldState.new(%{0 => %{balance: 0}, 0xAA => %{balance: 0, code: <<0x00>>}})
+      world_state =
+        InMemory.new(accounts: %{0 => %{balance: 0}, 0xAA => %{balance: 0, code: <<0x00>>}})
 
       # STATICCALL(gas: GAS, to: 0xAA, in/out: 0), then SSTORE(0, 1) in the caller.
       code =
         <<0x60, 0, 0x60, 0, 0x60, 0, 0x60, 0, 0x60, 0xAA, 0x5A, 0xFA, 0x60, 1, 0x60, 0, 0x55,
           0x00>>
 
-      result = EEVM.execute(code, world_state: world_state)
+      result = EEVM.Interpreter.run(code, db: world_state)
 
       assert result.status == :stopped
       assert EEVM.stack_values(result) == [1]
@@ -649,12 +674,13 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
     end
 
     test "does not transfer value" do
-      world_state = WorldState.new(%{0 => %{balance: 9}, 1 => %{balance: 0, code: <<0x00>>}})
+      world_state =
+        InMemory.new(accounts: %{0 => %{balance: 9}, 1 => %{balance: 0, code: <<0x00>>}})
 
       code =
         <<0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x01, 0x60, 0x64, 0xFA, 0x00>>
 
-      result = EEVM.execute(code, world_state: world_state)
+      result = EEVM.Interpreter.run(code, db: world_state)
 
       assert result.status == :stopped
       assert EEVM.stack_values(result) == [1]
@@ -668,16 +694,18 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
       child_code = <<0x60, 0x01, 0x30, 0x55, 0x00>>
 
       world_state =
-        WorldState.new(%{
-          1 => %{code: child_code}
-        })
+        InMemory.new(
+          accounts: %{
+            1 => %{code: child_code}
+          }
+        )
 
       code =
         <<0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x01, 0x61, 0xFF, 0xFF, 0xF4,
           0x00>>
 
       contract = Contract.new(address: 0xAA, caller: 0xBEEF, callvalue: 999)
-      result = EEVM.execute(code, world_state: world_state, contract: contract)
+      result = EEVM.Interpreter.run(code, db: world_state, contract: contract)
 
       assert EEVM.stack_values(result) == [1]
       assert Database.storage_load(result.db, contract.address, 0xAA) == 1
@@ -686,14 +714,14 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
 
     test "preserves caller (msg.sender)" do
       child_code = <<0x33, 0x60, 0x00, 0x55, 0x00>>
-      world_state = WorldState.new(%{1 => %{code: child_code}})
+      world_state = InMemory.new(accounts: %{1 => %{code: child_code}})
 
       code =
         <<0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x01, 0x61, 0xFF, 0xFF, 0xF4,
           0x00>>
 
       contract = Contract.new(address: 0xAA, caller: 0xBEEF, callvalue: 999)
-      result = EEVM.execute(code, world_state: world_state, contract: contract)
+      result = EEVM.Interpreter.run(code, db: world_state, contract: contract)
 
       assert EEVM.stack_values(result) == [1]
       assert Database.storage_load(result.db, contract.address, 0) == 0xBEEF
@@ -701,14 +729,14 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
 
     test "preserves callvalue (msg.value)" do
       child_code = <<0x34, 0x60, 0x00, 0x55, 0x00>>
-      world_state = WorldState.new(%{1 => %{code: child_code}})
+      world_state = InMemory.new(accounts: %{1 => %{code: child_code}})
 
       code =
         <<0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x01, 0x61, 0xFF, 0xFF, 0xF4,
           0x00>>
 
       contract = Contract.new(address: 0xAA, caller: 0xBEEF, callvalue: 999)
-      result = EEVM.execute(code, world_state: world_state, contract: contract)
+      result = EEVM.Interpreter.run(code, db: world_state, contract: contract)
 
       assert EEVM.stack_values(result) == [1]
       assert Database.storage_load(result.db, contract.address, 0) == 999
@@ -716,14 +744,14 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
 
     test "ADDRESS returns parent's address" do
       child_code = <<0x30, 0x60, 0x00, 0x55, 0x00>>
-      world_state = WorldState.new(%{1 => %{code: child_code}})
+      world_state = InMemory.new(accounts: %{1 => %{code: child_code}})
 
       code =
         <<0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x01, 0x61, 0xFF, 0xFF, 0xF4,
           0x00>>
 
       contract = Contract.new(address: 0xAA, caller: 0xBEEF, callvalue: 999)
-      result = EEVM.execute(code, world_state: world_state, contract: contract)
+      result = EEVM.Interpreter.run(code, db: world_state, contract: contract)
 
       assert EEVM.stack_values(result) == [1]
       assert Database.storage_load(result.db, contract.address, 0) == 0xAA
@@ -731,12 +759,12 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
 
     test "pushes 0 on failure" do
       child_code = <<0x60, 0x00, 0x60, 0x00, 0xFD>>
-      world_state = WorldState.new(%{1 => %{code: child_code}})
+      world_state = InMemory.new(accounts: %{1 => %{code: child_code}})
 
       code =
         <<0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x01, 0x60, 0x64, 0xF4, 0x00>>
 
-      result = EEVM.execute(code, world_state: world_state)
+      result = EEVM.Interpreter.run(code, db: world_state)
 
       assert result.status == :stopped
       assert EEVM.stack_values(result) == [0]
@@ -747,14 +775,14 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
   describe "CALLCODE (0xF2)" do
     test "runs target code in caller's storage context" do
       child_code = <<0x60, 0x01, 0x30, 0x55, 0x00>>
-      world_state = WorldState.new(%{1 => %{code: child_code}})
+      world_state = InMemory.new(accounts: %{1 => %{code: child_code}})
 
       code =
         <<0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x01, 0x61, 0xFF,
           0xFF, 0xF2, 0x00>>
 
       contract = Contract.new(address: 0xAA, caller: 0xBEEF)
-      result = EEVM.execute(code, world_state: world_state, contract: contract)
+      result = EEVM.Interpreter.run(code, db: world_state, contract: contract)
 
       assert EEVM.stack_values(result) == [1]
       assert Database.storage_load(result.db, contract.address, 0xAA) == 1
@@ -763,14 +791,14 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
 
     test "CALLER returns current contract address" do
       child_code = <<0x33, 0x60, 0x00, 0x55, 0x00>>
-      world_state = WorldState.new(%{1 => %{code: child_code}})
+      world_state = InMemory.new(accounts: %{1 => %{code: child_code}})
 
       code =
         <<0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x01, 0x61, 0xFF,
           0xFF, 0xF2, 0x00>>
 
       contract = Contract.new(address: 0xAAAA, caller: 0xBBBB)
-      result = EEVM.execute(code, world_state: world_state, contract: contract)
+      result = EEVM.Interpreter.run(code, db: world_state, contract: contract)
 
       assert EEVM.stack_values(result) == [1]
       assert Database.storage_load(result.db, contract.address, 0) == 0xAAAA
@@ -778,13 +806,13 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
 
     test "pushes 0 on failure" do
       child_code = <<0x60, 0x00, 0x60, 0x00, 0xFD>>
-      world_state = WorldState.new(%{1 => %{code: child_code}})
+      world_state = InMemory.new(accounts: %{1 => %{code: child_code}})
 
       code =
         <<0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x01, 0x60, 0x64,
           0xF2, 0x00>>
 
-      result = EEVM.execute(code, world_state: world_state)
+      result = EEVM.Interpreter.run(code, db: world_state)
 
       assert result.status == :stopped
       assert EEVM.stack_values(result) == [0]

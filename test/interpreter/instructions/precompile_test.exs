@@ -2,9 +2,9 @@ defmodule EEVM.Interpreter.Instructions.PrecompileTest do
   use ExUnit.Case, async: true
 
   alias EEVM.Config
+  alias EEVM.Database.InMemory
   alias EEVM.Interpreter.Memory
   alias EEVM.Precompiles
-  alias EEVM.WorldState
 
   defmodule TestPrecompile do
     @behaviour EEVM.Precompile
@@ -39,16 +39,18 @@ defmodule EEVM.Interpreter.Instructions.PrecompileTest do
       child_code = <<0x60, 0x2A, 0x60, 0x00, 0x53, 0x60, 0x01, 0x60, 0x00, 0xF3>>
 
       world_state =
-        WorldState.new(%{
-          0 => %{balance: 10},
-          0x100 => %{balance: 0, code: child_code}
-        })
+        InMemory.new(
+          accounts: %{
+            0 => %{balance: 10},
+            0x100 => %{balance: 0, code: child_code}
+          }
+        )
 
       code =
         <<0x60, 0x01, 0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x61, 0x01, 0x00, 0x61,
           0xFF, 0xFF, 0xF1, 0x00>>
 
-      result = EEVM.execute(code, world_state: world_state, gas: 1_000_000)
+      result = EEVM.execute(code, db: world_state, gas: 1_000_000)
       assert result.status == :stopped
       assert EEVM.stack_values(result) == [1]
       {mem, _} = Memory.read_bytes(result.frame.memory, 0, 1)
@@ -56,14 +58,14 @@ defmodule EEVM.Interpreter.Instructions.PrecompileTest do
     end
 
     test "successful CALL with value credits the precompile" do
-      world_state = WorldState.new(%{0 => %{balance: 5_000}})
+      world_state = InMemory.new(accounts: %{0 => %{balance: 5_000}})
 
       # CALL(gas: 0xFFFF, to: 0x04 identity, value: 1000, no args, no return data), STOP
       code =
         <<0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x61, 0x03, 0xE8, 0x60, 0x04, 0x61,
           0xFF, 0xFF, 0xF1, 0x00>>
 
-      result = EEVM.execute(code, world_state: world_state, gas: 1_000_000)
+      result = EEVM.execute(code, db: world_state, gas: 1_000_000)
       assert EEVM.stack_values(result) == [1]
       assert EEVM.Database.get_balance(result.db, 0x04) == 1_000
       assert EEVM.Database.get_balance(result.db, 0) == 4_000

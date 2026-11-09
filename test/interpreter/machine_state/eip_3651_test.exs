@@ -3,8 +3,8 @@ defmodule EEVM.Interpreter.MachineState.EIP3651Test do
 
   alias EEVM.Config
   alias EEVM.Context.{Block, Contract, Transaction}
+  alias EEVM.Database.InMemory
   alias EEVM.Interpreter.MachineState
-  alias EEVM.WorldState
 
   describe "EIP-3651 coinbase pre-warming" do
     test "new machine state pre-warms non-zero coinbase" do
@@ -38,10 +38,10 @@ defmodule EEVM.Interpreter.MachineState.EIP3651Test do
     test "BALANCE access to COINBASE is charged at warm rate (100 gas)" do
       initial_gas = 10_000
       block = Block.new(coinbase: 0xBEEF)
-      world_state = WorldState.new(%{0xBEEF => %{balance: 123}})
+      world_state = InMemory.new(accounts: %{0xBEEF => %{balance: 123}})
       code = <<0x41, 0x31, 0x00>>
 
-      result = EEVM.execute(code, gas: initial_gas, block: block, world_state: world_state)
+      result = EEVM.execute(code, gas: initial_gas, block: block, db: world_state)
 
       assert result.frame.gas == initial_gas - 2 - 100
       refute result.frame.gas == initial_gas - 2 - 2600

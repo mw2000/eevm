@@ -1,7 +1,8 @@
 defmodule EEVM.StorageTest do
   use ExUnit.Case, async: true
 
-  alias EEVM.{Database, Storage}
+  alias EEVM.Database
+  alias EEVM.Database.InMemory
 
   describe "Storage (SLOAD/SSTORE)" do
     test "SSTORE then SLOAD retrieves the stored value" do
@@ -46,9 +47,9 @@ defmodule EEVM.StorageTest do
 
     test "SLOAD with pre-loaded storage" do
       # Pre-load slot 5 with value 9999, then SLOAD it
-      storage = Storage.new(%{5 => 9999})
+      storage = InMemory.new(storage: %{0 => %{5 => 9999}})
       code = <<0x60, 5, 0x54, 0x00>>
-      result = EEVM.execute(code, storage: storage)
+      result = EEVM.execute(code, db: storage)
       assert EEVM.stack_values(result) == [9999]
     end
 

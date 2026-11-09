@@ -172,7 +172,7 @@ call_loop =
   ])
 
 callee_code = Asm.assemble([0, :sload, 0, :mstore, :stop])
-call_world = EEVM.WorldState.new(%{callee => %{balance: 0, code: callee_code}})
+call_world = EEVM.Database.InMemory.new(accounts: %{callee => %{balance: 0, code: callee_code}})
 
 # --- ERC-20 transfer through EEVM.Handler ---------------------------------------------
 
@@ -298,7 +298,7 @@ jobs = %{
   "keccak: 5k x 32 B" => fn -> execute.(keccak_words, []) end,
   "keccak: 64 KiB" => fn -> execute.(keccak_64k, []) end,
   "storage: SSTORE/SLOAD 500 slots" => fn -> execute.(sstore_sload, []) end,
-  "calls: STATICCALL loop (2k)" => fn -> execute.(call_loop, world_state: call_world) end,
+  "calls: STATICCALL loop (2k)" => fn -> execute.(call_loop, db: call_world) end,
   "erc20: transfer via Handler" => fn -> Handler.execute(transfer_tx, block, erc20_db) end
 }
 

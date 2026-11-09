@@ -3,7 +3,8 @@ defmodule EEVM.Interpreter.Instructions.System.EIP3541Test do
 
   import EEVM.TestSupport.BytecodeHelpers
 
-  alias EEVM.{Database, WorldState}
+  alias EEVM.Database
+  alias EEVM.Database.InMemory
 
   # ---------------------------------------------------------------------------
   # Helpers
@@ -45,7 +46,7 @@ defmodule EEVM.Interpreter.Instructions.System.EIP3541Test do
       result =
         EEVM.execute(code,
           gas: initial_gas,
-          world_state: WorldState.new(%{0 => %{balance: 10}})
+          db: InMemory.new(accounts: %{0 => %{balance: 10}})
         )
 
       # CREATE pushes 0 to signal failed deployment
@@ -66,7 +67,7 @@ defmodule EEVM.Interpreter.Instructions.System.EIP3541Test do
       init_code = init_code_returning(<<0xEF, 0xBB>>)
       code = build_create_program(init_code, :create2, 0, 1)
 
-      result = EEVM.execute(code, world_state: WorldState.new(%{0 => %{balance: 10}}))
+      result = EEVM.execute(code, db: InMemory.new(accounts: %{0 => %{balance: 10}}))
 
       assert result.status == :stopped
       assert EEVM.stack_values(result) == [0]
@@ -77,7 +78,7 @@ defmodule EEVM.Interpreter.Instructions.System.EIP3541Test do
       init_code = <<0x60, 0x00, 0x60, 0x00, 0xF3>>
       code = build_create_program(init_code, :create, 0)
 
-      result = EEVM.execute(code, world_state: WorldState.new(%{0 => %{balance: 10}}))
+      result = EEVM.execute(code, db: InMemory.new(accounts: %{0 => %{balance: 10}}))
       [created_address] = EEVM.stack_values(result)
 
       assert result.status == :stopped
@@ -90,7 +91,7 @@ defmodule EEVM.Interpreter.Instructions.System.EIP3541Test do
       init_code = init_code_returning(runtime_code)
       code = build_create_program(init_code, :create, 0)
 
-      result = EEVM.execute(code, world_state: WorldState.new(%{0 => %{balance: 10}}))
+      result = EEVM.execute(code, db: InMemory.new(accounts: %{0 => %{balance: 10}}))
       [created_address] = EEVM.stack_values(result)
 
       assert result.status == :stopped
@@ -105,7 +106,7 @@ defmodule EEVM.Interpreter.Instructions.System.EIP3541Test do
       init_code = ef_using_prefix <> init_code_returning(safe_runtime)
       code = build_create_program(init_code, :create, 0)
 
-      result = EEVM.execute(code, world_state: WorldState.new(%{0 => %{balance: 10}}))
+      result = EEVM.execute(code, db: InMemory.new(accounts: %{0 => %{balance: 10}}))
       [created_address] = EEVM.stack_values(result)
 
       assert result.status == :stopped

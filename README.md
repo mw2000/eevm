@@ -235,7 +235,9 @@ eevm is layered like revm:
 
 The [API documentation](https://mw2000.github.io/eevm/) is built with ExDoc from
 `main`; its [`EEVM` module page](https://mw2000.github.io/eevm/EEVM.html) has the
-module map. Run `mix docs` to build it locally. HexDocs will follow once the
+module map. The sidebar groups modules into the public API (Getting started,
+Transactions, Blocks, State), extension points (Extending), and Internals, which
+may change in any release. Run `mix docs` to build it locally. HexDocs will follow once the
 package is published on Hex.
 
 ## Contributing

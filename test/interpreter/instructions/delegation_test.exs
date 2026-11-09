@@ -2,7 +2,8 @@ defmodule EEVM.Interpreter.Instructions.DelegationTest do
   use ExUnit.Case, async: true
 
   alias EEVM.Context.Contract
-  alias EEVM.{Database, Delegation, WorldState}
+  alias EEVM.{Database, Delegation}
+  alias EEVM.Database.InMemory
   alias EEVM.Interpreter.Memory
 
   @caller 0xCA11E2
@@ -91,10 +92,10 @@ defmodule EEVM.Interpreter.Instructions.DelegationTest do
         Keyword.get(opts, :accounts, %{})
       )
 
-    EEVM.execute(code,
+    EEVM.Interpreter.run(code,
       gas: 1_000_000,
       hardfork: Keyword.get(opts, :hardfork, :prague),
-      world_state: WorldState.new(accounts),
+      db: InMemory.new(accounts: accounts),
       contract: Contract.new(address: @caller, caller: 0xE0A),
       accessed_addresses: MapSet.new([@caller | Keyword.get(opts, :warm, [])])
     )

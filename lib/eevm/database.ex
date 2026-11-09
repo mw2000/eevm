@@ -18,8 +18,7 @@ defmodule EEVM.Database do
   @type account :: %{
           optional(:balance) => non_neg_integer(),
           optional(:nonce) => non_neg_integer(),
-          optional(:code) => binary(),
-          optional(:storage) => EEVM.Storage.t()
+          optional(:code) => binary()
         }
 
   @type t :: %__MODULE__{

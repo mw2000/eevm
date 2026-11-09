@@ -2,11 +2,11 @@ defmodule EEVM do
   @moduledoc """
   EEVM — Ethereum Virtual Machine implementation in Elixir.
 
-  Execution engine targeting Cancun, with Prague and Osaka work in progress:
-  full opcode set, all precompiles (including BLS12-381 via NIF), transaction
-  validation and processing, MPT-backed state root, and harnesses for the
-  official `ethereum/tests` suites. Conformance with those suites is still in
-  progress, and many rules before Cancun are not yet gated per hardfork.
+  Execution engine for every fork from Frontier to Osaka (Osaka in
+  progress): full opcode set, all precompiles (including BLS12-381 via NIF),
+  transaction validation and processing, whole blocks, MPT-backed state root,
+  and harnesses for the official `ethereum/tests` suites. Conformance with
+  those suites is still in progress.
 
   ## Quick Start
 
@@ -18,16 +18,22 @@ defmodule EEVM do
 
   ## Module Map
 
-  - `EEVM.Interpreter` — fetch-decode-execute loop and call frames
-  - `EEVM.Interpreter.MachineState` — frame-local state (pc, stack, memory, gas)
-  - `EEVM.Precompiles` — registered precompiles (`0x01`–`0x11`, `0x100`)
-  - `EEVM.Transaction` — envelope decoding, validation, signing, intrinsic gas
-  - `EEVM.Handler` — one signed transaction end to end
+  The public API:
+
+  - `EEVM` — run raw bytecode (`execute/2`, `trace/2`) and disassemble it
+  - `EEVM.Config` and `EEVM.HardforkConfig` — the hardfork and custom precompiles
+  - `EEVM.Error` — every error reason
+  - `EEVM.Handler` — validate and execute one signed transaction
+  - `EEVM.Transaction` and its `Envelope` and `Signer` — transaction structs,
+    wire encoding, and signatures
   - `EEVM.Block` — block RLP codec, validation, building, and execution
-  - `EEVM.Database`, `EEVM.WorldState`, `EEVM.Storage` — account and storage state
-  - `EEVM.MPT.Trie` + `EEVM.StateRoot` — Merkle-Patricia trie and state-root hash
-  - `EEVM.HardforkConfig` — per-hardfork EIP activation flags
-  - `EEVM.SystemContracts` — EIP-2935 (block hashes) and EIP-4788 (beacon roots)
+  - `EEVM.Database` and `EEVM.Database.InMemory` — account and storage state
+
+  Extension points: `EEVM.Precompile` (custom precompiles), `EEVM.Tracer`
+  (EIP-3155 traces), `EEVM.Block.Processor` (custom transaction executors),
+  and `EEVM.SystemContracts` (genesis setup). Modules grouped under
+  "Internals" in the docs are implementation details and may change in any
+  release.
   """
 
   alias EEVM.Block.Bloom
@@ -35,11 +41,24 @@ defmodule EEVM do
   alias EEVM.Interpreter.{MachineState, Stack}
   alias EEVM.Tracer
 
+  @execute_opts [:gas, :hardfork, :config, :db, :block, :tx, :contract]
+
   @doc """
   Executes EVM bytecode and returns the final machine state.
 
   ## Options
+
     - `:gas` — initial gas limit (default: 1,000,000)
+    - `:hardfork` — hardfork spec id (default `:cancun`), or `:config` for a
+      full `EEVM.Config`
+    - `:db` — the `EEVM.Database` to run against (default: an empty
+      `EEVM.Database.InMemory`)
+    - `:block` and `:tx` — the `EEVM.Context.Block` and
+      `EEVM.Context.Transaction` the code sees
+    - `:contract` — the `EEVM.Context.Contract` being executed: its address,
+      caller, call value, and calldata
+
+  Any other option raises `ArgumentError`.
 
   ## Example
 
@@ -49,7 +68,7 @@ defmodule EEVM do
   """
   @spec execute(binary(), keyword()) :: EEVM.Interpreter.MachineState.t()
   def execute(bytecode, opts \\ []) do
-    Interpreter.run(bytecode, opts)
+    Interpreter.run(bytecode, Keyword.validate!(opts, @execute_opts))
   end
 
   @doc """
@@ -57,7 +76,8 @@ defmodule EEVM do
 
   Returns `{final_state, tracer}`. The tracer holds one `TraceStep` per
   executed opcode (see `EEVM.Tracer`). Use `EEVM.Tracer.to_json/1` to emit
-  a trace in EIP-3155 / geth `--json` format.
+  a trace in EIP-3155 / geth `--json` format. Takes the options of
+  `execute/2`.
 
   ## Example
 
@@ -69,7 +89,9 @@ defmodule EEVM do
   """
   @spec trace(binary(), keyword()) :: {MachineState.t(), Tracer.t()}
   def trace(bytecode, opts \\ []) do
-    opts_with_tracer = Keyword.put(opts, :tracer, Tracer.new())
+    opts_with_tracer =
+      opts |> Keyword.validate!(@execute_opts) |> Keyword.put(:tracer, Tracer.new())
+
     state = Interpreter.run(bytecode, opts_with_tracer)
     {state, state.tracer}
   end

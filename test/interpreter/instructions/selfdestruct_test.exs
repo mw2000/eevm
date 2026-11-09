@@ -7,20 +7,21 @@ defmodule EEVM.Interpreter.Instructions.SelfdestructTest do
   alias EEVM.Gas.Static
   alias EEVM.Interpreter
   alias EEVM.Interpreter.MachineState
-  alias EEVM.WorldState
 
   describe "SELFDESTRUCT (0xFF) - EIP-6780 post-Cancun" do
     test "transfers balance to beneficiary" do
       world_state =
-        WorldState.new(%{
-          0xAA => %{balance: 100},
-          0xBB => %{balance: 50}
-        })
+        InMemory.new(
+          accounts: %{
+            0xAA => %{balance: 100},
+            0xBB => %{balance: 50}
+          }
+        )
 
       contract = Contract.new(address: 0xAA)
       code = <<0x60, 0xBB, 0xFF>>
 
-      result = EEVM.execute(code, world_state: world_state, contract: contract, gas: 1_000_000)
+      result = EEVM.Interpreter.run(code, db: world_state, contract: contract, gas: 1_000_000)
 
       assert result.status == :stopped
       assert Database.get_balance(result.db, 0xAA) == 0
@@ -28,11 +29,11 @@ defmodule EEVM.Interpreter.Instructions.SelfdestructTest do
     end
 
     test "halts execution after SELFDESTRUCT" do
-      world_state = WorldState.new(%{0xAA => %{balance: 10}})
+      world_state = InMemory.new(accounts: %{0xAA => %{balance: 10}})
       contract = Contract.new(address: 0xAA)
       code = <<0x60, 0xBB, 0xFF, 0x60, 0x01>>
 
-      result = EEVM.execute(code, world_state: world_state, contract: contract, gas: 1_000_000)
+      result = EEVM.Interpreter.run(code, db: world_state, contract: contract, gas: 1_000_000)
 
       assert result.status == :stopped
       assert EEVM.stack_values(result) == []
@@ -40,17 +41,17 @@ defmodule EEVM.Interpreter.Instructions.SelfdestructTest do
 
     test "halts exceptionally in static context" do
       code = <<0x60, 0xBB, 0xFF>>
-      result = EEVM.execute(code, is_static: true, gas: 1_000_000)
+      result = EEVM.Interpreter.run(code, is_static: true, gas: 1_000_000)
       assert result.status == {:error, :static_state_modification}
       assert result.frame.gas == 0
     end
 
     test "self-destruct to self keeps balance unchanged" do
-      world_state = WorldState.new(%{0xAA => %{balance: 100}})
+      world_state = InMemory.new(accounts: %{0xAA => %{balance: 100}})
       contract = Contract.new(address: 0xAA)
       code = <<0x60, 0xAA, 0xFF>>
 
-      result = EEVM.execute(code, world_state: world_state, contract: contract, gas: 1_000_000)
+      result = EEVM.Interpreter.run(code, db: world_state, contract: contract, gas: 1_000_000)
 
       assert result.status == :stopped
       assert Database.get_balance(result.db, 0xAA) == 100
@@ -58,15 +59,17 @@ defmodule EEVM.Interpreter.Instructions.SelfdestructTest do
 
     test "zero balance self-destruct costs 5000 gas" do
       world_state =
-        WorldState.new(%{
-          0xAA => %{balance: 0},
-          0xBB => %{balance: 0}
-        })
+        InMemory.new(
+          accounts: %{
+            0xAA => %{balance: 0},
+            0xBB => %{balance: 0}
+          }
+        )
 
       contract = Contract.new(address: 0xAA)
       code = <<0x60, 0xBB, 0xFF>>
 
-      result = EEVM.execute(code, world_state: world_state, contract: contract, gas: 1_000_000)
+      result = EEVM.Interpreter.run(code, db: world_state, contract: contract, gas: 1_000_000)
 
       assert result.status == :stopped
       # 5,000 static plus 2,600 for the cold beneficiary (EIP-2929).
@@ -75,11 +78,11 @@ defmodule EEVM.Interpreter.Instructions.SelfdestructTest do
     end
 
     test "charges extra 25000 gas for new beneficiary with value" do
-      world_state = WorldState.new(%{0xAA => %{balance: 100}})
+      world_state = InMemory.new(accounts: %{0xAA => %{balance: 100}})
       contract = Contract.new(address: 0xAA)
       code = <<0x60, 0xCC, 0xFF>>
 
-      result = EEVM.execute(code, world_state: world_state, contract: contract, gas: 1_000_000)
+      result = EEVM.Interpreter.run(code, db: world_state, contract: contract, gas: 1_000_000)
 
       assert result.status == :stopped
       # 5,000 static plus 2,600 for the cold beneficiary (EIP-2929).
@@ -90,15 +93,17 @@ defmodule EEVM.Interpreter.Instructions.SelfdestructTest do
 
     test "no extra gas for a non-empty beneficiary with value" do
       world_state =
-        WorldState.new(%{
-          0xAA => %{balance: 100},
-          0xBB => %{balance: 1}
-        })
+        InMemory.new(
+          accounts: %{
+            0xAA => %{balance: 100},
+            0xBB => %{balance: 1}
+          }
+        )
 
       contract = Contract.new(address: 0xAA)
       code = <<0x60, 0xBB, 0xFF>>
 
-      result = EEVM.execute(code, world_state: world_state, contract: contract, gas: 1_000_000)
+      result = EEVM.Interpreter.run(code, db: world_state, contract: contract, gas: 1_000_000)
 
       # 5,000 static plus 2,600 for the cold beneficiary (EIP-2929).
       expected_gas = 1_000_000 - Static.static_cost(0x60) - 5000 - 2_600
@@ -106,11 +111,11 @@ defmodule EEVM.Interpreter.Instructions.SelfdestructTest do
     end
 
     test "no extra gas for new beneficiary with zero value" do
-      world_state = WorldState.new(%{0xAA => %{balance: 0}})
+      world_state = InMemory.new(accounts: %{0xAA => %{balance: 0}})
       contract = Contract.new(address: 0xAA)
       code = <<0x60, 0xCC, 0xFF>>
 
-      result = EEVM.execute(code, world_state: world_state, contract: contract, gas: 1_000_000)
+      result = EEVM.Interpreter.run(code, db: world_state, contract: contract, gas: 1_000_000)
 
       # 5,000 static plus 2,600 for the cold beneficiary (EIP-2929).
       expected_gas = 1_000_000 - Static.static_cost(0x60) - 5000 - 2_600
@@ -118,12 +123,12 @@ defmodule EEVM.Interpreter.Instructions.SelfdestructTest do
     end
 
     test "charges cold access for the beneficiary only when it is cold (EIP-2929)" do
-      world_state = WorldState.new(%{0xAA => %{balance: 0}, 0xBB => %{balance: 0}})
+      world_state = InMemory.new(accounts: %{0xAA => %{balance: 0}, 0xBB => %{balance: 0}})
       contract = Contract.new(address: 0xAA)
       code = <<0x60, 0xBB, 0xFF>>
 
       run =
-        &EEVM.execute(code, [world_state: world_state, contract: contract, gas: 100_000] ++ &1)
+        &EEVM.Interpreter.run(code, [db: world_state, contract: contract, gas: 100_000] ++ &1)
 
       assert run.([]).frame.gas == 100_000 - 3 - 5000 - 2_600
       assert run.(accessed_addresses: MapSet.new([0xAA, 0xBB])).frame.gas == 100_000 - 3 - 5000
@@ -134,15 +139,17 @@ defmodule EEVM.Interpreter.Instructions.SelfdestructTest do
 
     test "contract code/nonce/storage preserved (post-Cancun, not created this tx)" do
       world_state =
-        WorldState.new(%{
-          0xAA => %{balance: 50, code: <<0x60, 0x01>>, nonce: 5},
-          0xBB => %{balance: 0}
-        })
+        InMemory.new(
+          accounts: %{
+            0xAA => %{balance: 50, code: <<0x60, 0x01>>, nonce: 5},
+            0xBB => %{balance: 0}
+          }
+        )
 
       contract = Contract.new(address: 0xAA)
       code = <<0x60, 0xBB, 0xFF>>
 
-      result = EEVM.execute(code, world_state: world_state, contract: contract, gas: 1_000_000)
+      result = EEVM.Interpreter.run(code, db: world_state, contract: contract, gas: 1_000_000)
 
       assert result.status == :stopped
       assert Database.get_code(result.db, 0xAA) == <<0x60, 0x01>>
@@ -153,17 +160,19 @@ defmodule EEVM.Interpreter.Instructions.SelfdestructTest do
 
     test "EIP-6780: full deletion when contract was created in same tx" do
       world_state =
-        WorldState.new(%{
-          0xAA => %{balance: 100, code: <<0x60, 0x01>>, nonce: 3},
-          0xBB => %{balance: 50}
-        })
+        InMemory.new(
+          accounts: %{
+            0xAA => %{balance: 100, code: <<0x60, 0x01>>, nonce: 3},
+            0xBB => %{balance: 50}
+          }
+        )
 
       contract = Contract.new(address: 0xAA)
       code = <<0x60, 0xBB, 0xFF>>
 
       result =
-        EEVM.execute(code,
-          world_state: world_state,
+        EEVM.Interpreter.run(code,
+          db: world_state,
           contract: contract,
           created_addresses: MapSet.new([0xAA]),
           gas: 1_000_000
@@ -176,13 +185,15 @@ defmodule EEVM.Interpreter.Instructions.SelfdestructTest do
     end
 
     test "EIP-6780: full deletion to self when created in same tx burns balance" do
-      world_state = WorldState.new(%{0xAA => %{balance: 100, code: <<0x60, 0x01>>, nonce: 1}})
+      world_state =
+        InMemory.new(accounts: %{0xAA => %{balance: 100, code: <<0x60, 0x01>>, nonce: 1}})
+
       contract = Contract.new(address: 0xAA)
       code = <<0x60, 0xAA, 0xFF>>
 
       result =
-        EEVM.execute(code,
-          world_state: world_state,
+        EEVM.Interpreter.run(code,
+          db: world_state,
           contract: contract,
           created_addresses: MapSet.new([0xAA]),
           gas: 1_000_000
@@ -194,15 +205,17 @@ defmodule EEVM.Interpreter.Instructions.SelfdestructTest do
 
     test "EIP-6780: not created this tx preserves account (only transfers balance)" do
       world_state =
-        WorldState.new(%{
-          0xAA => %{balance: 75, code: <<0xFE>>, nonce: 10},
-          0xCC => %{balance: 0}
-        })
+        InMemory.new(
+          accounts: %{
+            0xAA => %{balance: 75, code: <<0xFE>>, nonce: 10},
+            0xCC => %{balance: 0}
+          }
+        )
 
       contract = Contract.new(address: 0xAA)
       code = <<0x60, 0xCC, 0xFF>>
 
-      result = EEVM.execute(code, world_state: world_state, contract: contract, gas: 1_000_000)
+      result = EEVM.Interpreter.run(code, db: world_state, contract: contract, gas: 1_000_000)
 
       assert result.status == :stopped
       assert Database.account_exists?(result.db, 0xAA) == true
@@ -223,11 +236,11 @@ defmodule EEVM.Interpreter.Instructions.SelfdestructTest do
           0x50>>
 
     test "pre-Cancun, the code stays until the transaction ends" do
-      world_state = WorldState.new(%{0xAA => %{balance: 10, code: <<0x60, 0xBB, 0xFF>>}})
+      world_state = InMemory.new(accounts: %{0xAA => %{balance: 10, code: <<0x60, 0xBB, 0xFF>>}})
       # CALL 0xAA, then EXTCODESIZE(0xAA)
       code = call(0xAA) <> <<0x60, 0xAA, 0x3B, 0x00>>
 
-      result = EEVM.execute(code, world_state: world_state, hardfork: :shanghai)
+      result = EEVM.Interpreter.run(code, db: world_state, hardfork: :shanghai)
 
       assert EEVM.stack_values(result) == [3]
       refute Database.account_exists?(result.db, 0xAA)
@@ -241,7 +254,7 @@ defmodule EEVM.Interpreter.Instructions.SelfdestructTest do
           storage: %{0xAA => %{0 => 1}}
         )
 
-      result = EEVM.execute(call(0xAA) <> <<0x00>>, db: db, hardfork: :shanghai)
+      result = EEVM.Interpreter.run(call(0xAA) <> <<0x00>>, db: db, hardfork: :shanghai)
 
       refute Database.account_exists?(result.db, 0xAA)
       assert Database.storage_load(result.db, 0xAA, 0) == 0
@@ -249,13 +262,15 @@ defmodule EEVM.Interpreter.Instructions.SelfdestructTest do
 
     test "a SELFDESTRUCT inside a reverted frame deletes nothing" do
       world_state =
-        WorldState.new(%{
-          0xAA => %{balance: 10, code: <<0x60, 0xCC, 0xFF>>},
-          # CALL 0xAA, then REVERT
-          0xBB => %{code: call(0xAA) <> <<0x60, 0, 0x60, 0, 0xFD>>}
-        })
+        InMemory.new(
+          accounts: %{
+            0xAA => %{balance: 10, code: <<0x60, 0xCC, 0xFF>>},
+            # CALL 0xAA, then REVERT
+            0xBB => %{code: call(0xAA) <> <<0x60, 0, 0x60, 0, 0xFD>>}
+          }
+        )
 
-      result = EEVM.execute(call(0xBB) <> <<0x00>>, world_state: world_state, hardfork: :shanghai)
+      result = EEVM.Interpreter.run(call(0xBB) <> <<0x00>>, db: world_state, hardfork: :shanghai)
 
       assert Database.get_code(result.db, 0xAA) == <<0x60, 0xCC, 0xFF>>
       assert Database.get_balance(result.db, 0xAA) == 10
@@ -266,7 +281,7 @@ defmodule EEVM.Interpreter.Instructions.SelfdestructTest do
   # final frame before the transaction settles its refund.
   defp selfdestruct_frame(fork, accounts) do
     MachineState.new(<<0x60, 0xBB, 0xFF>>,
-      world_state: WorldState.new(accounts),
+      db: InMemory.new(accounts: accounts),
       contract: Contract.new(address: 0xAA),
       gas: 100_000,
       hardfork: fork
@@ -306,7 +321,7 @@ defmodule EEVM.Interpreter.Instructions.SelfdestructTest do
 
       refund =
         MachineState.new(call(0xAA) <> call(0xAA) <> <<0x00>>,
-          world_state: WorldState.new(accounts),
+          db: InMemory.new(accounts: accounts),
           hardfork: :berlin
         )
         |> Interpreter.run_loop()

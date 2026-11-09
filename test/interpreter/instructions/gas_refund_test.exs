@@ -8,7 +8,7 @@ defmodule EEVM.Interpreter.Instructions.GasRefundTest do
   alias EEVM.Transaction.IntrinsicGas
 
   test "refund counter defaults to 0" do
-    result = EEVM.execute(<<0x00>>)
+    result = EEVM.Interpreter.run(<<0x00>>)
 
     assert result.status == :stopped
     assert result.frame.refund == 0
@@ -33,7 +33,7 @@ defmodule EEVM.Interpreter.Instructions.GasRefundTest do
     initial_gas = 100
     refund_counter = 50
 
-    result = EEVM.execute(code, gas: initial_gas, refund: refund_counter)
+    result = EEVM.Interpreter.run(code, gas: initial_gas, refund: refund_counter)
 
     gas_used = Static.static_cost(0x60) + Static.static_cost(0x50) + Static.static_cost(0x00)
     effective_refund = min(refund_counter, div(gas_used, 5))
@@ -49,7 +49,7 @@ defmodule EEVM.Interpreter.Instructions.GasRefundTest do
     initial_execution_gas = tx.gas_limit - IntrinsicGas.calculate(tx, HardforkConfig.new(:cancun))
 
     prague_result =
-      EEVM.execute(<<0x60, 0x01, 0x50, 0x00>>,
+      EEVM.Interpreter.run(<<0x60, 0x01, 0x50, 0x00>>,
         gas: initial_execution_gas,
         tx: tx,
         hardfork: :prague,
@@ -57,7 +57,7 @@ defmodule EEVM.Interpreter.Instructions.GasRefundTest do
       )
 
     cancun_result =
-      EEVM.execute(<<0x60, 0x01, 0x50, 0x00>>,
+      EEVM.Interpreter.run(<<0x60, 0x01, 0x50, 0x00>>,
         gas: initial_execution_gas,
         tx: tx,
         hardfork: :cancun,
@@ -80,7 +80,7 @@ defmodule EEVM.Interpreter.Instructions.GasRefundTest do
     tx = Transaction.new(gas_limit: 30_000, to: 0xCAFE, data: :binary.copy(<<0xFF>>, 100))
 
     result =
-      EEVM.execute(<<0x60, 0x00, 0x60, 0x00, 0xFD>>,
+      EEVM.Interpreter.run(<<0x60, 0x00, 0x60, 0x00, 0xFD>>,
         gas: tx.gas_limit - IntrinsicGas.calculate(tx, HardforkConfig.new(:prague)),
         tx: tx,
         hardfork: :prague
@@ -91,7 +91,7 @@ defmodule EEVM.Interpreter.Instructions.GasRefundTest do
   end
 
   test "top-level revert resets refund to 0" do
-    result = EEVM.execute(<<0x60, 0x00, 0x60, 0x00, 0xFD>>, refund: 25)
+    result = EEVM.Interpreter.run(<<0x60, 0x00, 0x60, 0x00, 0xFD>>, refund: 25)
 
     assert result.status == :reverted
     assert result.frame.refund == 0

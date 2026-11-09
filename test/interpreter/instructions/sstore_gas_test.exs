@@ -3,16 +3,16 @@ defmodule EEVM.Interpreter.Instructions.SstoreGasTest do
 
   alias EEVM.Context.Contract
   alias EEVM.Database.InMemory
-  alias EEVM.{Storage, Tracer}
+  alias EEVM.Tracer
 
   describe "SSTORE gas schedule (EIP-2200 + EIP-3529)" do
     test "no-op SSTORE (current == new) costs 100 gas on warm slot" do
       code = <<0x60, 0x07, 0x60, 0x00, 0x55, 0x00>>
 
       result =
-        EEVM.execute(code,
+        EEVM.Interpreter.run(code,
           gas: 10_000,
-          storage: Storage.new(%{0 => 7}),
+          db: InMemory.new(storage: %{0 => %{0 => 7}}),
           accessed_storage_keys: MapSet.new([{0, 0}])
         )
 
@@ -24,7 +24,7 @@ defmodule EEVM.Interpreter.Instructions.SstoreGasTest do
       code = <<0x60, 0x01, 0x60, 0x00, 0x55, 0x00>>
 
       result =
-        EEVM.execute(code,
+        EEVM.Interpreter.run(code,
           gas: 30_000,
           accessed_storage_keys: MapSet.new([{0, 0}])
         )
@@ -37,9 +37,9 @@ defmodule EEVM.Interpreter.Instructions.SstoreGasTest do
       code = <<0x60, 0x09, 0x60, 0x00, 0x55, 0x00>>
 
       result =
-        EEVM.execute(code,
+        EEVM.Interpreter.run(code,
           gas: 10_000,
-          storage: Storage.new(%{0 => 7}),
+          db: InMemory.new(storage: %{0 => %{0 => 7}}),
           accessed_storage_keys: MapSet.new([{0, 0}])
         )
 
@@ -52,9 +52,9 @@ defmodule EEVM.Interpreter.Instructions.SstoreGasTest do
       initial_gas = 10_000
 
       result =
-        EEVM.execute(code,
+        EEVM.Interpreter.run(code,
           gas: initial_gas,
-          storage: Storage.new(%{0 => 7}),
+          db: InMemory.new(storage: %{0 => %{0 => 7}}),
           accessed_storage_keys: MapSet.new([{0, 0}])
         )
 
@@ -71,9 +71,9 @@ defmodule EEVM.Interpreter.Instructions.SstoreGasTest do
           <<0x60, 0x09, 0x60, 0x00, 0x55, 0x00>>
 
       result =
-        EEVM.execute(code,
+        EEVM.Interpreter.run(code,
           gas: 20_000,
-          storage: Storage.new(%{0 => 5})
+          db: InMemory.new(storage: %{0 => %{0 => 5}})
         )
 
       assert result.frame.gas == 20_000 - (3 + 3 + 2_100 + 2_900) - (3 + 3 + 100)
@@ -85,9 +85,9 @@ defmodule EEVM.Interpreter.Instructions.SstoreGasTest do
       initial_gas = 10_000
 
       result =
-        EEVM.execute(code,
+        EEVM.Interpreter.run(code,
           gas: initial_gas,
-          storage: Storage.new(%{0 => 7}),
+          db: InMemory.new(storage: %{0 => %{0 => 7}}),
           original_storage: %{{0, 0} => 5},
           accessed_storage_keys: MapSet.new([{0, 0}])
         )
@@ -104,9 +104,9 @@ defmodule EEVM.Interpreter.Instructions.SstoreGasTest do
       initial_gas = 30_000
 
       result =
-        EEVM.execute(code,
+        EEVM.Interpreter.run(code,
           gas: initial_gas,
-          storage: Storage.new(%{0 => 7}),
+          db: InMemory.new(storage: %{0 => %{0 => 7}}),
           original_storage: %{{0, 0} => 0},
           accessed_storage_keys: MapSet.new([{0, 0}])
         )
@@ -121,7 +121,8 @@ defmodule EEVM.Interpreter.Instructions.SstoreGasTest do
     test "cold slot access adds 2_100 surcharge" do
       code = <<0x60, 0x07, 0x60, 0x00, 0x55, 0x00>>
 
-      result = EEVM.execute(code, gas: 10_000, storage: Storage.new(%{0 => 7}))
+      result =
+        EEVM.Interpreter.run(code, gas: 10_000, db: InMemory.new(storage: %{0 => %{0 => 7}}))
 
       assert result.frame.gas == 10_000 - 3 - 3 - 2_100 - 100
       assert result.frame.refund == 0
@@ -132,7 +133,8 @@ defmodule EEVM.Interpreter.Instructions.SstoreGasTest do
         <<0x60, 0x07, 0x60, 0x00, 0x55>> <>
           <<0x60, 0x07, 0x60, 0x00, 0x55, 0x00>>
 
-      result = EEVM.execute(code, gas: 10_000, storage: Storage.new(%{0 => 7}))
+      result =
+        EEVM.Interpreter.run(code, gas: 10_000, db: InMemory.new(storage: %{0 => %{0 => 7}}))
 
       assert result.frame.gas == 10_000 - (3 + 3 + 2_100 + 100) - (3 + 3 + 100)
       assert result.frame.refund == 0
@@ -202,7 +204,14 @@ defmodule EEVM.Interpreter.Instructions.SstoreGasTest do
     # minus the two pushes. Refunds are not involved (no slot is cleared).
     defp sstore_gas(value, fork, gas \\ 100_000) do
       code = <<0x60, value, 0x60, 0x00, 0x55, 0x00>>
-      result = EEVM.execute(code, gas: gas, hardfork: fork, storage: Storage.new(%{0 => 7}))
+
+      result =
+        EEVM.Interpreter.run(code,
+          gas: gas,
+          hardfork: fork,
+          db: InMemory.new(storage: %{0 => %{0 => 7}})
+        )
+
       {result.status, gas - result.frame.gas - 6}
     end
 

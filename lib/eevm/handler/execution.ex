@@ -84,7 +84,7 @@ defmodule EEVM.Handler.Execution do
       )
 
     final_state =
-      EEVM.execute(code,
+      Interpreter.run(code,
         gas: gas,
         db: db_after_value,
         tx: tx,
