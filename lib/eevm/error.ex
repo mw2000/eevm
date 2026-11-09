@@ -43,6 +43,10 @@ defmodule EEVM.Error do
 
   | Error | Meaning |
   |-------|---------|
+  | `:tx_type_not_supported` | Set-code (type 4) transaction before Prague (EIP-7702) |
+  | `:set_code_tx_no_creation` | Set-code transaction has no `to` address (EIP-7702) |
+  | `:empty_authorization_list` | Set-code transaction carries no authorizations (EIP-7702) |
+  | `:invalid_authorization` | An authorization field is out of range, such as a nonce of 2^64 or more (EIP-7702) |
   | `:intrinsic_gas_too_low` | `gas_limit` is below the intrinsic gas (or, from Prague, the EIP-7623 calldata floor) |
   | `:gas_limit_exceeds_cap` | `gas_limit` is above 2^24 (EIP-7825, from Osaka) |
   | `:gas_limit_exceeds_block` | `gas_limit` is above the block gas limit |
@@ -51,7 +55,7 @@ defmodule EEVM.Error do
   | `:priority_fee_above_max_fee` | `max_priority_fee_per_gas` exceeds `max_fee_per_gas` (EIP-1559) |
   | `:max_fee_below_basefee` | `max_fee_per_gas` is below the block base fee (EIP-1559) |
   | `:insufficient_balance` | Balance can't cover `gas_limit * max price + blob gas * max_fee_per_blob_gas + value` |
-  | `:sender_not_eoa` | Sender has code (EIP-3607) |
+  | `:sender_not_eoa` | Sender has code other than a delegation designator (EIP-3607, EIP-7702) |
   | `:blob_tx_no_creation` | Blob transaction has no `to` address (EIP-4844) |
   | `:no_blob_data` | Blob transaction carries no blob hashes (EIP-4844) |
   | `:blob_fee_too_low` | `max_fee_per_blob_gas` is below the block blob base fee (EIP-4844) |
@@ -111,7 +115,11 @@ defmodule EEVM.Error do
           | :not_implemented
 
   @type transaction_validation_error ::
-          :intrinsic_gas_too_low
+          :tx_type_not_supported
+          | :set_code_tx_no_creation
+          | :empty_authorization_list
+          | :invalid_authorization
+          | :intrinsic_gas_too_low
           | :gas_limit_exceeds_cap
           | :gas_limit_exceeds_block
           | :nonce_too_low

@@ -4,9 +4,10 @@ defmodule EEVM.TestSupport.TxExecutor do
   runners.
 
   Performs the steps a real client folds into block processing:
-  validate → burn the EIP-4844 blob gas fee and bump nonce → run the
-  interpreter top-level → settle gas fees (sender debit, coinbase credit).
-  Each runner wraps the result for its own post-state assertions.
+  validate → burn the EIP-4844 blob gas fee and bump nonce → apply EIP-7702
+  authorizations → run the interpreter top-level → settle gas fees (sender
+  debit, coinbase credit). Each runner wraps the result for its own
+  post-state assertions.
   """
 
   alias EEVM.{Config, Database}
@@ -29,9 +30,13 @@ defmodule EEVM.TestSupport.TxExecutor do
          {:ok, db_after_blob_fee} <-
            debit_balance(db, tx.origin, PreExecution.blob_gas_fee(tx, block)) do
       db_after_nonce = Database.increment_nonce(db_after_blob_fee, tx.origin)
-      machine = run_interpreter(tx, db_after_nonce, block, config)
+
+      {db_authorized, authorization} =
+        PreExecution.apply_authorizations(db_after_nonce, tx, block.chain_id)
+
+      machine = run_interpreter(tx, db_authorized, block, config, authorization)
       failed? = failed?(machine.status)
-      settled = if failed?, do: db_after_nonce, else: machine.db
+      settled = if failed?, do: db_authorized, else: machine.db
       gas_used = tx.gas_limit - machine.frame.gas
 
       with {:ok, finalized_db} <- apply_fees(settled, tx, block, gas_used) do
@@ -51,11 +56,15 @@ defmodule EEVM.TestSupport.TxExecutor do
          %Transaction{} = tx,
          %Database{} = db,
          %Block{} = block,
-         %Config{} = config
+         %Config{} = config,
+         authorization
        ) do
     intrinsic_gas = IntrinsicGas.calculate(tx)
     execution_gas = max(tx.gas_limit - intrinsic_gas, 0)
-    {machine, _new_address} = Execution.run_top_level(tx, db, block, config, execution_gas)
+
+    {machine, _new_address} =
+      Execution.run_top_level(tx, db, block, config, execution_gas, authorization)
+
     machine
   end
 
@@ -69,14 +78,14 @@ defmodule EEVM.TestSupport.TxExecutor do
   end
 
   defp effective_gas_price(%Transaction{type: type} = tx, %Block{} = block)
-       when type in [:eip1559, :eip4844] do
+       when type in [:eip1559, :eip4844, :eip7702] do
     min(tx.max_fee_per_gas, block.basefee + tx.max_priority_fee_per_gas)
   end
 
   defp effective_gas_price(%Transaction{} = tx, _block), do: tx.gasprice
 
   defp miner_reward_per_gas(%Transaction{type: type} = tx, %Block{} = block)
-       when type in [:eip1559, :eip4844] do
+       when type in [:eip1559, :eip4844, :eip7702] do
     max(effective_gas_price(tx, block) - block.basefee, 0)
   end
 

@@ -208,6 +208,7 @@ defmodule EEVM.TestSupport.BlockchainTestRunner do
       max_fee_per_blob_gas: tx.max_fee_per_blob_gas,
       access_list: tx.access_list,
       blob_hashes: tx.blob_hashes,
+      authorization_list: tx.authorization_list,
       type: tx.type
     )
   end

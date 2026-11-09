@@ -6,7 +6,8 @@ defmodule EEVM.Handler do
   sibling module so the layering stays inspectable:
 
   - `EEVM.Handler.Validation`    — decode → recover sender → validate
-  - `EEVM.Handler.PreExecution`  — charge upfront → intrinsic gas → bump nonce
+  - `EEVM.Handler.PreExecution`  — charge upfront → intrinsic gas → bump nonce →
+    apply EIP-7702 authorizations
   - `EEVM.Handler.Execution`     — top-level CALL or CREATE through the EVM
   - `EEVM.Handler.PostExecution` — settle refund, credit coinbase, build result
 
@@ -18,10 +19,8 @@ defmodule EEVM.Handler do
   alias EEVM.{Config, Database, TransactionResult}
   alias EEVM.Context.Block
   alias EEVM.Handler.{Execution, PostExecution, PreExecution, Validation}
-  alias EEVM.Transaction.{AccessList, Blob, FeeMarket, Legacy}
 
-  @type wire_tx ::
-          Legacy.t() | AccessList.t() | FeeMarket.t() | Blob.t() | binary()
+  @type wire_tx :: Validation.wire_tx()
 
   @type opts :: [
           hardfork: EEVM.HardforkConfig.spec_id(),
@@ -39,7 +38,8 @@ defmodule EEVM.Handler do
 
   ## Options
 
-  - `:chain_id` — chain id used when recovering the sender (default: `1`).
+  - `:chain_id` — chain id used when recovering the sender and checking
+    EIP-7702 authorization tuples (default: `1`).
   - `:hardfork` — hardfork spec id governing gas rules and EIP activation
     (default: `:cancun`).
   - `:config` — fully assembled `EEVM.Config` to use instead of deriving one
@@ -66,15 +66,25 @@ defmodule EEVM.Handler do
          {:ok, db_after_upfront} <- PreExecution.charge_upfront(db, tx_ctx, block),
          {:ok, db_nonce_bumped, execution_gas} <-
            PreExecution.prepare_execution(db_after_upfront, tx_ctx) do
+      {db_authorized, authorization} =
+        PreExecution.apply_authorizations(db_nonce_bumped, tx_ctx, chain_id)
+
       {final_state, contract_address} =
-        Execution.run_top_level(tx_ctx, db_nonce_bumped, block, config, execution_gas)
+        Execution.run_top_level(
+          tx_ctx,
+          db_authorized,
+          block,
+          config,
+          execution_gas,
+          authorization
+        )
 
       PostExecution.finalize(
         final_state,
         contract_address,
         tx_ctx,
         sender_bytes,
-        db_nonce_bumped,
+        db_authorized,
         block
       )
     end

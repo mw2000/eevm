@@ -2,9 +2,9 @@ defmodule EEVM.HandlerTest do
   use ExUnit.Case, async: true
 
   alias EEVM.Context.Block
-  alias EEVM.{Database, Handler, TransactionResult}
+  alias EEVM.{Database, Delegation, Handler, TransactionResult}
   alias EEVM.Database.InMemory
-  alias EEVM.Transaction.{Blob, FeeMarket, Legacy, Signer}
+  alias EEVM.Transaction.{Authorization, Blob, Envelope, FeeMarket, Legacy, SetCode, Signer}
 
   doctest EEVM.Handler.PreExecution
 
@@ -46,6 +46,10 @@ defmodule EEVM.HandlerTest do
   @chain_id 1
   @coinbase 0xC0F0
   @recipient 0xB0B
+
+  @authority_key :crypto.hash(:sha256, "eip-7702 authority")
+  @delegate 0xDE1E
+  @secp256k1n 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141
 
   describe "execute/4 — legacy value transfer" do
     test "moves value, charges gas, bumps nonce" do
@@ -262,9 +266,141 @@ defmodule EEVM.HandlerTest do
     end
   end
 
+  describe "execute/4 — EIP-7702 set-code" do
+    test "delegates the authority and runs the delegate's code in its context" do
+      authority = authority_address()
+      # ADDRESS PUSH1 0 SSTORE STOP
+      db = db_with_sender() |> Database.put_code(@delegate, <<0x30, 0x60, 0x00, 0x55, 0x00>>)
+
+      assert {:ok, result} = run_prague(set_code_tx([authorize(@delegate, 0)]), db)
+
+      assert result.status == :success
+      post = result.post_state_db
+      assert Database.get_code(post, authority) == Delegation.designator(@delegate)
+      assert Database.get_nonce(post, authority) == 1
+      assert Database.storage_load(post, authority, 0) == authority
+      assert Database.storage_load(post, @delegate, 0) == 0
+      # 21_000 base + 25_000 authorization + ADDRESS, PUSH1, cold SSTORE 0 -> nonzero.
+      # The authority did not exist before, so nothing is refunded.
+      assert result.gas_used == 46_000 + 2 + 3 + 22_100
+    end
+
+    test "refunds 12,500 per existing authority, capped at a fifth of all gas used" do
+      db = db_with_sender() |> Database.put_code(@delegate, <<0x00>>)
+      tx = set_code_tx([authorize(@delegate, 0)])
+
+      assert {:ok, %{gas_used: 46_000}} = run_prague(tx, db)
+
+      existing = Database.set_balance(db, authority_address(), 1)
+      # The cap counts intrinsic gas: min(12_500, 46_000 / 5) = 9_200.
+      assert {:ok, %{gas_used: 36_800}} = run_prague(tx, existing)
+    end
+
+    test "skips invalid tuples without failing the transaction" do
+      authority = authority_address()
+      valid = authorize(@delegate, 0, 0)
+
+      tuples = [
+        authorize(0xBAD, 0, 5),
+        authorize(0xBAD, 1),
+        %{valid | s: @secp256k1n - valid.s, y_parity: 1 - valid.y_parity},
+        valid,
+        # Replays the nonce the previous tuple consumed.
+        authorize(0xBAD, 0)
+      ]
+
+      assert {:ok, result} = run_prague(set_code_tx(tuples), db_with_sender())
+
+      assert result.status == :success
+      assert result.gas_used == 21_000 + 5 * 25_000
+
+      assert Database.get_code(result.post_state_db, authority) ==
+               Delegation.designator(@delegate)
+
+      assert Database.get_nonce(result.post_state_db, authority) == 1
+    end
+
+    test "keeps delegations when execution reverts, and clears them for the zero address" do
+      authority = authority_address()
+      # PUSH1 0 PUSH1 0 REVERT
+      db = db_with_sender() |> Database.put_code(@delegate, <<0x60, 0x00, 0x60, 0x00, 0xFD>>)
+
+      assert {:ok, reverted} = run_prague(set_code_tx([authorize(@delegate, 0)]), db)
+      assert reverted.status == :reverted
+
+      assert Database.get_code(reverted.post_state_db, authority) ==
+               Delegation.designator(@delegate)
+
+      clear = set_code_tx([authorize(0, 1)], nonce: 1)
+      assert {:ok, cleared} = run_prague(clear, reverted.post_state_db)
+      assert Database.get_code(cleared.post_state_db, authority) == <<>>
+      assert Database.get_nonce(cleared.post_state_db, authority) == 2
+    end
+
+    test "decodes and executes wire bytes, but not before Prague" do
+      bytes = [authorize(@delegate, 0)] |> set_code_tx() |> Envelope.encode()
+
+      assert {:ok, %{status: :success}} = run_prague(bytes, db_with_sender())
+      assert {:error, :tx_type_not_supported} = run(bytes, db_with_sender())
+    end
+  end
+
   defp run(tx, db, block \\ simple_block()) do
     Handler.execute(tx, block, db, chain_id: @chain_id)
   end
+
+  defp run_prague(tx, db) do
+    Handler.execute(tx, simple_block(), db, chain_id: @chain_id, hardfork: :prague)
+  end
+
+  defp set_code_tx(authorizations, opts \\ []) do
+    tx = %SetCode{
+      chain_id: @chain_id,
+      nonce: Keyword.get(opts, :nonce, 0),
+      max_priority_fee_per_gas: 0,
+      max_fee_per_gas: 1,
+      gas_limit: 500_000,
+      to: <<authority_address()::unsigned-big-160>>,
+      value: 0,
+      data: <<>>,
+      access_list: [],
+      authorization_list: authorizations,
+      y_parity: 0,
+      r: 0,
+      s: 0
+    }
+
+    {y_parity, r, s} = sign(Signer.signing_hash(tx, @chain_id), @priv_key)
+    %{tx | y_parity: y_parity, r: r, s: s}
+  end
+
+  defp authorize(address, nonce, chain_id \\ @chain_id) do
+    message =
+      ExRLP.encode([encode_uint(chain_id), <<address::unsigned-big-160>>, encode_uint(nonce)])
+
+    {y_parity, r, s} = sign(ExKeccak.hash_256(<<0x05>> <> message), @authority_key)
+
+    %Authorization{
+      chain_id: chain_id,
+      address: <<address::unsigned-big-160>>,
+      nonce: nonce,
+      y_parity: y_parity,
+      r: r,
+      s: s
+    }
+  end
+
+  defp encode_uint(0), do: <<>>
+  defp encode_uint(value), do: :binary.encode_unsigned(value)
+
+  defp sign(hash, key) do
+    {:ok, {<<r::unsigned-big-256, s::unsigned-big-256>>, recovery_id}} =
+      ExSecp256k1.sign_compact(hash, key)
+
+    {recovery_id, r, s}
+  end
+
+  defp authority_address, do: address_of(@authority_key)
 
   defp legacy_value_transfer(opts) do
     sign_legacy(
@@ -331,8 +467,10 @@ defmodule EEVM.HandlerTest do
     %{tx | y_parity: recovery_id, r: r, s: s}
   end
 
-  defp sender_address do
-    {:ok, <<4, key::binary-size(64)>>} = ExSecp256k1.create_public_key(@priv_key)
+  defp sender_address, do: address_of(@priv_key)
+
+  defp address_of(private_key) do
+    {:ok, <<4, key::binary-size(64)>>} = ExSecp256k1.create_public_key(private_key)
     <<_::binary-size(12), address::binary-size(20)>> = ExKeccak.hash_256(key)
     :binary.decode_unsigned(address)
   end

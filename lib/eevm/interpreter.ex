@@ -37,6 +37,8 @@ defmodule EEVM.Interpreter do
   - `:calldata` — ABI-encoded input data for the call
   - `:caller` — address of the account initiating this call
   - `:origin` — address of the original transaction signer
+  - `:authorization_refund` — EIP-7702 refund earned before execution; it is
+    added to the refund counter even when execution fails
 
   Returns the final `MachineState` after execution completes.
   """
@@ -51,7 +53,7 @@ defmodule EEVM.Interpreter do
       |> run_loop()
       |> cleanup_touched_empty_accounts()
 
-    apply_refund(final_state, initial_gas)
+    apply_refund(final_state, initial_gas, Keyword.get(opts, :authorization_refund, 0))
   end
 
   @doc """
@@ -118,10 +120,11 @@ defmodule EEVM.Interpreter do
   def run_loop(state), do: state
 
   # Settles the transaction's refund counter (Prague `process_transaction`):
-  # the execution refund counts only when the call succeeded. The cap applies
-  # to total gas used, including intrinsic gas, when a transaction gas limit
-  # is known. The EIP-7623 floor applies whether or not execution succeeded.
-  defp apply_refund(%MachineState{status: status} = state, initial_gas) do
+  # the EIP-7702 authorization refund always counts, the execution refund only
+  # when the call succeeded. The cap applies to total gas used, including
+  # intrinsic gas, when a transaction gas limit is known. The EIP-7623 floor
+  # applies whether or not execution succeeded.
+  defp apply_refund(%MachineState{status: status} = state, initial_gas, authorization_refund) do
     tx_gas_limit = state.env.tx.gas_limit
     gas_used = if(tx_gas_limit > 0, do: tx_gas_limit, else: initial_gas) - state.frame.gas
     execution_refund = if status == :stopped, do: state.frame.refund, else: 0
@@ -131,7 +134,8 @@ defmodule EEVM.Interpreter do
     refund_cap_divisor =
       if HardforkConfig.enabled?(state.env.config.hardfork, :eip_3529), do: 5, else: 2
 
-    effective_refund = min(execution_refund, div(gas_used, refund_cap_divisor))
+    effective_refund =
+      min(authorization_refund + execution_refund, div(gas_used, refund_cap_divisor))
 
     refunded_gas = state.frame.gas + effective_refund
 

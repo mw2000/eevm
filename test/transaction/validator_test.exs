@@ -118,6 +118,39 @@ defmodule EEVM.Transaction.ValidatorTest do
       assert {:error, :sender_not_eoa} = Validator.validate(tx, db, valid_block())
     end
 
+    test "accepts a sender whose code is an EIP-7702 delegation designator" do
+      db = db_for_sender(code: EEVM.Delegation.designator(0xBEEF))
+
+      assert :ok = Validator.validate(valid_tx(), db, valid_block())
+    end
+
+    test "rejects set-code transactions before Prague and malformed ones from Prague" do
+      auth = %{chain_id: 1, address: 0xBEEF, nonce: 0, y_parity: 0, r: 1, s: 1}
+      tx = valid_tx(type: :eip7702, gas_limit: 100_000, authorization_list: [auth])
+      db = db_for_sender(balance: 1_000_000)
+      prague = HardforkConfig.new(:prague)
+
+      assert :ok = Validator.validate(tx, db, valid_block(), prague)
+
+      assert {:error, :tx_type_not_supported} =
+               Validator.validate(tx, db, valid_block(), HardforkConfig.new(:cancun))
+
+      assert {:error, :empty_authorization_list} =
+               Validator.validate(%{tx | authorization_list: []}, db, valid_block(), prague)
+
+      assert {:error, :set_code_tx_no_creation} =
+               Validator.validate(%{tx | to: nil}, db, valid_block(), prague)
+
+      # An authorization nonce must fit in 64 bits for the tx to decode at all.
+      assert {:error, :invalid_authorization} =
+               Validator.validate(
+                 %{tx | authorization_list: [%{auth | nonce: 2 ** 64}]},
+                 db,
+                 valid_block(),
+                 prague
+               )
+    end
+
     test "returns blob tx no creation when eip4844 tx targets creation" do
       tx =
         valid_tx(

@@ -15,9 +15,12 @@ defmodule EEVM.Handler.Execution do
 
   Returns `{final_state, contract_address}` where `contract_address` is the
   newly-deployed address (CREATE path) or `nil` (call path).
+
+  From Prague, a call to an account whose code is an EIP-7702 delegation
+  designator runs the delegate's code instead, with the delegate pre-warmed.
   """
 
-  alias EEVM.{Config, Database, HardforkConfig}
+  alias EEVM.{Config, Database, Delegation, HardforkConfig}
   alias EEVM.Context.{Block, Contract, Transaction}
   alias EEVM.Handler.PreExecution
   alias EEVM.Interpreter.Instructions.System.Creation
@@ -26,19 +29,34 @@ defmodule EEVM.Handler.Execution do
   @max_code_size 24_576
   @code_deposit_gas_per_byte 200
 
+  @no_authorizations %{authorities: MapSet.new(), refund: 0}
+
   @doc """
   Runs a validated transaction's EVM execution with `execution_gas` against
-  `db`, in which the sender's nonce is already bumped.
+  `db`, in which the sender's nonce is already bumped and any EIP-7702
+  authorizations are applied.
+
+  `authorization` is the outcome of `PreExecution.apply_authorizations/3`:
+  its authorities start warm and its refund is added to the transaction's
+  refund counter even if execution fails.
 
   Returns the final machine state and the deployed contract address, or `nil`
   for a message call or a failed deployment.
   """
-  @spec run_top_level(Transaction.t(), Database.t(), Block.t(), Config.t(), non_neg_integer()) ::
-          {MachineState.t(), non_neg_integer() | nil}
-  def run_top_level(%Transaction{to: to} = tx, db, block, config, execution_gas)
+  @spec run_top_level(
+          Transaction.t(),
+          Database.t(),
+          Block.t(),
+          Config.t(),
+          non_neg_integer(),
+          PreExecution.authorization_outcome()
+        ) :: {MachineState.t(), non_neg_integer() | nil}
+  def run_top_level(tx, db, block, config, execution_gas, authorization \\ @no_authorizations)
+
+  def run_top_level(%Transaction{to: to} = tx, db, block, config, execution_gas, authorization)
       when is_integer(to) do
     db_after_value = transfer_value(db, tx.origin, to, tx.value)
-    code = Database.get_code(db_after_value, to)
+    {code, delegate} = resolve_code(db_after_value, to, config)
 
     contract_ctx =
       Contract.new(
@@ -57,14 +75,18 @@ defmodule EEVM.Handler.Execution do
         contract: contract_ctx,
         config: config,
         accessed_addresses:
-          PreExecution.initial_accessed_addresses(tx, config, contract_ctx, block),
-        accessed_storage_keys: PreExecution.initial_accessed_storage_keys(tx)
+          tx
+          |> PreExecution.initial_accessed_addresses(config, contract_ctx, block)
+          |> MapSet.union(authorization.authorities)
+          |> MapSet.union(MapSet.new(List.wrap(delegate))),
+        accessed_storage_keys: PreExecution.initial_accessed_storage_keys(tx),
+        authorization_refund: authorization.refund
       )
 
     {final_state, nil}
   end
 
-  def run_top_level(%Transaction{to: nil} = tx, db, block, config, execution_gas) do
+  def run_top_level(%Transaction{to: nil} = tx, db, block, config, execution_gas, _authorization) do
     creator = tx.origin
     pre_nonce = max(Database.get_nonce(db, creator) - 1, 0)
     new_address = derive_create_address(creator, pre_nonce)
@@ -117,6 +139,17 @@ defmodule EEVM.Handler.Execution do
     case deploy_runtime_code(final_state, new_address) do
       {:ok, deployed_state} -> {deployed_state, new_address}
       {:error, deployed_state} -> {deployed_state, nil}
+    end
+  end
+
+  defp resolve_code(db, address, config) do
+    code = Database.get_code(db, address)
+
+    with true <- HardforkConfig.enabled?(config.hardfork, :eip_7702),
+         {:ok, delegate} <- Delegation.delegated_address(code) do
+      {Database.get_code(db, delegate), delegate}
+    else
+      _ -> {code, nil}
     end
   end
 

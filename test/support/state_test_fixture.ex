@@ -69,7 +69,8 @@ defmodule EEVM.TestSupport.StateTestFixture do
             max_fee_per_blob_gas: non_neg_integer(),
             access_list: [{non_neg_integer(), [non_neg_integer()]}],
             blob_hashes: [non_neg_integer()],
-            type: :legacy | :eip2930 | :eip1559 | :eip4844,
+            authorization_list: [Transaction.authorization()],
+            type: :legacy | :eip2930 | :eip1559 | :eip4844 | :eip7702,
             data: [binary()],
             gas_limit: [non_neg_integer()],
             value: [non_neg_integer()]
@@ -86,6 +87,7 @@ defmodule EEVM.TestSupport.StateTestFixture do
       :access_list,
       :blob_hashes,
       :type,
+      authorization_list: [],
       data: [],
       gas_limit: [],
       value: []
@@ -159,7 +161,7 @@ defmodule EEVM.TestSupport.StateTestFixture do
     origin = secret_key_to_address(tx_template.secret_key)
 
     base_gas_price =
-      if tx_template.type in [:eip1559, :eip4844], do: 0, else: tx_template.gas_price
+      if tx_template.type in [:eip1559, :eip4844, :eip7702], do: 0, else: tx_template.gas_price
 
     Transaction.new(
       origin: origin,
@@ -173,6 +175,7 @@ defmodule EEVM.TestSupport.StateTestFixture do
       max_priority_fee_per_gas: tx_template.max_priority_fee_per_gas,
       access_list: tx_template.access_list,
       blob_hashes: tx_template.blob_hashes,
+      authorization_list: tx_template.authorization_list,
       max_fee_per_blob_gas: tx_template.max_fee_per_blob_gas,
       type: tx_type_for_hardfork(tx_template.type, hardfork)
     )
@@ -233,6 +236,7 @@ defmodule EEVM.TestSupport.StateTestFixture do
       max_fee_per_blob_gas: parse_quantity!(Map.get(tx, "maxFeePerBlobGas", "0x0")),
       access_list: parse_access_list(Map.get(tx, "accessLists", [])),
       blob_hashes: parse_blob_hashes(Map.get(tx, "blobVersionedHashes", [])),
+      authorization_list: parse_authorization_list(Map.get(tx, "authorizationList", [])),
       type: parse_tx_type(Map.get(tx, "type", infer_tx_type(tx))),
       data: parse_binary_list(Map.get(tx, "data", ["0x"])),
       gas_limit: parse_quantity_list(Map.get(tx, "gasLimit", ["0x0"])),
@@ -284,8 +288,22 @@ defmodule EEVM.TestSupport.StateTestFixture do
 
   defp parse_blob_hashes(values) when is_list(values), do: Enum.map(values, &parse_quantity!/1)
 
+  defp parse_authorization_list(entries) when is_list(entries) do
+    Enum.map(entries, fn entry ->
+      %{
+        chain_id: parse_quantity!(Map.fetch!(entry, "chainId")),
+        address: parse_address!(Map.fetch!(entry, "address")),
+        nonce: parse_quantity!(Map.fetch!(entry, "nonce")),
+        y_parity: parse_quantity!(Map.get(entry, "yParity", Map.get(entry, "v"))),
+        r: parse_quantity!(Map.fetch!(entry, "r")),
+        s: parse_quantity!(Map.fetch!(entry, "s"))
+      }
+    end)
+  end
+
   # execution-spec-tests fixtures omit "type"; like geth's runner, infer it
   # from the fee fields so fee-market transactions are charged correctly.
+  defp infer_tx_type(%{"authorizationList" => _}), do: "0x4"
   defp infer_tx_type(%{"blobVersionedHashes" => _}), do: "0x3"
   defp infer_tx_type(%{"maxFeePerGas" => _}), do: "0x2"
   defp infer_tx_type(_tx), do: nil
@@ -295,6 +313,7 @@ defmodule EEVM.TestSupport.StateTestFixture do
   defp parse_tx_type("0x1"), do: :eip2930
   defp parse_tx_type("0x2"), do: :eip1559
   defp parse_tx_type("0x3"), do: :eip4844
+  defp parse_tx_type("0x4"), do: :eip7702
   defp parse_tx_type(_), do: :legacy
 
   defp tx_type_for_hardfork(type, _hardfork), do: type

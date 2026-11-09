@@ -109,6 +109,8 @@ defmodule EEVM.HardforkConfig do
     eip_2935: :prague,
     # EIP-7691 (Prague): blob schedule raised to target 6 / max 9 blobs per block
     eip_7691: :prague,
+    # EIP-7702 (Prague): set-code transactions and delegation designators
+    eip_7702: :prague,
     # EIP-7825 (Osaka): per-transaction gas limit cap of 2^24
     eip_7825: :osaka,
     # EIP-7883 (Osaka): ModExp precompile gas cost increase

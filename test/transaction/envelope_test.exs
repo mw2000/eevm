@@ -2,7 +2,20 @@ defmodule EEVM.Transaction.EnvelopeTest do
   use ExUnit.Case, async: true
 
   alias EEVM.Transaction
-  alias EEVM.Transaction.{AccessList, Blob, Envelope, FeeMarket, Legacy}
+  alias EEVM.Transaction.{AccessList, Authorization, Blob, Envelope, FeeMarket, Legacy, SetCode}
+  alias EEVM.Transaction.Signer
+
+  # Self-sponsored set-code transaction from execution-spec-tests v5.4.0
+  # (prague/eip7702_set_code_tx/test_self_sponsored_set_code, invalid-tx_value_0).
+  @set_code_tx_bytes Base.decode16!(
+                       "04F8C1018080078398968094257182563FD0AA86C431D17127F623F0E69949C38080C0" <>
+                         "F85CF85A80949EACADDA90600E3AA05FFC43BF7C0B0D721C5C660101A0CB3E49FD48A0" <>
+                         "6945E76F5F1E06FC98FC8B4F8EA820C7509891C8A3713D9EBA67A032A7F78AD5588799" <>
+                         "858DDFFDF8304AD4CF435D0176F385417C7F14694532CC6A80A09E7711A558733E363A" <>
+                         "18A5B79CB061B256E3F3661DB0E08A5EB80C583DE4F3E8A038F50EF2FC28E35DCB5B98" <>
+                         "0911FCFEA096BC1624F42D03304AA54848FCCFE9FE"
+                     )
+  @set_code_signer Base.decode16!("257182563FD0AA86C431D17127F623F0E69949C3")
 
   describe "encode/1 and decode/1 roundtrips" do
     test "legacy transaction" do
@@ -79,6 +92,36 @@ defmodule EEVM.Transaction.EnvelopeTest do
       }
 
       assert {:ok, ^tx} = tx |> Envelope.encode() |> Envelope.decode()
+    end
+  end
+
+  describe "type 4 set-code transaction" do
+    test "decodes an EEST vector, re-encodes it byte for byte, and recovers both signers" do
+      assert {:ok, %SetCode{} = tx} = Envelope.decode(@set_code_tx_bytes)
+
+      assert %SetCode{
+               chain_id: 1,
+               nonce: 0,
+               max_fee_per_gas: 7,
+               gas_limit: 10_000_000,
+               to: @set_code_signer,
+               access_list: [],
+               authorization_list: [
+                 %Authorization{chain_id: 0, nonce: 1, y_parity: 1} = auth
+               ]
+             } = tx
+
+      assert auth.address == Base.decode16!("9EACADDA90600E3AA05FFC43BF7C0B0D721C5C66")
+      assert Envelope.encode(tx) == @set_code_tx_bytes
+      assert {:ok, @set_code_signer} = Signer.recover_sender(tx, 1)
+      assert {:ok, @set_code_signer} = Signer.recover_authority(auth)
+    end
+
+    test "rejects a contract-creation target" do
+      {:ok, tx} = Envelope.decode(@set_code_tx_bytes)
+
+      assert {:error, :invalid_fields} =
+               %{tx | to: <<>>} |> Envelope.encode() |> Envelope.decode()
     end
   end
 

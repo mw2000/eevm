@@ -4,11 +4,12 @@ defmodule EEVM.Transaction.Envelope do
   """
 
   alias EEVM.Transaction
-  alias EEVM.Transaction.{AccessList, Blob, FeeMarket, Legacy}
+  alias EEVM.Transaction.{AccessList, Authorization, Blob, FeeMarket, Legacy, SetCode}
 
   @type_access_list 0x01
   @type_fee_market 0x02
   @type_blob 0x03
+  @type_set_code 0x04
 
   @doc "Encode a transaction to its wire format (binary)."
   @spec encode(Transaction.t()) :: binary()
@@ -85,6 +86,26 @@ defmodule EEVM.Transaction.Envelope do
     <<@type_blob>> <> ExRLP.encode(payload)
   end
 
+  def encode(%SetCode{} = tx) do
+    payload = [
+      encode_integer(tx.chain_id),
+      encode_integer(tx.nonce),
+      encode_integer(tx.max_priority_fee_per_gas),
+      encode_integer(tx.max_fee_per_gas),
+      encode_integer(tx.gas_limit),
+      tx.to,
+      encode_integer(tx.value),
+      tx.data,
+      encode_access_list(tx.access_list),
+      Enum.map(tx.authorization_list, &encode_authorization/1),
+      encode_integer(tx.y_parity),
+      encode_integer(tx.r),
+      encode_integer(tx.s)
+    ]
+
+    <<@type_set_code>> <> ExRLP.encode(payload)
+  end
+
   @doc "Decode a transaction from wire format."
   @spec decode(binary()) :: {:ok, Transaction.t()} | {:error, atom()}
   def decode(<<>>), do: {:error, :empty_input}
@@ -110,6 +131,12 @@ defmodule EEVM.Transaction.Envelope do
   def decode(<<@type_blob, payload::binary>>) do
     with {:ok, fields} <- decode_rlp(payload) do
       decode_type_3(fields)
+    end
+  end
+
+  def decode(<<@type_set_code, payload::binary>>) do
+    with {:ok, fields} <- decode_rlp(payload) do
+      decode_type_4(fields)
     end
   end
 
@@ -310,6 +337,108 @@ defmodule EEVM.Transaction.Envelope do
   end
 
   defp decode_type_3(_), do: {:error, :invalid_fields}
+
+  # EIP-7702: same layout as type 2 plus `authorization_list` before the
+  # signature. `to` is mandatory because set-code transactions cannot create.
+  defp decode_type_4([
+         chain_id,
+         nonce,
+         max_priority_fee_per_gas,
+         max_fee_per_gas,
+         gas_limit,
+         to,
+         value,
+         data,
+         access_list,
+         authorization_list,
+         y_parity,
+         r,
+         s
+       ]) do
+    with {:ok, chain_id} <- decode_integer(chain_id),
+         {:ok, nonce} <- decode_integer(nonce),
+         {:ok, max_priority_fee_per_gas} <- decode_integer(max_priority_fee_per_gas),
+         {:ok, max_fee_per_gas} <- decode_integer(max_fee_per_gas),
+         {:ok, gas_limit} <- decode_integer(gas_limit),
+         :ok <- validate_address(to, allow_empty?: false),
+         {:ok, value} <- decode_integer(value),
+         true <- is_binary(data),
+         {:ok, access_list} <- decode_access_list(access_list),
+         {:ok, authorization_list} <- decode_authorization_list(authorization_list),
+         {:ok, y_parity} <- decode_y_parity(y_parity),
+         {:ok, r} <- decode_integer(r),
+         {:ok, s} <- decode_integer(s) do
+      {:ok,
+       %SetCode{
+         chain_id: chain_id,
+         nonce: nonce,
+         max_priority_fee_per_gas: max_priority_fee_per_gas,
+         max_fee_per_gas: max_fee_per_gas,
+         gas_limit: gas_limit,
+         to: to,
+         value: value,
+         data: data,
+         access_list: access_list,
+         authorization_list: authorization_list,
+         y_parity: y_parity,
+         r: r,
+         s: s
+       }}
+    else
+      false -> {:error, :invalid_fields}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp decode_type_4(_), do: {:error, :invalid_fields}
+
+  defp encode_authorization(%Authorization{} = auth) do
+    [
+      encode_integer(auth.chain_id),
+      auth.address,
+      encode_integer(auth.nonce),
+      encode_integer(auth.y_parity),
+      encode_integer(auth.r),
+      encode_integer(auth.s)
+    ]
+  end
+
+  defp decode_authorization_list(entries) when is_list(entries) do
+    entries
+    |> Enum.reduce_while({:ok, []}, fn entry, {:ok, acc} ->
+      case decode_authorization(entry) do
+        {:ok, auth} -> {:cont, {:ok, [auth | acc]}}
+        {:error, reason} -> {:halt, {:error, reason}}
+      end
+    end)
+    |> case do
+      {:ok, decoded} -> {:ok, Enum.reverse(decoded)}
+      error -> error
+    end
+  end
+
+  defp decode_authorization_list(_), do: {:error, :invalid_fields}
+
+  defp decode_authorization([chain_id, address, nonce, y_parity, r, s]) do
+    with {:ok, chain_id} <- decode_integer(chain_id),
+         :ok <- validate_address(address, allow_empty?: false),
+         {:ok, nonce} <- decode_integer(nonce),
+         {:ok, y_parity} <- decode_integer(y_parity),
+         {:ok, r} <- decode_integer(r),
+         {:ok, s} <- decode_integer(s) do
+      {:ok,
+       %Authorization{
+         chain_id: chain_id,
+         address: address,
+         nonce: nonce,
+         y_parity: y_parity,
+         r: r,
+         s: s
+       }}
+    end
+  end
+
+  defp decode_authorization(_), do: {:error, :invalid_fields}
 
   defp encode_access_list(access_list) do
     Enum.map(access_list, fn {address, slots} ->

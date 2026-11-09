@@ -6,8 +6,8 @@ defmodule EEVM.Handler.PostExecution do
     upfront. They actually owe `gas_used * effective_price`. Refund the
     difference. On a successful tx the refund lands in the EVM-side db (which
     already reflects every side effect); on revert / out-of-gas / invalid it
-    lands in the post-upfront, post-nonce-bump db (since EVM mutations are
-    dropped).
+    lands in the post-upfront, post-nonce-bump db, which also holds any
+    EIP-7702 delegations (since EVM mutations are dropped).
 
   - **Coinbase reward** — credit the block proposer
     `(effective_price - basefee) * gas_used`.
@@ -23,6 +23,13 @@ defmodule EEVM.Handler.PostExecution do
   alias EEVM.Interpreter.MachineState
   alias EEVM.TransactionResult
 
+  @doc """
+  Settle gas, credit the coinbase, and build the `EEVM.TransactionResult`.
+
+  The database argument is the state after upfront charging, the nonce
+  bump, and EIP-7702 authorizations; settlement starts from it when
+  execution failed.
+  """
   @spec finalize(
           MachineState.t(),
           non_neg_integer() | nil,

@@ -33,6 +33,13 @@ defmodule EEVM.Transaction.IntrinsicGasTest do
       assert IntrinsicGas.calculate(tx) == 21_000 + 2 * 2_400 + 3 * 1_900
     end
 
+    test "charges 25,000 per EIP-7702 authorization" do
+      auth = %{chain_id: 1, address: 0xBB, nonce: 0, y_parity: 0, r: 1, s: 1}
+      tx = Transaction.new(to: 0xCAFE, type: :eip7702, authorization_list: [auth, auth])
+
+      assert IntrinsicGas.calculate(tx) == 21_000 + 2 * 25_000
+    end
+
     test "initcode word cost uses ceil(len/32)" do
       tx = Transaction.new(to: nil, data: :binary.copy(<<1>>, 33))
 

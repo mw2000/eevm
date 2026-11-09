@@ -46,6 +46,7 @@ defmodule EEVM.TestSupport.BlockchainTestFixture do
             max_fee_per_blob_gas: non_neg_integer(),
             access_list: [{non_neg_integer(), [non_neg_integer()]}],
             blob_hashes: [non_neg_integer()],
+            authorization_list: [EEVM.Context.Transaction.authorization()],
             chain_id: non_neg_integer()
           }
 
@@ -62,6 +63,7 @@ defmodule EEVM.TestSupport.BlockchainTestFixture do
               max_fee_per_blob_gas: 0,
               access_list: [],
               blob_hashes: [],
+              authorization_list: [],
               chain_id: 1
   end
 
@@ -259,6 +261,7 @@ defmodule EEVM.TestSupport.BlockchainTestFixture do
       max_fee_per_blob_gas: parse_quantity!(Map.get(tx, "maxFeePerBlobGas", "0x0")),
       access_list: parse_access_list(Map.get(tx, "accessList", [])),
       blob_hashes: parse_quantity_list(Map.get(tx, "blobVersionedHashes", [])),
+      authorization_list: parse_authorization_list(Map.get(tx, "authorizationList", [])),
       chain_id: parse_quantity!(Map.get(tx, "chainId", "0x1"))
     }
   end
@@ -289,6 +292,19 @@ defmodule EEVM.TestSupport.BlockchainTestFixture do
   end
 
   defp parse_quantity_list(values) when is_list(values), do: Enum.map(values, &parse_quantity!/1)
+
+  defp parse_authorization_list(entries) when is_list(entries) do
+    Enum.map(entries, fn entry ->
+      %{
+        chain_id: parse_quantity!(Map.fetch!(entry, "chainId")),
+        address: parse_address!(Map.fetch!(entry, "address")),
+        nonce: parse_quantity!(Map.fetch!(entry, "nonce")),
+        y_parity: parse_quantity!(Map.get(entry, "yParity", Map.get(entry, "v"))),
+        r: parse_quantity!(Map.fetch!(entry, "r")),
+        s: parse_quantity!(Map.fetch!(entry, "s"))
+      }
+    end)
+  end
 
   defp parse_tx_type(nil), do: :legacy
   defp parse_tx_type("0x0"), do: :legacy

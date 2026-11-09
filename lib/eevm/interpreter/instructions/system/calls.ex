@@ -15,12 +15,18 @@ defmodule EEVM.Interpreter.Instructions.System.Calls do
   - **STATICCALL** (0xFA) — read-only call that reverts on state changes (EIP-214).
 
   All call opcodes use EIP-150 gas forwarding: `min(requested, available - available/64)`.
-  Each call also charges EIP-2929 cold access for its target on top of the
-  warm cost in the static table.
+
+  ## Target access and EIP-7702 delegation
+
+  Each call charges EIP-2929 cold access for its target on top of the warm
+  cost in the static table. From Prague, a target whose code is a delegation
+  designator (`0xef0100 || delegate`) runs the delegate's code, charges the
+  delegate's cold or warm access as well, and never dispatches to a
+  precompile, even when the delegate is one.
   """
 
   alias EEVM.Context.Contract
-  alias EEVM.Database
+  alias EEVM.{Database, Delegation, HardforkConfig}
   alias EEVM.Gas.Access
   alias EEVM.Gas.Dynamic
   alias EEVM.Gas.Memory, as: GasMemory
@@ -31,6 +37,7 @@ defmodule EEVM.Interpreter.Instructions.System.Calls do
   # Warm access is already charged as the static cost of every call opcode.
   @warm_access_cost 100
 
+  @doc "Execute CALL (0xF1), CALLCODE (0xF2), DELEGATECALL (0xF4), or STATICCALL (0xFA)."
   @spec execute(non_neg_integer(), MachineState.t()) ::
           {:ok, MachineState.t()} | {:error, atom(), MachineState.t()}
   def execute(0xF1, state) do
@@ -172,7 +179,7 @@ defmodule EEVM.Interpreter.Instructions.System.Calls do
          ret_offset,
          ret_size
        ) do
-    {access_cost, state} = target_access_cost(state, address)
+    {access_cost, state, target_code, delegated?} = access_target(state, address)
     account_exists = Database.account_exists?(state.db, address)
 
     call_cost =
@@ -209,9 +216,7 @@ defmodule EEVM.Interpreter.Instructions.System.Calls do
              forwarded_gas
            ) do
         {:ok, state_after_forward} ->
-          target_code = Database.get_code(db_after_transfer, address)
-
-          if Precompiles.precompile?(address, state_after_forward.env.config) and
+          if not delegated? and Precompiles.precompile?(address, state_after_forward.env.config) and
                target_code == <<>> do
             child_gas = forwarded_gas + Dynamic.call_stipend(value)
 
@@ -339,7 +344,7 @@ defmodule EEVM.Interpreter.Instructions.System.Calls do
          charge_value_cost?,
          add_stipend?
        ) do
-    {access_cost, state} = target_access_cost(state, address)
+    {access_cost, state, target_code, delegated?} = access_target(state, address)
 
     call_cost =
       access_cost +
@@ -370,9 +375,7 @@ defmodule EEVM.Interpreter.Instructions.System.Calls do
           child_gas =
             forwarded_gas + if(add_stipend?, do: Dynamic.call_stipend(callvalue), else: 0)
 
-          target_code = Database.get_code(state_after_forward.db, address)
-
-          if Precompiles.precompile?(address, state_after_forward.env.config) and
+          if not delegated? and Precompiles.precompile?(address, state_after_forward.env.config) and
                target_code == <<>> do
             case Precompiles.execute(address, calldata, child_gas, state_after_forward.env.config) do
               {:ok, output, gas_used} ->
@@ -484,11 +487,22 @@ defmodule EEVM.Interpreter.Instructions.System.Calls do
 
   defp returned_gas(_child_result), do: 0
 
-  # EIP-2929: charge the cold surcharge (2,600 - 100) on first access to the
-  # target and mark it warm.
-  defp target_access_cost(state, address) do
-    {cost, state} = Access.address_access_cost(state, address)
-    {cost - @warm_access_cost, state}
+  # Returns the access cost beyond the static warm cost, the state with the
+  # target (and delegate) warmed, the code to run, and whether the target
+  # delegates.
+  defp access_target(state, address) do
+    {target_cost, state} = Access.address_access_cost(state, address)
+    code = Database.get_code(state.db, address)
+
+    with true <- HardforkConfig.enabled?(state.env.config.hardfork, :eip_7702),
+         {:ok, delegate} <- Delegation.delegated_address(code) do
+      {delegate_cost, state} = Access.address_access_cost(state, delegate)
+
+      {target_cost - @warm_access_cost + delegate_cost, state,
+       Database.get_code(state.db, delegate), true}
+    else
+      _ -> {target_cost - @warm_access_cost, state, code, false}
+    end
   end
 
   defp call_memory_expansion_cost(memory, args_offset, args_size, ret_offset, ret_size) do

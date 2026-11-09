@@ -21,13 +21,18 @@ defmodule EEVM.Transaction do
   @type authorization_tuple :: EEVM.Transaction.Authorization.t()
 
   defmodule Authorization do
-    @moduledoc "EIP-7702 authorization tuple."
+    @moduledoc """
+    EIP-7702 authorization tuple.
+
+    `y_parity` is a full byte on the wire; values other than 0 or 1 make the
+    authorization unrecoverable, so it is skipped rather than rejected.
+    """
 
     @type t :: %__MODULE__{
             chain_id: non_neg_integer(),
             address: EEVM.Transaction.address(),
             nonce: non_neg_integer(),
-            y_parity: 0 | 1,
+            y_parity: 0..255,
             r: non_neg_integer(),
             s: non_neg_integer()
           }

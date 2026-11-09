@@ -10,6 +10,7 @@ defmodule EEVM.Context.Transaction do
   | `origin` | ORIGIN (0x32) | The externally owned account (EOA) that signed the tx |
   | `gasprice` | GASPRICE (0x3A) | Gas price in wei the sender is paying |
   | `blob_hashes` | BLOBHASH (0x49) | List of blob versioned hashes from EIP-4844 transaction payload |
+  | `authorization_list` | — | EIP-7702 authorizations applied before execution |
 
   ### Origin vs Caller
 
@@ -39,7 +40,7 @@ defmodule EEVM.Context.Transaction do
           required(:chain_id) => non_neg_integer(),
           required(:address) => non_neg_integer(),
           required(:nonce) => non_neg_integer(),
-          required(:y_parity) => 0 | 1,
+          required(:y_parity) => 0..255,
           required(:r) => non_neg_integer(),
           required(:s) => non_neg_integer()
         }

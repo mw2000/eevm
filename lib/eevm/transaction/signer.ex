@@ -4,7 +4,7 @@ defmodule EEVM.Transaction.Signer do
   """
 
   alias EEVM.Transaction
-  alias EEVM.Transaction.{AccessList, Blob, FeeMarket, Legacy}
+  alias EEVM.Transaction.{AccessList, Authorization, Blob, FeeMarket, Legacy, SetCode}
 
   @secp256k1n 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141
   @secp256k1n_half div(@secp256k1n, 2)
@@ -89,18 +89,57 @@ defmodule EEVM.Transaction.Signer do
     ExKeccak.hash_256(<<0x03>> <> ExRLP.encode(payload))
   end
 
+  def signing_hash(%SetCode{} = tx, _chain_id) do
+    payload = [
+      encode_integer(tx.chain_id),
+      encode_integer(tx.nonce),
+      encode_integer(tx.max_priority_fee_per_gas),
+      encode_integer(tx.max_fee_per_gas),
+      encode_integer(tx.gas_limit),
+      tx.to,
+      encode_integer(tx.value),
+      tx.data,
+      encode_access_list(tx.access_list),
+      Enum.map(tx.authorization_list, &authorization_fields/1)
+    ]
+
+    ExKeccak.hash_256(<<0x04>> <> ExRLP.encode(payload))
+  end
+
   @doc "Recover the sender address from a signed transaction."
   @spec recover_sender(Transaction.t(), non_neg_integer()) :: {:ok, binary()} | {:error, atom()}
   def recover_sender(tx, chain_id) do
-    with {:ok, y_parity, r, s} <- extract_signature(tx, chain_id),
-         :ok <- validate_signature_scalars(r, s),
-         hash <- signing_hash(tx, chain_id),
+    with {:ok, y_parity, r, s} <- extract_signature(tx, chain_id) do
+      recover(signing_hash(tx, chain_id), y_parity, r, s)
+    end
+  end
+
+  @doc """
+  Recover the authority (signer) of an EIP-7702 authorization tuple.
+
+  The signed message is `keccak256(0x05 || rlp([chain_id, address, nonce]))`.
+  Signatures with `y_parity` outside `0..1`, `r` outside `1..n-1`, or a
+  high `s` (EIP-2) are rejected with `{:error, :invalid_signature}`.
+  """
+  @spec recover_authority(Authorization.t()) :: {:ok, binary()} | {:error, atom()}
+  def recover_authority(%Authorization{y_parity: y_parity} = auth) when y_parity in [0, 1] do
+    message =
+      ExRLP.encode([
+        encode_integer(auth.chain_id),
+        auth.address,
+        encode_integer(auth.nonce)
+      ])
+
+    recover(ExKeccak.hash_256(<<0x05>> <> message), y_parity, auth.r, auth.s)
+  end
+
+  def recover_authority(%Authorization{}), do: {:error, :invalid_signature}
+
+  defp recover(hash, y_parity, r, s) do
+    with :ok <- validate_signature_scalars(r, s),
          signature = <<r::unsigned-big-256, s::unsigned-big-256>>,
-         {:ok, public_key} <- ExSecp256k1.recover_compact(hash, signature, y_parity),
-         {:ok, address} <- public_key_to_address(public_key) do
-      {:ok, address}
-    else
-      {:error, reason} -> {:error, reason}
+         {:ok, public_key} <- ExSecp256k1.recover_compact(hash, signature, y_parity) do
+      public_key_to_address(public_key)
     end
   end
 
@@ -113,6 +152,7 @@ defmodule EEVM.Transaction.Signer do
   defp extract_signature(%AccessList{} = tx, _chain_id), do: {:ok, tx.y_parity, tx.r, tx.s}
   defp extract_signature(%FeeMarket{} = tx, _chain_id), do: {:ok, tx.y_parity, tx.r, tx.s}
   defp extract_signature(%Blob{} = tx, _chain_id), do: {:ok, tx.y_parity, tx.r, tx.s}
+  defp extract_signature(%SetCode{} = tx, _chain_id), do: {:ok, tx.y_parity, tx.r, tx.s}
 
   defp legacy_y_parity(v, _chain_id) when v in [27, 28], do: {:ok, v - 27}
 
@@ -152,6 +192,17 @@ defmodule EEVM.Transaction.Signer do
     Enum.map(access_list, fn {address, slots} ->
       [address, slots]
     end)
+  end
+
+  defp authorization_fields(%Authorization{} = auth) do
+    [
+      encode_integer(auth.chain_id),
+      auth.address,
+      encode_integer(auth.nonce),
+      encode_integer(auth.y_parity),
+      encode_integer(auth.r),
+      encode_integer(auth.s)
+    ]
   end
 
   defp encode_integer(0), do: <<>>
