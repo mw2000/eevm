@@ -153,14 +153,16 @@ defmodule EEVM.Interpreter.Instructions.StackMemoryStorage.StorageOps do
   def execute(_opcode, state), do: {:ok, MachineState.halt(state, :invalid)}
 
   defp get_original_value(state, key) do
-    case Map.fetch(state.substate.original_storage, key) do
+    address = state.frame.contract.address
+
+    case Map.fetch(state.substate.original_storage, {address, key}) do
       {:ok, value} ->
         {value, state}
 
       :error ->
-        value = Database.storage_load(state.db, state.frame.contract.address, key)
+        value = Database.storage_load(state.db, address, key)
         sub = state.substate
-        new_sub = %{sub | original_storage: Map.put(sub.original_storage, key, value)}
+        new_sub = %{sub | original_storage: Map.put(sub.original_storage, {address, key}, value)}
         {value, %{state | substate: new_sub}}
     end
   end

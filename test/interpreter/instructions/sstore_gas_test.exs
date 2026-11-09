@@ -1,7 +1,9 @@
 defmodule EEVM.Interpreter.Instructions.SstoreGasTest do
   use ExUnit.Case, async: true
 
-  alias EEVM.Storage
+  alias EEVM.Context.Contract
+  alias EEVM.Database.InMemory
+  alias EEVM.{Storage, Tracer}
 
   describe "SSTORE gas schedule (EIP-2200 + EIP-3529)" do
     test "no-op SSTORE (current == new) costs 100 gas on warm slot" do
@@ -86,7 +88,7 @@ defmodule EEVM.Interpreter.Instructions.SstoreGasTest do
         EEVM.execute(code,
           gas: initial_gas,
           storage: Storage.new(%{0 => 7}),
-          original_storage: %{0 => 5},
+          original_storage: %{{0, 0} => 5},
           accessed_storage_keys: MapSet.new([{0, 0}])
         )
 
@@ -105,7 +107,7 @@ defmodule EEVM.Interpreter.Instructions.SstoreGasTest do
         EEVM.execute(code,
           gas: initial_gas,
           storage: Storage.new(%{0 => 7}),
-          original_storage: %{0 => 0},
+          original_storage: %{{0, 0} => 0},
           accessed_storage_keys: MapSet.new([{0, 0}])
         )
 
@@ -135,5 +137,63 @@ defmodule EEVM.Interpreter.Instructions.SstoreGasTest do
       assert result.frame.gas == 10_000 - (3 + 3 + 2_100 + 100) - (3 + 3 + 100)
       assert result.frame.refund == 0
     end
+  end
+
+  describe "SSTORE original value across call frames" do
+    test "a child frame prices a slot against its value at transaction start" do
+      # Slot 1 starts at 2. The top frame clears it, then CALLs itself; the
+      # child (CALLER == ADDRESS) jumps to 0x15 and writes 3. Original 2,
+      # current 0, new 3 is a dirty write: 100 gas on the warm slot, not the
+      # 20_000 of a fresh 0 -> 3 write.
+      code =
+        Base.decode16!("3330146015576000600155600080808080305AF1005B600360015500")
+
+      db =
+        InMemory.new(
+          accounts: %{0xA => %{balance: 0, nonce: 0, code: code}},
+          storage: %{0xA => %{1 => 2}}
+        )
+
+      {state, tracer} =
+        EEVM.trace(code, db: db, contract: Contract.new(address: 0xA, caller: 0xCA11E2))
+
+      assert state.status == :stopped
+      assert sstore_costs_at_depth(tracer, 1) == [100]
+    end
+
+    test "originals are tracked per contract, not per slot number" do
+      # A writes its own slot 0 (0 -> 1), then CALLs B, whose slot 0 holds 5.
+      # B's write 5 -> 6 is a clean reset on a cold slot: 2_100 + 2_900.
+      b_code = <<0x60, 0x06, 0x60, 0x00, 0x55, 0x00>>
+
+      a_code =
+        <<0x60, 0x01, 0x60, 0x00, 0x55>> <>
+          :binary.copy(<<0x60, 0x00>>, 5) <> <<0x60, 0xBB, 0x5A, 0xF1, 0x00>>
+
+      db =
+        InMemory.new(
+          accounts: %{
+            0xA => %{balance: 0, nonce: 0, code: a_code},
+            0xBB => %{balance: 0, nonce: 0, code: b_code}
+          },
+          storage: %{0xBB => %{0 => 5}}
+        )
+
+      {state, tracer} =
+        EEVM.trace(a_code, db: db, contract: Contract.new(address: 0xA, caller: 0xCA11E2))
+
+      assert state.status == :stopped
+      assert sstore_costs_at_depth(tracer, 1) == [5_000]
+    end
+  end
+
+  # Gas charged by each SSTORE at `depth`: the drop in remaining gas between
+  # the SSTORE step and the step after it.
+  defp sstore_costs_at_depth(tracer, depth) do
+    tracer
+    |> Tracer.steps()
+    |> Enum.chunk_every(2, 1, :discard)
+    |> Enum.filter(fn [step, _next] -> step.op == :SSTORE and step.depth == depth end)
+    |> Enum.map(fn [step, next] -> step.gas_remaining - next.gas_remaining end)
   end
 end
