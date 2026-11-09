@@ -26,6 +26,7 @@ defmodule EEVM.Interpreter.MachineState do
   alias EEVM.Context.{Block, Contract, Transaction}
   alias EEVM.Database
   alias EEVM.Database.InMemory, as: InMemoryDB
+  alias EEVM.HardforkConfig
   alias EEVM.Interpreter.MachineState.{Env, Frame, Substate}
   alias EEVM.Interpreter.{Memory, Stack}
   alias EEVM.Precompiles
@@ -55,8 +56,9 @@ defmodule EEVM.Interpreter.MachineState do
   @doc """
   Creates a new machine state for executing the given bytecode.
 
-  Includes EIP-2929/EIP-3651 access-list pre-warming so sender, recipient,
-  precompiles, and `block.coinbase` start warm for address-access gas metering.
+  Includes EIP-2929 access-list pre-warming so sender, recipient, precompiles,
+  and from Shanghai (EIP-3651) `block.coinbase` start warm for address-access
+  gas metering.
 
   ## Parameters
     - `code` — the raw EVM bytecode as an Elixir binary
@@ -130,14 +132,18 @@ defmodule EEVM.Interpreter.MachineState do
   # contracts access the block producer address (e.g., builder/proposer payments),
   # and charging the first touch as cold penalizes a common access pattern.
   defp pre_warm_addresses(contract, tx, block, config) do
-    MapSet.new()
-    |> MapSet.put(contract.address)
-    |> MapSet.put(contract.caller)
-    |> MapSet.put(tx.origin)
-    |> MapSet.put(block.coinbase)
-    |> then(fn set ->
-      Enum.reduce(Precompiles.precompile_addresses(config), set, &MapSet.put(&2, &1))
-    end)
+    addresses =
+      MapSet.new()
+      |> MapSet.put(contract.address)
+      |> MapSet.put(contract.caller)
+      |> MapSet.put(tx.origin)
+      |> then(fn set ->
+        Enum.reduce(Precompiles.precompile_addresses(config), set, &MapSet.put(&2, &1))
+      end)
+
+    if HardforkConfig.enabled?(config.hardfork, :eip_3651),
+      do: MapSet.put(addresses, block.coinbase),
+      else: addresses
   end
 
   defp init_db(opts, contract) do

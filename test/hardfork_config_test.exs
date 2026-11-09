@@ -1,7 +1,7 @@
 defmodule EEVM.HardforkConfigTest do
   use ExUnit.Case, async: true
 
-  alias EEVM.Context.Contract
+  alias EEVM.Context.{Block, Contract}
   alias EEVM.Database
   alias EEVM.HardforkConfig
   alias EEVM.WorldState
@@ -436,6 +436,21 @@ defmodule EEVM.HardforkConfigTest do
       assert access_opcode_cost(0x3B, :istanbul) == 700
       assert access_opcode_cost(0x3F, :constantinople) == 400
       assert access_opcode_cost(0x3F, :istanbul) == 700
+    end
+  end
+
+  describe "EIP-3651 warm COINBASE hardfork guard" do
+    test "COINBASE starts warm from Shanghai and cold before" do
+      # COINBASE, BALANCE, STOP
+      code = <<0x41, 0x31, 0x00>>
+      block = Block.new(coinbase: 0xC0FFEE)
+
+      gas_used = fn fork ->
+        100_000 - EEVM.execute(code, gas: 100_000, block: block, hardfork: fork).frame.gas
+      end
+
+      assert gas_used.(:shanghai) == 2 + 100
+      assert gas_used.(:paris) == 2 + 2_600
     end
   end
 

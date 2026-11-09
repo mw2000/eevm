@@ -25,6 +25,7 @@ defmodule EEVM.Handler.PreExecution do
   alias EEVM.Context.{Block, Contract, Transaction}
   alias EEVM.{Database, Delegation, HardforkConfig, Precompiles}
   alias EEVM.Gas.Blob
+  alias EEVM.HardforkConfig
   alias EEVM.Transaction.{Authorization, IntrinsicGas, Signer}
 
   # EIP-7702: refund for an authority that already exists, since the
@@ -172,7 +173,8 @@ defmodule EEVM.Handler.PreExecution do
 
   @doc """
   Addresses warm at transaction start (EIP-2929, EIP-2930, EIP-3651): the
-  callee, caller, origin, coinbase, precompiles, and access-list entries.
+  callee, caller, origin, precompiles, access-list entries, and from Shanghai
+  the coinbase.
   """
   @spec initial_accessed_addresses(Transaction.t(), EEVM.Config.t(), Contract.t(), Block.t()) ::
           MapSet.t(non_neg_integer())
@@ -182,9 +184,14 @@ defmodule EEVM.Handler.PreExecution do
       |> MapSet.put(contract_ctx.address)
       |> MapSet.put(contract_ctx.caller)
       |> MapSet.put(tx.origin)
-      |> MapSet.put(block.coinbase)
       |> then(fn set ->
         Enum.reduce(Precompiles.precompile_addresses(config), set, &MapSet.put(&2, &1))
+      end)
+      # EIP-3651 (Shanghai): COINBASE starts warm.
+      |> then(fn set ->
+        if HardforkConfig.enabled?(config.hardfork, :eip_3651),
+          do: MapSet.put(set, block.coinbase),
+          else: set
       end)
 
     Enum.reduce(tx.access_list, base, fn {address, _slots}, acc ->
