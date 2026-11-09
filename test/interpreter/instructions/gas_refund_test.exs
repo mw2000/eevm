@@ -70,8 +70,26 @@ defmodule EEVM.Interpreter.Instructions.GasRefundTest do
     assert prague_result.frame.refund == 0
     assert tx.gas_limit - prague_result.frame.gas == 21_010
 
+    # 21_009 gas used including intrinsic gas, so the whole 100 refund fits
+    # under the EIP-3529 cap of 21_009 / 5.
     assert cancun_result.status == :stopped
-    assert tx.gas_limit - cancun_result.frame.gas == 21_008
+    assert tx.gas_limit - cancun_result.frame.gas == 20_909
+  end
+
+  test "Prague charges the calldata floor even when execution reverts" do
+    # 100 non-zero bytes: intrinsic 21_000 + 100 * 16 = 22_600; EIP-7623 floor
+    # 21_000 + 10 * (100 * 4 tokens) = 25_000.
+    tx = Transaction.new(gas_limit: 30_000, to: 0xCAFE, data: :binary.copy(<<0xFF>>, 100))
+
+    result =
+      EEVM.execute(<<0x60, 0x00, 0x60, 0x00, 0xFD>>,
+        gas: tx.gas_limit - IntrinsicGas.calculate(tx),
+        tx: tx,
+        hardfork: :prague
+      )
+
+    assert result.status == :reverted
+    assert tx.gas_limit - result.frame.gas == 25_000
   end
 
   test "top-level revert resets refund to 0" do

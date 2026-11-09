@@ -117,19 +117,21 @@ defmodule EEVM.Interpreter do
 
   def run_loop(state), do: state
 
-  defp apply_refund(%MachineState{status: status} = state, _initial_gas)
-       when status in [:reverted, :out_of_gas, :invalid] or is_tuple(status) do
-    MachineState.update_frame(state, &%{&1 | refund: 0})
-  end
+  # Settles the transaction's refund counter (Prague `process_transaction`):
+  # the execution refund counts only when the call succeeded. The cap applies
+  # to total gas used, including intrinsic gas, when a transaction gas limit
+  # is known. The EIP-7623 floor applies whether or not execution succeeded.
+  defp apply_refund(%MachineState{status: status} = state, initial_gas) do
+    tx_gas_limit = state.env.tx.gas_limit
+    gas_used = if(tx_gas_limit > 0, do: tx_gas_limit, else: initial_gas) - state.frame.gas
+    execution_refund = if status == :stopped, do: state.frame.refund, else: 0
 
-  defp apply_refund(%MachineState{} = state, initial_gas) do
-    gas_used = initial_gas - state.frame.gas
     # EIP-3529 (London+): cap refunds at 1/5 of gas used.
     # Pre-London: cap was 1/2 of gas used.
     refund_cap_divisor =
       if HardforkConfig.enabled?(state.env.config.hardfork, :eip_3529), do: 5, else: 2
 
-    effective_refund = min(state.frame.refund, div(gas_used, refund_cap_divisor))
+    effective_refund = min(execution_refund, div(gas_used, refund_cap_divisor))
 
     refunded_gas = state.frame.gas + effective_refund
 
@@ -137,8 +139,8 @@ defmodule EEVM.Interpreter do
       IntrinsicGas.calldata_floor_gas_cost(state.env.tx, state.env.config.hardfork)
 
     gas_after_floor =
-      if calldata_floor_gas > 0 and state.env.tx.gas_limit > 0 do
-        min(refunded_gas, max(state.env.tx.gas_limit - calldata_floor_gas, 0))
+      if calldata_floor_gas > 0 and tx_gas_limit > 0 do
+        min(refunded_gas, max(tx_gas_limit - calldata_floor_gas, 0))
       else
         refunded_gas
       end
