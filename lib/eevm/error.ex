@@ -18,6 +18,7 @@ defmodule EEVM.Error do
   | `:invalid_jump_destination` | `EEVM.Interpreter.Instructions.ControlFlow` | JUMP/JUMPI target is not a JUMPDEST |
   | `:static_state_modification` | `EEVM.Interpreter`, `EEVM.Interpreter.Instructions.System.Calls` | State-mutating opcode or value-bearing CALL inside a STATICCALL frame (EIP-214) |
   | `:return_data_out_of_bounds` | `EEVM.Interpreter.Instructions.Environment.Data` | RETURNDATACOPY reads past the end of the return data buffer |
+  | `:initcode_too_large` | `EEVM.Interpreter.Instructions.System.Creation` | CREATE/CREATE2 initcode exceeds 49,152 bytes (EIP-3860) |
   | `:insufficient_balance` | `EEVM.WorldState` | Transfer amount exceeds account balance |
   | `:max_call_depth` | `EEVM.Interpreter.MachineState` | Nested call depth exceeds 1,024 |
   | `:empty_call_stack` | `EEVM.Interpreter.MachineState` | Attempted to pop a frame with no frames on stack |
@@ -129,6 +130,7 @@ defmodule EEVM.Error do
           | :invalid_jump_destination
           | :static_state_modification
           | :return_data_out_of_bounds
+          | :initcode_too_large
           | :insufficient_balance
           | :max_call_depth
           | :empty_call_stack

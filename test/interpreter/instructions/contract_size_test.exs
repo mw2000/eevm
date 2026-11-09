@@ -18,39 +18,37 @@ defmodule EEVM.Interpreter.Instructions.ContractSizeTest do
       assert addr != 0
     end
 
-    test "CREATE fails with initcode over max size (49,152 bytes)" do
-      size = 49_153
-
-      code =
-        IO.iodata_to_binary([
-          push(size),
-          push(0),
-          push(0),
-          <<0xF0, 0x00>>
-        ])
+    # EIP-3860 makes oversized initcode part of CREATE's gas calculation, so the
+    # calling frame halts exceptionally: all gas is gone and the nonce is untouched
+    # (geth core/vm/gas_table.go gasCreateEip3860).
+    test "CREATE with initcode over max size (49,152 bytes) halts the caller" do
+      code = IO.iodata_to_binary([push(49_153), push(0), push(0), <<0xF0, 0x00>>])
 
       result = EEVM.execute(code, gas: 10_000_000)
 
-      assert result.status == :stopped
-      assert EEVM.stack_values(result) == [0]
+      assert result.status == {:error, :initcode_too_large}
+      assert result.frame.gas == 0
+      assert EEVM.Database.get_nonce(result.db, 0) == 0
     end
 
-    test "CREATE2 fails with initcode over max size" do
-      size = 49_153
-
-      code =
-        IO.iodata_to_binary([
-          push(0),
-          push(size),
-          push(0),
-          push(0),
-          <<0xF5, 0x00>>
-        ])
+    test "CREATE2 with initcode over max size halts the caller" do
+      code = IO.iodata_to_binary([push(0), push(49_153), push(0), push(0), <<0xF5, 0x00>>])
 
       result = EEVM.execute(code, gas: 10_000_000)
 
+      assert result.status == {:error, :initcode_too_large}
+      assert result.frame.gas == 0
+      assert EEVM.Database.get_nonce(result.db, 0) == 0
+    end
+
+    test "initcode over max size is allowed before Shanghai" do
+      code = IO.iodata_to_binary([push(49_153), push(0), push(0), <<0xF0, 0x00>>])
+
+      result = EEVM.execute(code, gas: 10_000_000, hardfork: :paris)
+      [addr] = EEVM.stack_values(result)
+
       assert result.status == :stopped
-      assert EEVM.stack_values(result) == [0]
+      assert addr != 0
     end
 
     test "CREATE rejects deployed code over 24,576 bytes" do

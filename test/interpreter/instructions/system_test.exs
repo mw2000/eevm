@@ -109,6 +109,26 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
       assert Database.get_balance(result.db, 0) == 5
     end
 
+    test "CREATE2 at depth 1024 pays its gas and memory expansion, then pushes 0" do
+      # PUSH1 0 (salt), PUSH1 32 (size), PUSH1 0 (offset), PUSH1 0 (value), CREATE2, MSIZE, STOP
+      code = <<0x60, 0x00, 0x60, 0x20, 0x60, 0x00, 0x60, 0x00, 0xF5, 0x59, 0x00>>
+
+      result =
+        EEVM.execute(code,
+          depth: 1024,
+          gas: 1_000_000,
+          world_state: WorldState.new(%{0 => %{balance: 10}})
+        )
+
+      # The depth check runs inside the creation, after the dynamic gas (geth
+      # core/vm/evm.go create): 4x PUSH1 (12), CREATE2 32000 + 3 memory + 6 hash
+      # + 2 initcode word (EIP-3860), MSIZE 2. The forwarded gas comes back.
+      assert result.status == :stopped
+      assert EEVM.stack_values(result) == [32, 0]
+      assert result.frame.gas == 1_000_000 - 12 - 32_000 - 3 - 6 - 2 - 2
+      assert Database.get_nonce(result.db, 0) == 0
+    end
+
     test "CREATE fails and pushes zero when balance is insufficient" do
       init_code = <<0x60, 0x00, 0x60, 0x00, 0xF3>>
       code = build_create_program(init_code, :create, 0x09)
@@ -122,19 +142,23 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
       assert Database.get_nonce(result.db, 0) == 0
     end
 
-    test "CREATE warms the new address, even when the creation fails (EIP-2929)" do
+    # execution-specs `generic_create` adds the new address to accessed_addresses
+    # after the balance, nonce, and depth checks, before the collision check.
+    test "CREATE warms the new address once past the balance check (EIP-2929)" do
       # CREATE(value, 0, 0) with empty initcode from address 0 at nonce 0.
       <<_::96, created::160>> = ExKeccak.hash_256(ExRLP.encode([<<0::160>>, <<>>]))
       balance_of = fn address -> <<0x50, 0x73, address::160, 0x31, 0x00>> end
 
-      for {value, balance} <- [{0, 0}, {1, 0}] do
+      # {value, balance, warm?}: the creation succeeds, or fails on its balance.
+      for {value, balance, warm?} <- [{0, 0, true}, {1, 0, false}] do
         create = <<0x60, 0x00, 0x60, 0x00, 0x60, value, 0xF0>>
         world_state = WorldState.new(%{0 => %{balance: balance}})
         run = &EEVM.execute(create <> balance_of.(&1), world_state: world_state, gas: 100_000)
 
-        # Same code except the BALANCE target: the new address costs the warm
-        # 100, an untouched one the cold 2,600.
-        assert run.(created).frame.gas - run.(0xC01D).frame.gas == 2_500
+        # Same code except the BALANCE target: a warm address costs 100, an
+        # untouched one the cold 2,600.
+        expected = if warm?, do: 2_500, else: 0
+        assert run.(created).frame.gas - run.(0xC01D).frame.gas == expected
       end
     end
 
