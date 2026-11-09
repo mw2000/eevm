@@ -1,0 +1,27 @@
+# Cases known to fail. CI fails on any failing case not covered here.
+# Each line is a directory (dir/), a fixture file, a test (file#name), or a case.
+# Regenerate after fixing failures with:
+#   mix eevm.blockchain_tests 'test/fixtures/state_tests/ethereum-tests/BlockchainTests/{ValidBlocks,InvalidBlocks,TransitionTests}/**/*.json' --write-known-failures test/fixtures/blockchain_tests/known_failures.txt
+BlockchainTests/InvalidBlocks/bc4895-withdrawals/accountInteractions.json
+BlockchainTests/InvalidBlocks/bcEIP1559/baseFee.json
+BlockchainTests/InvalidBlocks/bcEIP1559/feeCap.json
+BlockchainTests/InvalidBlocks/bcEIP1559/transFail.json
+BlockchainTests/InvalidBlocks/bcMultiChainTest/
+BlockchainTests/TransitionTests/bcArrowGlacierToParis/
+BlockchainTests/TransitionTests/bcBerlinToLondon/
+BlockchainTests/TransitionTests/bcByzantiumToConstantinopleFix/
+BlockchainTests/TransitionTests/bcEIP158ToByzantium/
+BlockchainTests/TransitionTests/bcFrontierToHomestead/
+BlockchainTests/TransitionTests/bcHomesteadToDao/
+BlockchainTests/TransitionTests/bcHomesteadToEIP150/
+BlockchainTests/ValidBlocks/bcEIP1559/burnVerify.json
+BlockchainTests/ValidBlocks/bcEIP1559/highDemand.json
+BlockchainTests/ValidBlocks/bcEIP1559/intrinsic.json
+BlockchainTests/ValidBlocks/bcEIP1559/intrinsicTip.json
+BlockchainTests/ValidBlocks/bcEIP1559/lowDemand.json
+BlockchainTests/ValidBlocks/bcEIP1559/medDemand.json
+BlockchainTests/ValidBlocks/bcEIP1559/tips.json
+BlockchainTests/ValidBlocks/bcRandomBlockhashTest/randomStatetest463BC.json
+BlockchainTests/ValidBlocks/bcRandomBlockhashTest/randomStatetest614BC.json
+BlockchainTests/ValidBlocks/bcRandomBlockhashTest/randomStatetest617BC.json
+BlockchainTests/ValidBlocks/bcStateTests/callcodeOutput3partial.json

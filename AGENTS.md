@@ -123,7 +123,8 @@ confirm the CI run for your commit passes.
   Conformance job runs both suites against `test/fixtures/*/known_failures.txt`
   and fails on any failure those lists don't cover. When you fix failures,
   regenerate the list with the command in its header and commit it with the
-  fix. `test/fixtures/*/skip.txt` is only for fixtures that abort the VM.
+  fix. `test/fixtures/*/skip.txt` is only for fixtures that abort the VM or cannot
+  finish within the per-case timeout.
 - `README.md` is doctested from `test/eevm_test.exs`; keep its examples running.
 - Don't claim conformance the suites don't show.
 

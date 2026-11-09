@@ -97,6 +97,62 @@ jobs:
     - name: Run tests
       run: mix test
 
+  conformance:
+    name: Conformance (ethereum/tests)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: true
+    - name: Set up Elixir
+      uses: erlef/setup-beam@v1
+      with:
+        elixir-version: '1.18.3'
+        otp-version: '27.0'
+    - name: Restore dependencies cache
+      uses: actions/cache@v4
+      with:
+        path: deps
+        key: ${{ runner.os }}-mix-${{ hashFiles('**/mix.lock') }}
+        restore-keys: ${{ runner.os }}-mix-
+    - name: Restore build cache
+      uses: actions/cache@v4
+      with:
+        path: |
+          _build
+          priv/native
+          native/eevm_bls/target
+        key: ${{ runner.os }}-build-${{ hashFiles('**/mix.lock', 'native/**/Cargo.lock', 'native/**/Cargo.toml', 'native/**/src/**') }}
+        restore-keys: ${{ runner.os }}-build-
+    - name: Install dependencies
+      run: mix deps.get
+    # Each step fails only on failures that its known_failures.txt does not
+    # list; the file's header has the command that regenerates it. The
+    # timeout is well above the slowest passing case (about 35 s locally), so
+    # a slower runner cannot turn a pass into a timeout.
+    - name: GeneralStateTests
+      run: >-
+        mix eevm.state_tests
+        --known-failures test/fixtures/state_tests/known_failures.txt
+        --timeout 180000
+        --report state_tests.json
+    - name: BlockchainTests
+      if: ${{ !cancelled() }}
+      run: >-
+        mix eevm.blockchain_tests
+        'test/fixtures/state_tests/ethereum-tests/BlockchainTests/{ValidBlocks,InvalidBlocks,TransitionTests}/**/*.json'
+        --known-failures test/fixtures/blockchain_tests/known_failures.txt
+        --timeout 180000
+        --report blockchain_tests.json
+    - name: Upload reports
+      if: ${{ !cancelled() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: conformance-reports
+        path: '*_tests.json'
+
   docs:
     name: Docs
     runs-on: ubuntu-latest

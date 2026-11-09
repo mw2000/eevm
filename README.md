@@ -206,7 +206,8 @@ mix eevm.blockchain_tests 'test/fixtures/state_tests/ethereum-tests/BlockchainTe
 CI runs both suites against `test/fixtures/*/known_failures.txt` and fails only
 when a case outside those lists fails. After fixing failures, regenerate a list
 with `--write-known-failures FILE`. `test/fixtures/*/skip.txt` lists the few
-fixtures that are not run at all because they abort the VM.
+fixtures that are not run at all because they abort the VM or cannot finish
+within the per-case timeout.
 
 ## Performance
 

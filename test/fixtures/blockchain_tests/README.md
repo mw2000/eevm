@@ -8,7 +8,8 @@
   `GeneralStateTests/` (the state tests filled as blocks).
 - Transition networks such as `CancunToPragueAtTime15k` or
   `BerlinToLondonAt5` switch forks at the named block number or timestamp.
-- `skip.txt` lists fixtures that are not run at all because they abort the VM.
+- `skip.txt` lists fixtures that are not run at all because they abort the VM
+  or cannot finish within the per-case timeout.
 - `known_failures.txt` lists cases that run but are known to fail. CI fails
   only when a case outside this list fails.
 

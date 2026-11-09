@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Prepares an Amp orb (Debian 12) for eevm: Erlang/OTP and Elixir matching CI
 # (.github/workflows/ci.yml), Rust for the Rustler NIF in native/eevm_bls,
-# then fetches and compiles Mix dependencies. Idempotent; safe to rerun.
+# then checks out the ethereum/tests fixture submodule and fetches and compiles
+# Mix dependencies. Idempotent; safe to rerun.
 set -euo pipefail
 
 OTP_VERSION="27.0"
@@ -93,6 +94,12 @@ install_hex_rebar() {
   mix local.rebar --force --if-missing
 }
 
+checkout_fixtures() {
+  # Official ethereum/tests fixtures for `mix eevm.state_tests` and
+  # `mix eevm.blockchain_tests` (about 1.6 GB, so fetch only the pinned commit).
+  git submodule update --init --depth 1 test/fixtures/state_tests/ethereum-tests
+}
+
 fetch_deps() {
   mix deps.get
 }
@@ -112,6 +119,7 @@ step "Erlang/OTP ${OTP_VERSION}" install_otp
 step "Elixir ${ELIXIR_VERSION}" install_elixir
 step "Rust" install_rust
 step "Hex and rebar" install_hex_rebar
+step "ethereum/tests fixtures" checkout_fixtures
 step "mix deps.get" fetch_deps
 step "mix compile (dev, test)" compile_project
 step "Dialyzer PLT" build_plt

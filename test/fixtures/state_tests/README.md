@@ -4,7 +4,8 @@
   `mix test` runs them.
 - `ethereum-tests/` is a pinned git submodule pointing at an `ethereum/tests`
   snapshot that still contains `GeneralStateTests/`.
-- `skip.txt` lists fixtures that are not run at all because they abort the VM.
+- `skip.txt` lists fixtures that are not run at all because they abort the VM
+  or cannot finish within the per-case timeout.
 - `known_failures.txt` lists cases that run but are known to fail. CI fails
   only when a case outside this list fails.
 
