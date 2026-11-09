@@ -1,6 +1,7 @@
 defmodule EEVMTest do
   use ExUnit.Case
   doctest EEVM
+  doctest_file(Path.expand("../README.md", __DIR__))
 
   describe "Disassembler" do
     test "disassembles simple program" do

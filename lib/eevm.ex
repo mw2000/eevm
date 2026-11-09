@@ -2,10 +2,11 @@ defmodule EEVM do
   @moduledoc """
   EEVM — Ethereum Virtual Machine implementation in Elixir.
 
-  Hardfork-aware execution engine covering Frontier through Prague: full
-  opcode set, all precompiles (including BLS12-381 via NIF), transaction
-  validation and processing, MPT-backed state root, and a harness for the
-  official `ethereum/tests` `GeneralStateTests` suite.
+  Execution engine targeting Cancun, with Prague and Osaka work in progress:
+  full opcode set, all precompiles (including BLS12-381 via NIF), transaction
+  validation and processing, MPT-backed state root, and harnesses for the
+  official `ethereum/tests` suites. Conformance with those suites is still in
+  progress, and many rules before Cancun are not yet gated per hardfork.
 
   ## Quick Start
 
