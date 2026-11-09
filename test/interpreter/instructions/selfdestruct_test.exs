@@ -66,7 +66,8 @@ defmodule EEVM.Interpreter.Instructions.SelfdestructTest do
       result = EEVM.execute(code, world_state: world_state, contract: contract, gas: 1_000_000)
 
       assert result.status == :stopped
-      expected_gas = 1_000_000 - Static.static_cost(0x60) - 5000
+      # 5,000 static plus 2,600 for the cold beneficiary (EIP-2929).
+      expected_gas = 1_000_000 - Static.static_cost(0x60) - 5000 - 2_600
       assert result.frame.gas == expected_gas
     end
 
@@ -78,7 +79,8 @@ defmodule EEVM.Interpreter.Instructions.SelfdestructTest do
       result = EEVM.execute(code, world_state: world_state, contract: contract, gas: 1_000_000)
 
       assert result.status == :stopped
-      expected_gas = 1_000_000 - Static.static_cost(0x60) - 5000 - 25_000
+      # 5,000 static plus 2,600 for the cold beneficiary (EIP-2929).
+      expected_gas = 1_000_000 - Static.static_cost(0x60) - 5000 - 2_600 - 25_000
       assert result.frame.gas == expected_gas
       assert Database.get_balance(result.db, 0xCC) == 100
     end
@@ -95,7 +97,8 @@ defmodule EEVM.Interpreter.Instructions.SelfdestructTest do
 
       result = EEVM.execute(code, world_state: world_state, contract: contract, gas: 1_000_000)
 
-      expected_gas = 1_000_000 - Static.static_cost(0x60) - 5000
+      # 5,000 static plus 2,600 for the cold beneficiary (EIP-2929).
+      expected_gas = 1_000_000 - Static.static_cost(0x60) - 5000 - 2_600
       assert result.frame.gas == expected_gas
     end
 
@@ -106,8 +109,23 @@ defmodule EEVM.Interpreter.Instructions.SelfdestructTest do
 
       result = EEVM.execute(code, world_state: world_state, contract: contract, gas: 1_000_000)
 
-      expected_gas = 1_000_000 - Static.static_cost(0x60) - 5000
+      # 5,000 static plus 2,600 for the cold beneficiary (EIP-2929).
+      expected_gas = 1_000_000 - Static.static_cost(0x60) - 5000 - 2_600
       assert result.frame.gas == expected_gas
+    end
+
+    test "charges cold access for the beneficiary only when it is cold (EIP-2929)" do
+      world_state = WorldState.new(%{0xAA => %{balance: 0}, 0xBB => %{balance: 0}})
+      contract = Contract.new(address: 0xAA)
+      code = <<0x60, 0xBB, 0xFF>>
+
+      run =
+        &EEVM.execute(code, [world_state: world_state, contract: contract, gas: 100_000] ++ &1)
+
+      assert run.([]).frame.gas == 100_000 - 3 - 5000 - 2_600
+      assert run.(accessed_addresses: MapSet.new([0xAA, 0xBB])).frame.gas == 100_000 - 3 - 5000
+      # Before Berlin there is no access-list surcharge.
+      assert run.(hardfork: :istanbul).frame.gas == 100_000 - 3 - 5000
     end
 
     test "contract code/nonce/storage preserved (post-Cancun, not created this tx)" do

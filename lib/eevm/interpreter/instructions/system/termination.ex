@@ -13,9 +13,12 @@ defmodule EEVM.Interpreter.Instructions.System.Termination do
   """
 
   alias EEVM.Database
+  alias EEVM.Gas.Access
   alias EEVM.Gas.Memory, as: GasMemory
   alias EEVM.HardforkConfig
   alias EEVM.Interpreter.{MachineState, Memory, Stack}
+
+  @cold_account_access_cost 2_600
 
   @spec execute(non_neg_integer(), MachineState.t()) ::
           {:ok, MachineState.t()} | {:error, atom(), MachineState.t()}
@@ -75,7 +78,10 @@ defmodule EEVM.Interpreter.Instructions.System.Termination do
       balance = Database.get_balance(state.db, contract_address)
 
       beneficiary_exists = Database.account_exists?(state.db, beneficiary)
-      dynamic_cost = if not beneficiary_exists and balance > 0, do: 25_000, else: 0
+      {access_cost, state} = beneficiary_access_cost(state, beneficiary)
+
+      dynamic_cost =
+        access_cost + if(not beneficiary_exists and balance > 0, do: 25_000, else: 0)
 
       case MachineState.consume_gas(
              MachineState.update_frame(state, &%{&1 | stack: s1}),
@@ -134,5 +140,17 @@ defmodule EEVM.Interpreter.Instructions.System.Termination do
   end
 
   def execute(0xFE, state), do: {:ok, MachineState.halt(state, :invalid)}
+
   def execute(_opcode, state), do: {:ok, MachineState.halt(state, :invalid)}
+
+  # EIP-2929: a cold beneficiary costs COLD_ACCOUNT_ACCESS_COST (2,600) on top
+  # of the 5,000 static cost and becomes warm; a warm one costs nothing extra.
+  defp beneficiary_access_cost(state, beneficiary) do
+    if HardforkConfig.enabled?(state.env.config.hardfork, :eip_2929) and
+         not Access.warm_address?(state, beneficiary) do
+      {@cold_account_access_cost, Access.mark_address_warm(state, beneficiary)}
+    else
+      {0, state}
+    end
+  end
 end
