@@ -22,7 +22,7 @@ defmodule EEVM.HardforkConfig do
   | `:shanghai`      | EIP-3651 (COINBASE pre-warm), EIP-3855 (PUSH0), EIP-3860 (initcode limit) |
   | `:cancun`        | EIP-1153 (TLOAD/TSTORE), EIP-4844 (blobs), EIP-5656 (MCOPY), EIP-6780 (SELFDESTRUCT) |
    | `:prague`        | EIP-2537 (BLS12-381 precompiles), EIP-7623 (calldata floor), EIP-7702 (set-code) |
-  | `:osaka`         | EIP-7825 (tx gas limit cap) |
+  | `:osaka`         | EIP-7825 (tx gas limit cap), EIP-7918 (blob base fee floor) |
   """
 
   @type spec_id ::
@@ -106,8 +106,12 @@ defmodule EEVM.HardforkConfig do
     eip_7623: :prague,
     # EIP-2935 (Prague): historical block hashes system contract at 0x0000F908...2935
     eip_2935: :prague,
+    # EIP-7691 (Prague): blob schedule raised to target 6 / max 9 blobs per block
+    eip_7691: :prague,
     # EIP-7825 (Osaka): per-transaction gas limit cap of 2^24
-    eip_7825: :osaka
+    eip_7825: :osaka,
+    # EIP-7918 (Osaka): blob base fee bounded below by execution cost
+    eip_7918: :osaka
   }
 
   @doc """

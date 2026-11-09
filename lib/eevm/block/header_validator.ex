@@ -10,17 +10,23 @@ defmodule EEVM.Block.HeaderValidator do
     * `extra_data` is at most 32 bytes.
     * `gas_limit` is at least 5,000, fits in a signed 64-bit integer, and
       differs from the parent's gas limit by less than `parent_gas_limit / 1024`.
+    * From Cancun, `excess_blob_gas` equals the value derived from the parent
+      by `EEVM.Gas.Blob.calc_excess_blob_gas/2` (EIP-4844, with the EIP-7918
+      reserve price from Osaka). Skipped when the child's `excess_blob_gas`
+      is `nil`.
 
   Checks run in that order and the first failure wins.
 
   Cross-checks of `gas_used`, `state_root`, `transactions_root`,
   `receipts_root`, `logs_bloom`, and `withdrawals_root` need the block's
   execution result, so they happen after `EEVM.Block.Processor.process_block/4`
-  and aren't covered here. EIP-1559 base-fee and EIP-4844 blob-field rules
-  aren't covered yet either.
+  and aren't covered here. EIP-1559 base-fee rules and the remaining
+  EIP-4844 blob-field rules aren't covered yet either.
   """
 
   alias EEVM.Block.Header
+  alias EEVM.Gas.Blob
+  alias EEVM.HardforkConfig
 
   @max_extra_data_size 32
   @max_gas_limit_uint64_signed Bitwise.bsl(1, 63) - 1
@@ -35,10 +41,12 @@ defmodule EEVM.Block.HeaderValidator do
           | :extra_data_too_big
           | :invalid_gas_limit
           | :gas_limit_too_big
+          | :invalid_excess_blob_gas
 
   @doc """
   Returns `:ok` when `child` is a valid successor of `parent`, otherwise
-  `{:error, reason}` for the first rule it breaks.
+  `{:error, reason}` for the first rule it breaks. `hardfork` selects the
+  fork-dependent rules and defaults to `EEVM.HardforkConfig.default/0`.
 
   ## Example
 
@@ -50,13 +58,18 @@ defmodule EEVM.Block.HeaderValidator do
       iex> HeaderValidator.validate(%{child | timestamp: 10}, parent)
       {:error, :invalid_timestamp}
   """
-  @spec validate(Header.t(), Header.t()) :: :ok | {:error, error()}
-  def validate(%Header{} = child, %Header{} = parent) do
+  @spec validate(Header.t(), Header.t(), HardforkConfig.t()) :: :ok | {:error, error()}
+  def validate(
+        %Header{} = child,
+        %Header{} = parent,
+        %HardforkConfig{} = hardfork \\ HardforkConfig.default()
+      ) do
     with :ok <- check_parent_hash(child, parent),
          :ok <- check_number(child, parent),
          :ok <- check_timestamp(child, parent),
-         :ok <- check_extra_data(child) do
-      check_gas_limit(child, parent)
+         :ok <- check_extra_data(child),
+         :ok <- check_gas_limit(child, parent) do
+      check_excess_blob_gas(child, parent, hardfork)
     end
   end
 
@@ -87,6 +100,16 @@ defmodule EEVM.Block.HeaderValidator do
       {:error, :invalid_gas_limit}
     else
       :ok
+    end
+  end
+
+  defp check_excess_blob_gas(%Header{excess_blob_gas: nil}, _parent, _hardfork), do: :ok
+
+  defp check_excess_blob_gas(%Header{excess_blob_gas: excess}, parent, hardfork) do
+    cond do
+      not HardforkConfig.enabled?(hardfork, :eip_4844) -> :ok
+      excess == Blob.calc_excess_blob_gas(parent, hardfork) -> :ok
+      true -> {:error, :invalid_excess_blob_gas}
     end
   end
 end

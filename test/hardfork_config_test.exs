@@ -59,6 +59,11 @@ defmodule EEVM.HardforkConfigTest do
       refute HardforkConfig.enabled?(HardforkConfig.new(:prague), :eip_7825)
     end
 
+    test "EIP-7918 (blob base fee reserve price) is enabled from Osaka onward" do
+      assert HardforkConfig.enabled?(HardforkConfig.new(:osaka), :eip_7918)
+      refute HardforkConfig.enabled?(HardforkConfig.new(:prague), :eip_7918)
+    end
+
     test "EIP-2929 (cold/warm access) is enabled from Berlin onward" do
       assert HardforkConfig.enabled?(HardforkConfig.new(:berlin), :eip_2929)
       assert HardforkConfig.enabled?(HardforkConfig.new(:london), :eip_2929)

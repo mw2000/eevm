@@ -2,6 +2,7 @@ defmodule EEVM.Block.HeaderValidatorTest do
   use ExUnit.Case, async: true
 
   alias EEVM.Block.{Header, HeaderValidator}
+  alias EEVM.HardforkConfig
 
   doctest HeaderValidator
 
@@ -59,5 +60,22 @@ defmodule EEVM.Block.HeaderValidatorTest do
 
     assert {:error, :gas_limit_too_big} =
              HeaderValidator.validate(child(gas_limit: Bitwise.bsl(1, 63)), @parent)
+  end
+
+  test "checks excess_blob_gas against the parent, with the EIP-7918 reserve price from Osaka" do
+    # Parent at the Prague/Osaka blob target with a 1 wei blob base fee and an
+    # execution base fee high enough for the reserve price to apply.
+    blob_parent = %{@parent | excess_blob_gas: 0, blob_gas_used: 786_432, base_fee_per_gas: 17}
+    osaka = HardforkConfig.new(:osaka)
+    prague = HardforkConfig.new(:prague)
+
+    assert :ok = HeaderValidator.validate(child(excess_blob_gas: 262_144), blob_parent, osaka)
+    assert :ok = HeaderValidator.validate(child(excess_blob_gas: 0), blob_parent, prague)
+
+    assert {:error, :invalid_excess_blob_gas} =
+             HeaderValidator.validate(child(excess_blob_gas: 0), blob_parent, osaka)
+
+    assert {:error, :invalid_excess_blob_gas} =
+             HeaderValidator.validate(child(excess_blob_gas: 262_144), blob_parent, prague)
   end
 end

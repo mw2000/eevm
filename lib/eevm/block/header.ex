@@ -23,6 +23,8 @@ defmodule EEVM.Block.Header do
   | `extra_data` | Arbitrary producer bytes (at most 32 bytes on mainnet) |
   | `difficulty` | Proof-of-work difficulty (always zero post-Merge) |
   | `hash` | Keccak hash of this header, as supplied by the caller (not computed here) |
+  | `blob_gas_used` | EIP-4844 blob gas consumed by the block; `nil` before Cancun |
+  | `excess_blob_gas` | EIP-4844 running excess blob gas; `nil` before Cancun |
   """
 
   @type t :: %__MODULE__{
@@ -41,7 +43,9 @@ defmodule EEVM.Block.Header do
           gas_used: non_neg_integer(),
           extra_data: binary(),
           difficulty: non_neg_integer(),
-          hash: binary()
+          hash: binary(),
+          blob_gas_used: non_neg_integer() | nil,
+          excess_blob_gas: non_neg_integer() | nil
         }
 
   defstruct number: 0,
@@ -59,7 +63,9 @@ defmodule EEVM.Block.Header do
             gas_used: 0,
             extra_data: <<>>,
             difficulty: 0,
-            hash: <<0::256>>
+            hash: <<0::256>>,
+            blob_gas_used: nil,
+            excess_blob_gas: nil
 
   @doc "Returns a zero-initialised header."
   @spec new() :: t()

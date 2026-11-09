@@ -16,8 +16,8 @@ defmodule EEVM.TestSupport.BlockchainTestRunner do
      the fixture's `postState`.
 
   Before a block runs, its header is checked against the parent with
-  `EEVM.Block.HeaderValidator`. EIP-1559 basefee and blob-field header rules
-  aren't checked yet.
+  `EEVM.Block.HeaderValidator`. EIP-1559 basefee header rules aren't
+  checked yet.
   """
 
   alias EEVM.Block.{Header, HeaderValidator, Processor, Withdrawal}
@@ -25,14 +25,13 @@ defmodule EEVM.TestSupport.BlockchainTestRunner do
   alias EEVM.Context.{Block, Transaction}
   alias EEVM.Database
   alias EEVM.Database.InMemory
+  alias EEVM.Gas.Blob
   alias EEVM.HardforkConfig
   alias EEVM.SystemContracts.{BeaconRoots, BlockHashes}
   alias EEVM.TestSupport.BlockchainTestFixture.{Account, Case, TransactionFields}
   alias EEVM.TestSupport.BlockchainTestFixture.Block, as: FixtureBlock
   alias EEVM.TestSupport.BlockchainTestFixture.Withdrawal, as: FixtureWithdrawal
   alias EEVM.TestSupport.TxExecutor
-
-  @min_blob_base_fee 1
 
   @spec run_case(Case.t()) :: :ok | {:error, term()}
   def run_case(%Case{} = test) do
@@ -111,7 +110,7 @@ defmodule EEVM.TestSupport.BlockchainTestRunner do
   defp run_block(%FixtureBlock{header: header} = block, db, parent, config) do
     eevm_header = to_eevm_header(header)
 
-    with :ok <- HeaderValidator.validate(eevm_header, parent) do
+    with :ok <- HeaderValidator.validate(eevm_header, parent, config.hardfork) do
       do_run_block(block, eevm_header, db, config)
     end
   end
@@ -177,7 +176,9 @@ defmodule EEVM.TestSupport.BlockchainTestRunner do
       gas_used: header.gas_used,
       extra_data: header.extra_data,
       difficulty: header.difficulty,
-      hash: header.hash
+      hash: header.hash,
+      blob_gas_used: header.blob_gas_used,
+      excess_blob_gas: header.excess_blob_gas
     )
   end
 
@@ -220,7 +221,7 @@ defmodule EEVM.TestSupport.BlockchainTestRunner do
 
   defp tx_executor(%Config{} = config, header) do
     fn %Transaction{} = tx, %Block{} = block_ctx, db ->
-      block_ctx_with_blob = put_blob_base_fee(block_ctx, header)
+      block_ctx_with_blob = put_blob_base_fee(block_ctx, header, config.hardfork)
 
       case TxExecutor.execute(tx, db, block_ctx_with_blob, config) do
         {:ok, %{db: db, machine: machine, gas_used: gas_used, failed?: failed?}} ->
@@ -238,12 +239,13 @@ defmodule EEVM.TestSupport.BlockchainTestRunner do
     end
   end
 
-  # Until full EIP-4844 fake-exponential blob-fee math lands, set blob_base_fee
-  # to its post-Cancun floor of 1 wei whenever the header carries blob fields,
-  # and leave it at 0 for older blocks. Non-blob fixtures don't read this.
-  defp put_blob_base_fee(%Block{} = block_ctx, header) do
-    blob_base_fee = if header.excess_blob_gas == nil, do: 0, else: @min_blob_base_fee
-    %{block_ctx | blob_base_fee: blob_base_fee}
+  # Derive blob_base_fee from the header's excess_blob_gas; pre-Cancun headers
+  # carry no blob fields and leave it at 0.
+  defp put_blob_base_fee(%Block{} = block_ctx, %{excess_blob_gas: nil}, _hardfork),
+    do: block_ctx
+
+  defp put_blob_base_fee(%Block{} = block_ctx, header, hardfork) do
+    %{block_ctx | blob_base_fee: Blob.base_fee_per_blob_gas(header.excess_blob_gas, hardfork)}
   end
 
   defp verify_post_state(db, post) do
