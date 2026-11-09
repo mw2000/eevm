@@ -223,6 +223,23 @@ defmodule EEVM.HandlerTest do
       refute Database.account_exists?(result.post_state_db, result.contract_address)
       assert Database.get_balance(result.post_state_db, 0xBB) == 5
     end
+
+    test "creating over an account with code fails and consumes all gas (EIP-684)" do
+      # keccak256(rlp([sender, 0]))[12:]: 0xd6 = list of 22 bytes, 0x94 = 20-byte string.
+      <<_::binary-size(12), target::unsigned-big-160>> =
+        ExKeccak.hash_256(<<0xD6, 0x94, sender_address()::unsigned-big-160, 0x80>>)
+
+      db = Database.put_code(db_with_sender(balance: 10_000_000), target, <<0xFE>>)
+      # Initcode that would deploy a STOP byte if it ran.
+      tx = create_tx(<<0x60, 0x00, 0x60, 0x00, 0x53, 0x60, 0x01, 0x60, 0x00, 0xF3>>, 0)
+
+      assert {:ok, result} = run(tx, db)
+      assert result.status == :reverted
+      assert result.gas_used == 200_000
+      assert result.contract_address == nil
+      assert Database.get_code(result.post_state_db, target) == <<0xFE>>
+      assert Database.get_nonce(result.post_state_db, sender_address()) == 1
+    end
   end
 
   describe "execute/4 — REVERT" do

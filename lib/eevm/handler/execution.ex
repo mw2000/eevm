@@ -6,8 +6,10 @@ defmodule EEVM.Handler.Execution do
 
   - **Call** (`tx.to` is a 20-byte address): transfer `tx.value`, fetch the
     code at `to`, and run the interpreter against it.
-  - **Create** (`tx.to` is `nil`): derive the new contract address, transfer
-    `tx.value`, run `tx.data` as initcode, then deploy whatever the initcode
+  - **Create** (`tx.to` is `nil`): derive the new contract address, fail
+    with all execution gas consumed if it collides with an existing account
+    (EIP-684, EIP-7610), transfer `tx.value`, run `tx.data` as initcode,
+    then deploy whatever the initcode
     returns as the new account's runtime code (subject to size and EIP-3541
     deposit-cost checks).
 
@@ -18,6 +20,7 @@ defmodule EEVM.Handler.Execution do
   alias EEVM.{Config, Database, HardforkConfig}
   alias EEVM.Context.{Block, Contract, Transaction}
   alias EEVM.Handler.PreExecution
+  alias EEVM.Interpreter.Instructions.System.Creation
   alias EEVM.Interpreter.MachineState
 
   @max_code_size 24_576
@@ -65,6 +68,18 @@ defmodule EEVM.Handler.Execution do
     creator = tx.origin
     pre_nonce = max(Database.get_nonce(db, creator) - 1, 0)
     new_address = derive_create_address(creator, pre_nonce)
+
+    if Creation.address_collision?(db, new_address) do
+      # EIP-684: creating over an existing account fails and consumes all of
+      # the transaction's execution gas; the sender's nonce bump stands.
+      {zero_gas_revert(MachineState.new(<<>>, db: db, tx: tx, block: block, config: config)), nil}
+    else
+      run_initcode(tx, db, block, config, execution_gas, new_address)
+    end
+  end
+
+  defp run_initcode(tx, db, block, config, execution_gas, new_address) do
+    creator = tx.origin
 
     # The new account exists before its initcode runs, with nonce 1 from
     # EIP-161 on, so CREATEs issued by the initcode derive addresses from

@@ -14,6 +14,11 @@ defmodule EEVM.Interpreter.Instructions.System.Creation do
 
   Both enforce EIP-3860 initcode size limits (`max_initcode_size = 49,152 bytes`)
   and EIP-170 runtime code size limits (`max_code_size = 24,576 bytes`).
+
+  Creation fails and pushes 0 without touching the creator's nonce when its
+  balance can't cover the endowment. A collision with an existing account
+  (EIP-684, EIP-7610) also pushes 0, but keeps the nonce bump and consumes
+  the gas meant for the init code.
   """
 
   @max_code_size 24_576
@@ -116,134 +121,134 @@ defmodule EEVM.Interpreter.Instructions.System.Creation do
               state_after_touch =
                 MachineState.touch_address(state_after_initcode_cost, new_address)
 
-              can_create = can_create_account?(db_after_nonce, new_address)
+              cond do
+                # The balance check precedes the nonce bump: a CREATE that can't
+                # fund its endowment leaves the nonce alone and returns all gas.
+                Database.get_balance(state_after_initcode_cost.db, creator) < value ->
+                  create_failed(state_after_initcode_cost, stack)
 
-              if can_create do
-                case Database.transfer(db_after_nonce, creator, new_address, value) do
-                  {:ok, db_after_transfer} ->
-                    config = state_after_touch.env.config
+                # EIP-684: a collision keeps the nonce bump and consumes the gas
+                # meant for the init code.
+                address_collision?(db_after_nonce, new_address) ->
+                  create_failed(
+                    %{state_after_touch | db: db_after_nonce}
+                    |> MachineState.update_frame(&%{&1 | gas: reserve_gas}),
+                    stack
+                  )
 
-                    # The new account exists before its initcode runs, with nonce 1
-                    # from EIP-161 on, so CREATEs issued by the initcode derive
-                    # addresses from nonce 1. Registering the address as created
-                    # before the initcode runs lets a SELFDESTRUCT during init
-                    # fully delete it (EIP-6780).
-                    child_db =
-                      Database.set_nonce(
-                        db_after_transfer,
-                        new_address,
-                        if(HardforkConfig.enabled?(config.hardfork, :eip_161), do: 1, else: 0)
-                      )
+                true ->
+                  {:ok, db_after_transfer} =
+                    Database.transfer(db_after_nonce, creator, new_address, value)
 
-                    child_contract =
-                      Contract.new(
-                        address: new_address,
-                        caller: creator,
-                        callvalue: value,
-                        calldata: <<>>,
-                        balances: state_after_initcode_cost.frame.contract.balances
-                      )
+                  config = state_after_touch.env.config
 
-                    child_state =
-                      MachineState.new(init_code,
-                        gas: create_gas,
-                        db: child_db,
-                        tx: state_after_touch.env.tx,
-                        block: state_after_touch.env.block,
-                        contract: child_contract,
-                        config: config,
-                        touched_addresses: state_after_touch.substate.touched_addresses,
-                        accessed_addresses: state_after_touch.substate.accessed_addresses,
-                        accessed_storage_keys: state_after_touch.substate.accessed_storage_keys,
-                        created_addresses:
-                          MapSet.put(state_after_touch.substate.created_addresses, new_address),
-                        is_static: state_after_touch.frame.is_static,
-                        depth: state_after_touch.frame.depth + 1,
-                        tracer: state_after_touch.tracer
-                      )
+                  # The new account exists before its initcode runs, with nonce 1
+                  # from EIP-161 on, so CREATEs issued by the initcode derive
+                  # addresses from nonce 1. Registering the address as created
+                  # before the initcode runs lets a SELFDESTRUCT during init
+                  # fully delete it (EIP-6780).
+                  child_db =
+                    Database.set_nonce(
+                      db_after_transfer,
+                      new_address,
+                      if(HardforkConfig.enabled?(config.hardfork, :eip_161), do: 1, else: 0)
+                    )
 
-                    child_result = Interpreter.run_loop(child_state)
-                    deployment_success = child_result.status == :stopped
+                  child_contract =
+                    Contract.new(
+                      address: new_address,
+                      caller: creator,
+                      callvalue: value,
+                      calldata: <<>>,
+                      balances: state_after_initcode_cost.frame.contract.balances
+                    )
 
-                    # A failed deployment keeps the 1/64 reserve plus whatever a
-                    # reverted init code left unused. Exceptional halts and rejected
-                    # runtime code (size, 0xEF prefix, deposit cost) consume the rest.
-                    returned_gas =
-                      if child_result.status == :reverted, do: child_result.frame.gas, else: 0
+                  child_state =
+                    MachineState.new(init_code,
+                      gas: create_gas,
+                      db: child_db,
+                      tx: state_after_touch.env.tx,
+                      block: state_after_touch.env.block,
+                      contract: child_contract,
+                      config: config,
+                      touched_addresses: state_after_touch.substate.touched_addresses,
+                      accessed_addresses: state_after_touch.substate.accessed_addresses,
+                      accessed_storage_keys: state_after_touch.substate.accessed_storage_keys,
+                      created_addresses:
+                        MapSet.put(state_after_touch.substate.created_addresses, new_address),
+                      is_static: state_after_touch.frame.is_static,
+                      depth: state_after_touch.frame.depth + 1,
+                      tracer: state_after_touch.tracer
+                    )
 
-                    post_child_fail_state =
-                      %{state_after_touch | db: db_after_nonce, tracer: child_result.tracer}
-                      |> MachineState.update_frame(&%{&1 | gas: reserve_gas + returned_gas})
+                  child_result = Interpreter.run_loop(child_state)
+                  deployment_success = child_result.status == :stopped
 
-                    if deployment_success do
-                      runtime_code = child_result.frame.return_data
+                  # A failed deployment keeps the 1/64 reserve plus whatever a
+                  # reverted init code left unused. Exceptional halts and rejected
+                  # runtime code (size, 0xEF prefix, deposit cost) consume the rest.
+                  returned_gas =
+                    if child_result.status == :reverted, do: child_result.frame.gas, else: 0
 
-                      if HardforkConfig.enabled?(child_result.env.config.hardfork, :eip_170) and
-                           byte_size(runtime_code) > @max_code_size do
+                  post_child_fail_state =
+                    %{state_after_touch | db: db_after_nonce, tracer: child_result.tracer}
+                    |> MachineState.update_frame(&%{&1 | gas: reserve_gas + returned_gas})
+
+                  if deployment_success do
+                    runtime_code = child_result.frame.return_data
+
+                    if HardforkConfig.enabled?(child_result.env.config.hardfork, :eip_170) and
+                         byte_size(runtime_code) > @max_code_size do
+                      create_failed(post_child_fail_state, stack)
+                    else
+                      # EIP-3541 (London+): reject runtime code whose first byte is 0xEF.
+                      # The 0xEF prefix is reserved for the EVM Object Format (EOF).
+                      # This check runs after EIP-170 size validation and after init code
+                      # execution -- so init code gas is already consumed but no code is
+                      # deposited. Empty runtime code is explicitly allowed.
+                      if HardforkConfig.enabled?(child_result.env.config.hardfork, :eip_3541) and
+                           reject_eip_3541_runtime_code?(runtime_code) do
                         create_failed(post_child_fail_state, stack)
                       else
-                        # EIP-3541 (London+): reject runtime code whose first byte is 0xEF.
-                        # The 0xEF prefix is reserved for the EVM Object Format (EOF).
-                        # This check runs after EIP-170 size validation and after init code
-                        # execution -- so init code gas is already consumed but no code is
-                        # deposited. Empty runtime code is explicitly allowed.
-                        if HardforkConfig.enabled?(child_result.env.config.hardfork, :eip_3541) and
-                             reject_eip_3541_runtime_code?(runtime_code) do
-                          create_failed(post_child_fail_state, stack)
+                        deposit_cost = Dynamic.code_deposit_cost(byte_size(runtime_code))
+
+                        if child_result.frame.gas >= deposit_cost do
+                          # An account that SELFDESTRUCTed during its own init is
+                          # gone; depositing code would resurrect it.
+                          db_after_deploy =
+                            if Database.account_exists?(child_result.db, new_address),
+                              do: Database.put_code(child_result.db, new_address, runtime_code),
+                              else: child_result.db
+
+                          {:ok, stack_after_create} = Stack.push(stack, new_address)
+
+                          merged =
+                            Journal.merge_child_result(state_after_initcode_cost, child_result)
+
+                          {:ok,
+                           merged
+                           |> MachineState.update_frame(
+                             &%{
+                               &1
+                               | stack: stack_after_create,
+                                 memory: memory_after_read,
+                                 gas: reserve_gas + child_result.frame.gas - deposit_cost,
+                                 return_data: child_result.frame.return_data
+                             }
+                           )
+                           |> Map.put(:db, db_after_deploy)
+                           |> MachineState.advance_pc()}
                         else
-                          deposit_cost = Dynamic.code_deposit_cost(byte_size(runtime_code))
-
-                          if child_result.frame.gas >= deposit_cost do
-                            # An account that SELFDESTRUCTed during its own init is
-                            # gone; depositing code would resurrect it.
-                            db_after_deploy =
-                              if Database.account_exists?(child_result.db, new_address),
-                                do: Database.put_code(child_result.db, new_address, runtime_code),
-                                else: child_result.db
-
-                            {:ok, stack_after_create} = Stack.push(stack, new_address)
-
-                            merged =
-                              Journal.merge_child_result(state_after_initcode_cost, child_result)
-
-                            {:ok,
-                             merged
-                             |> MachineState.update_frame(
-                               &%{
-                                 &1
-                                 | stack: stack_after_create,
-                                   memory: memory_after_read,
-                                   gas: reserve_gas + child_result.frame.gas - deposit_cost,
-                                   return_data: child_result.frame.return_data
-                               }
-                             )
-                             |> Map.put(:db, db_after_deploy)
-                             |> MachineState.advance_pc()}
-                          else
-                            create_failed(post_child_fail_state, stack)
-                          end
+                          create_failed(post_child_fail_state, stack)
                         end
                       end
-                    else
-                      create_failed(
-                        post_child_fail_state,
-                        stack
-                      )
                     end
-
-                  {:error, :insufficient_balance} ->
+                  else
                     create_failed(
-                      %{state_after_touch | db: db_after_nonce},
+                      post_child_fail_state,
                       stack
                     )
-                end
-              else
-                # Address collision: the gas meant for the init code is consumed.
-                create_failed(
-                  %{state_after_touch | db: db_after_nonce}
-                  |> MachineState.update_frame(&%{&1 | gas: reserve_gas}),
-                  stack
-                )
+                  end
               end
 
             {:error, :out_of_gas, halted_state} ->
@@ -256,17 +261,16 @@ defmodule EEVM.Interpreter.Instructions.System.Creation do
     end
   end
 
-  defp can_create_account?(db, address) do
-    account = Database.get_account(db, address)
-
-    case account do
-      nil ->
-        true
-
-      _ ->
-        Database.get_nonce(db, address) == 0 and
-          Database.get_code(db, address) == <<>>
-    end
+  @doc """
+  Returns true when contract creation at `address` collides with an existing
+  account: one with a nonzero nonce, non-empty code (EIP-684), or non-empty
+  storage (EIP-7610). A collision fails the creation.
+  """
+  @spec address_collision?(Database.t(), non_neg_integer()) :: boolean()
+  def address_collision?(db, address) do
+    Database.get_nonce(db, address) != 0 or
+      Database.get_code(db, address) != <<>> or
+      Enum.any?(Database.storage_slots(db, address), fn {_slot, value} -> value != 0 end)
   end
 
   defp derive_create_address(sender, nonce) do

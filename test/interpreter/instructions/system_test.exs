@@ -5,6 +5,7 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
 
   alias EEVM.Context.Contract
   alias EEVM.Database
+  alias EEVM.Database.InMemory
   alias EEVM.Interpreter.Memory
   alias EEVM.WorldState
 
@@ -117,7 +118,52 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
       assert result.status == :stopped
       assert EEVM.stack_values(result) == [0]
       assert Database.get_balance(result.db, 0) == 1
+      # The balance check precedes the nonce bump (geth core/vm/evm.go create).
+      assert Database.get_nonce(result.db, 0) == 0
     end
+
+    test "CREATE2 onto an account with code pushes 0, bumps the nonce, and burns the forwarded gas" do
+      init_code = <<0x00>>
+      target = create2_address(0, 0, init_code)
+      code = build_create_program(init_code, :create2, 0x00, 0x00)
+
+      world_state = WorldState.new(%{0 => %{balance: 10}, target => %{code: <<0xFE>>}})
+      result = EEVM.execute(code, world_state: world_state, gas: 1_000_000)
+
+      assert result.status == :stopped
+      assert EEVM.stack_values(result) == [0]
+      assert Database.get_nonce(result.db, 0) == 1
+      assert Database.get_code(result.db, target) == <<0xFE>>
+      # PUSH1+PUSH1+MSTORE8 (12, incl. 3 memory), 4x PUSH1 (12), CREATE2 32000 +
+      # 6 hash + 2 initcode (EIP-3860). EIP-684/EIP-150: the collision consumes
+      # all but 1/64 of the rest.
+      remaining = 1_000_000 - 12 - 12 - 32_000 - 6 - 2
+      assert result.frame.gas == div(remaining, 64)
+    end
+
+    test "CREATE2 onto an account with only storage collides (EIP-7610)" do
+      init_code = <<0x00>>
+      target = create2_address(0, 0, init_code)
+      code = build_create_program(init_code, :create2, 0x00, 0x00)
+
+      db = InMemory.new(accounts: %{0 => %{balance: 10}}, storage: %{target => %{0 => 1}})
+      result = EEVM.execute(code, db: db)
+
+      assert EEVM.stack_values(result) == [0]
+      assert Database.get_nonce(result.db, 0) == 1
+      refute Database.account_exists?(result.db, target)
+    end
+  end
+
+  # EIP-1014: keccak256(0xff ++ sender ++ salt ++ keccak256(init_code))[12:]
+  defp create2_address(sender, salt, init_code) do
+    <<_::binary-size(12), address::unsigned-big-160>> =
+      ExKeccak.hash_256(
+        <<0xFF, sender::unsigned-big-160, salt::unsigned-big-256,
+          ExKeccak.hash_256(init_code)::binary>>
+      )
+
+    address
   end
 
   describe "CALL (0xF1)" do
