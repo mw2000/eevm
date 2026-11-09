@@ -78,17 +78,15 @@ defmodule EEVM.Interpreter do
   @doc """
   The main execution loop. Runs until execution terminates.
 
-  Three clauses handle the three possible states:
+  While `status: :running`, it fetches the current opcode, deducts static
+  gas, delegates to `execute_opcode/2`, and recurses. Any other status
+  (`:stopped`, `:reverted`, `:invalid`, `:out_of_gas`, `{:error, reason}`)
+  means the frame has halted, and the state is returned as-is.
 
-  1. `status: :running` — fetch the current opcode, deduct static gas, delegate
-     to `execute_opcode/2`, and recurse.
-  2. Any non-running status (`:stopped`, `:returned`, `:reverted`, `:invalid`,
-     `{:error, reason}`) — the machine has halted; return as-is.
-  3. Out-of-gas during static cost deduction — the halted state is returned
-     directly from `MachineState.consume_gas/2`.
-
-  This function is public because it is called recursively by itself. It is
-  the internal execution engine and not part of the public API — use `run/2`.
+  It runs one frame. CALL and CREATE run each child frame in a nested call
+  and merge the result into the parent (`EEVM.Interpreter.Journal`). It is
+  public for those callers and the transaction handler; it is not part of
+  the public API — use `run/2`.
   """
 
   @spec run_loop(MachineState.t()) :: MachineState.t()
@@ -124,20 +122,6 @@ defmodule EEVM.Interpreter do
             annotate_last_error(halted_state, :out_of_gas)
         end
     end
-  end
-
-  def run_loop(%MachineState{status: :reverted, call_stack: [parent | _]} = state) do
-    state_with_restored_refund =
-      MachineState.update_frame(state, &%{&1 | refund: parent.refund})
-
-    {:ok, resumed_state} = MachineState.pop_frame(state_with_restored_refund)
-    run_loop(resumed_state)
-  end
-
-  def run_loop(%MachineState{status: status, call_stack: [_ | _]} = state)
-      when status in [:stopped, :invalid, :out_of_gas] do
-    {:ok, resumed_state} = MachineState.pop_frame(state)
-    run_loop(resumed_state)
   end
 
   def run_loop(state), do: state

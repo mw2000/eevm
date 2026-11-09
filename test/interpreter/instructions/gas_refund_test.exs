@@ -1,13 +1,10 @@
 defmodule EEVM.Interpreter.Instructions.GasRefundTest do
   use ExUnit.Case, async: true
 
-  alias EEVM.Context.Contract
   alias EEVM.Context.Transaction
   alias EEVM.Gas.Static
   alias EEVM.HardforkConfig
-  alias EEVM.Interpreter
-  alias EEVM.Interpreter.{MachineState, Memory, Stack}
-  alias EEVM.Interpreter.MachineState.Frame
+  alias EEVM.Interpreter.MachineState
   alias EEVM.Transaction.IntrinsicGas
 
   test "refund counter defaults to 0" do
@@ -98,61 +95,5 @@ defmodule EEVM.Interpreter.Instructions.GasRefundTest do
 
     assert result.status == :reverted
     assert result.frame.refund == 0
-  end
-
-  test "nested call success preserves accumulated refund" do
-    parent_state =
-      MachineState.new(<<0x00>>, contract: Contract.new(address: 1), gas: 1_000, refund: 7)
-
-    child_frame = %Frame{
-      code: <<0x00>>,
-      pc: 0,
-      stack: Stack.new(),
-      memory: Memory.new(),
-      gas: 100,
-      contract: Contract.new(address: 2, caller: 1),
-      return_offset: 0,
-      return_size: 0,
-      is_static: false,
-      depth: 1,
-      refund: 12
-    }
-
-    {:ok, state_after_push} = MachineState.push_frame(parent_state, child_frame)
-    child_halted = %{state_after_push | status: :stopped}
-
-    result = Interpreter.run_loop(child_halted)
-
-    assert result.status == :stopped
-    assert result.call_stack == []
-    assert result.frame.refund == 12
-  end
-
-  test "nested call revert restores parent refund snapshot" do
-    parent_state =
-      MachineState.new(<<0x00>>, contract: Contract.new(address: 1), gas: 1_000, refund: 7)
-
-    child_frame = %Frame{
-      code: <<0xFD>>,
-      pc: 0,
-      stack: Stack.new(),
-      memory: Memory.new(),
-      gas: 100,
-      contract: Contract.new(address: 2, caller: 1),
-      return_offset: 0,
-      return_size: 0,
-      is_static: false,
-      depth: 1,
-      refund: 12
-    }
-
-    {:ok, state_after_push} = MachineState.push_frame(parent_state, child_frame)
-    child_reverted = %{state_after_push | status: :reverted}
-
-    result = Interpreter.run_loop(child_reverted)
-
-    assert result.status == :stopped
-    assert result.call_stack == []
-    assert result.frame.refund == 7
   end
 end

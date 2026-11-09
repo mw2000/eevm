@@ -7,13 +7,12 @@ defmodule EEVM.Interpreter.MachineState do
 
   - **frame** (`Frame.t()`) — the active per-call execution context: pc,
     stack, memory, gas, refund, code, return_data, contract, depth,
-    is_static, parent return write-back location.
+    is_static.
   - **env** (`Env.t()`) — read-only execution environment for this call:
     tx, block, hardfork config.
   - **substate** (`Substate.t()`) — transaction-scoped accumulators:
     touched / accessed / created / original / transient / logs.
   - **db** — unified world-state backend (accounts + storage).
-  - **call_stack** — `[Frame.t()]` of suspended parent frames.
   - **status** — `:running | :stopped | :reverted | :invalid | :out_of_gas`
     or `{:error, atom()}`.
   - **tracer** — optional opcode-level trace recorder.
@@ -39,7 +38,6 @@ defmodule EEVM.Interpreter.MachineState do
           env: Env.t(),
           substate: Substate.t(),
           db: Database.t(),
-          call_stack: [Frame.t()],
           status: status(),
           tracer: Tracer.t() | nil
         }
@@ -49,7 +47,6 @@ defmodule EEVM.Interpreter.MachineState do
             env: nil,
             substate: nil,
             db: nil,
-            call_stack: [],
             status: :running,
             tracer: nil
 
@@ -70,9 +67,6 @@ defmodule EEVM.Interpreter.MachineState do
       - `:block` — block context (default: empty)
       - `:hardfork` — hardfork spec id (e.g. `:cancun`, `:berlin`; default: `:cancun`)
       - `:world_state` — legacy external account state (default: empty, backward-compat)
-      - `:call_stack` — internal frame stack (default: `[]`)
-      - `:frame_return_offset` — parent memory write-back offset (default: `0`)
-      - `:frame_return_size` — parent memory write-back size (default: `0`)
       - `:is_static` — static context flag for this frame (default: `false`)
       - `:depth` — current call depth (default: `0`)
       - `:refund` — gas refund counter (default: `0`)
@@ -109,8 +103,6 @@ defmodule EEVM.Interpreter.MachineState do
       stack: Stack.new(),
       memory: Memory.new(),
       contract: contract,
-      return_offset: Keyword.get(opts, :frame_return_offset, 0),
-      return_size: Keyword.get(opts, :frame_return_size, 0),
       is_static: Keyword.get(opts, :is_static, false),
       depth: Keyword.get(opts, :depth, 0),
       return_data: Keyword.get(opts, :return_data, <<>>),
@@ -123,7 +115,6 @@ defmodule EEVM.Interpreter.MachineState do
       env: Env.new(tx: tx, block: block, config: config),
       substate: substate,
       db: init_db(opts, contract),
-      call_stack: Keyword.get(opts, :call_stack, []),
       tracer: Keyword.get(opts, :tracer)
     }
   end
@@ -217,36 +208,6 @@ defmodule EEVM.Interpreter.MachineState do
     %{state | frame: fun.(frame)}
   end
 
-  @spec push_frame(t(), Frame.t()) :: {:ok, t()} | {:error, :max_call_depth, t()}
-  def push_frame(%__MODULE__{frame: %Frame{depth: depth}} = state, _new_frame)
-      when depth >= 1024 do
-    {:error, :max_call_depth, state}
-  end
-
-  def push_frame(%__MODULE__{frame: parent} = state, %Frame{} = new_frame) do
-    {:ok, %{state | call_stack: [parent | state.call_stack], frame: new_frame, status: :running}}
-  end
-
-  @spec pop_frame(t()) :: {:ok, t()} | {:error, :empty_call_stack, t()}
-  def pop_frame(%__MODULE__{call_stack: []} = state), do: {:error, :empty_call_stack, state}
-
-  def pop_frame(%__MODULE__{call_stack: [parent | rest], frame: child} = state) do
-    child_return_data = child.return_data
-
-    {parent_memory, _} =
-      write_return_data(parent.memory, child.return_offset, child.return_size, child_return_data)
-
-    restored_frame = %{
-      parent
-      | memory: parent_memory,
-        gas: parent.gas + child.gas,
-        refund: child.refund,
-        return_data: child_return_data
-    }
-
-    {:ok, %{state | call_stack: rest, frame: restored_frame, status: :running}}
-  end
-
   @doc """
   Deducts gas from the active frame.
 
@@ -301,22 +262,5 @@ defmodule EEVM.Interpreter.MachineState do
   def touch_address(state, address) do
     sub = state.substate
     %{state | substate: %{sub | touched_addresses: MapSet.put(sub.touched_addresses, address)}}
-  end
-
-  defp write_return_data(memory, _offset, 0, return_data), do: {memory, return_data}
-
-  # Writes min(size, byte_size(return_data)) bytes and leaves the rest of the
-  # output area untouched, but expands memory over all of it.
-  defp write_return_data(memory, offset, size, return_data) do
-    {_, expanded} = Memory.read_bytes(memory, offset, size)
-
-    new_memory =
-      return_data
-      |> binary_part(0, min(size, byte_size(return_data)))
-      |> :binary.bin_to_list()
-      |> Enum.with_index()
-      |> Enum.reduce(expanded, fn {byte, i}, mem -> Memory.store_byte(mem, offset + i, byte) end)
-
-    {new_memory, return_data}
   end
 end
