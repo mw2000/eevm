@@ -33,15 +33,8 @@ defmodule EEVM.Block.HeaderValidator do
   @min_gas_limit 5_000
   @gas_limit_divisor 1_024
 
-  @typedoc "Reason returned when a header fails validation."
-  @type error ::
-          :unknown_parent
-          | :invalid_block_number
-          | :invalid_timestamp
-          | :extra_data_too_big
-          | :invalid_gas_limit
-          | :gas_limit_too_big
-          | :invalid_excess_blob_gas
+  @typedoc "Reason returned when a header fails validation; see `EEVM.Error`."
+  @type error :: EEVM.Error.header_validation_error()
 
   @doc """
   Returns `:ok` when `child` is a valid successor of `parent`, otherwise

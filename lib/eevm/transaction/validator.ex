@@ -8,6 +8,7 @@ defmodule EEVM.Transaction.Validator do
 
   alias EEVM.Context.{Block, Transaction}
   alias EEVM.Database
+  alias EEVM.Error
   alias EEVM.HardforkConfig
   alias EEVM.Transaction.IntrinsicGas
 
@@ -16,13 +17,14 @@ defmodule EEVM.Transaction.Validator do
   # EIP-7825: per-transaction gas limit cap (2^24), independent of the block gas limit.
   @max_tx_gas_limit 16_777_216
 
-  @spec validate(Transaction.t(), Database.t(), Block.t()) :: :ok | {:error, atom()}
+  @spec validate(Transaction.t(), Database.t(), Block.t()) ::
+          :ok | {:error, Error.transaction_validation_error()}
   def validate(%Transaction{} = tx, %Database{} = db, %Block{} = block) do
     validate(tx, db, block, HardforkConfig.default())
   end
 
   @spec validate(Transaction.t(), Database.t(), Block.t(), HardforkConfig.t()) ::
-          :ok | {:error, atom()}
+          :ok | {:error, Error.transaction_validation_error()}
   def validate(
         %Transaction{} = tx,
         %Database{} = db,

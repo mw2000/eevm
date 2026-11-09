@@ -35,6 +35,44 @@ defmodule EEVM.Error do
   | `:proof_verification_failed` | KZG | KZG proof verification returned false |
   | `:not_implemented` | `EEVM.Precompiles` | Precompile address has no implementation |
 
+  ## Transaction Validation Errors
+
+  Returned by `EEVM.Transaction.Validator.validate/4` (and so by
+  `EEVM.Handler.execute/4`) before any state changes. Checks run in the order
+  listed and the first failure wins.
+
+  | Error | Meaning |
+  |-------|---------|
+  | `:intrinsic_gas_too_low` | `gas_limit` is below the intrinsic gas (or, from Prague, the EIP-7623 calldata floor) |
+  | `:gas_limit_exceeds_cap` | `gas_limit` is above 2^24 (EIP-7825, from Osaka) |
+  | `:gas_limit_exceeds_block` | `gas_limit` is above the block gas limit |
+  | `:nonce_too_low` | `nonce` is below the sender's account nonce |
+  | `:nonce_too_high` | `nonce` is above the sender's account nonce |
+  | `:priority_fee_above_max_fee` | `max_priority_fee_per_gas` exceeds `max_fee_per_gas` (EIP-1559) |
+  | `:max_fee_below_basefee` | `max_fee_per_gas` is below the block base fee (EIP-1559) |
+  | `:insufficient_balance` | Balance can't cover `gas_limit * max price + blob gas * max_fee_per_blob_gas + value` |
+  | `:sender_not_eoa` | Sender has code (EIP-3607) |
+  | `:blob_tx_no_creation` | Blob transaction has no `to` address (EIP-4844) |
+  | `:no_blob_data` | Blob transaction carries no blob hashes (EIP-4844) |
+  | `:blob_fee_too_low` | `max_fee_per_blob_gas` is below the block blob base fee (EIP-4844) |
+  | `:initcode_too_large` | Contract-creation data exceeds 49,152 bytes (EIP-3860) |
+
+  ## Block Header Validation Errors
+
+  Returned by `EEVM.Block.HeaderValidator.validate/3` when a header is not a
+  valid successor of its parent. Checks run in the order listed and the first
+  failure wins.
+
+  | Error | Meaning |
+  |-------|---------|
+  | `:unknown_parent` | `parent_hash` doesn't match the parent header's hash |
+  | `:invalid_block_number` | `number` isn't the parent's number plus one |
+  | `:invalid_timestamp` | `timestamp` isn't greater than the parent's |
+  | `:extra_data_too_big` | `extra_data` is longer than 32 bytes |
+  | `:invalid_gas_limit` | `gas_limit` is below 5,000 or moves by `parent_gas_limit / 1024` or more |
+  | `:gas_limit_too_big` | `gas_limit` exceeds the signed 64-bit maximum |
+  | `:invalid_excess_blob_gas` | `excess_blob_gas` differs from the value derived from the parent (EIP-4844, EIP-7918 from Osaka) |
+
   ## Registry Errors
 
   | Error | Source | Meaning |
@@ -72,5 +110,34 @@ defmodule EEVM.Error do
           | :proof_verification_failed
           | :not_implemented
 
-  @type reason :: execution_error() | precompile_error() | :unknown_opcode
+  @type transaction_validation_error ::
+          :intrinsic_gas_too_low
+          | :gas_limit_exceeds_cap
+          | :gas_limit_exceeds_block
+          | :nonce_too_low
+          | :nonce_too_high
+          | :priority_fee_above_max_fee
+          | :max_fee_below_basefee
+          | :insufficient_balance
+          | :sender_not_eoa
+          | :blob_tx_no_creation
+          | :no_blob_data
+          | :blob_fee_too_low
+          | :initcode_too_large
+
+  @type header_validation_error ::
+          :unknown_parent
+          | :invalid_block_number
+          | :invalid_timestamp
+          | :extra_data_too_big
+          | :invalid_gas_limit
+          | :gas_limit_too_big
+          | :invalid_excess_blob_gas
+
+  @type reason ::
+          execution_error()
+          | precompile_error()
+          | :unknown_opcode
+          | transaction_validation_error()
+          | header_validation_error()
 end
