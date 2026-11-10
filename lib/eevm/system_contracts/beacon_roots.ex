@@ -90,8 +90,10 @@ defmodule EEVM.SystemContracts.BeaconRoots do
   `beacon_root` under `block.timestamp`. An integer `beacon_root` is
   deprecated but still accepted for one minor version.
 
-  Uses SYSTEM_ADDRESS as the caller so the contract takes its storage branch.
-  Returns the updated database, or an error tuple if the call reverted (which
+  Uses SYSTEM_ADDRESS as the caller so the contract takes its storage branch,
+  and runs the code deployed at the contract address; when none is deployed yet
+  (the fork's first blocks, before the deployment transaction), the call is a
+  no-op. Returns the updated database, or an error tuple if the call reverted (which
   should never happen with the canonical bytecode, but we surface it rather
   than swallow it).
   """
@@ -101,8 +103,18 @@ defmodule EEVM.SystemContracts.BeaconRoots do
     do: commit(db, block, <<beacon_root::unsigned-big-256>>)
 
   def commit(%Database{} = db, %BlockEnv{} = block, <<_::256>> = beacon_root) do
+    # EIP-4788: if no code exists at the address, the call fails silently.
+    # Otherwise it runs the code deployed there (execution-specs
+    # `process_unchecked_system_transaction`).
+    case Database.get_code(db, @address) do
+      <<>> -> {:ok, db}
+      code -> run_system_call(code, db, block, beacon_root)
+    end
+  end
+
+  defp run_system_call(code, db, block, beacon_root) do
     final_state =
-      @deployed_code
+      code
       |> MachineState.new(
         db: db,
         block: block,

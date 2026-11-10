@@ -43,6 +43,22 @@ defmodule EEVM.SystemContracts.BeaconRootsTest do
   end
 
   describe "commit/3" do
+    # Before the deployment transaction runs, the address has no code and the
+    # call must leave state alone (EEST test_beacon_root_contract_deploy,
+    # test_system_contract_deployment); writing its slots would make the later
+    # deployment collide (EIP-7610).
+    test "is a no-op when no contract is deployed" do
+      assert {:ok, db} =
+               BeaconRoots.commit(
+                 InMemory.new(),
+                 %BlockEnv{timestamp: 1_700_000_000},
+                 <<0xFACE::256>>
+               )
+
+      assert db == InMemory.new()
+      assert Database.account_exists?(db, BeaconRoots.address()) == false
+    end
+
     test "stores timestamp and root in the ring-buffer slots" do
       db = BeaconRoots.install(InMemory.new())
       block = %BlockEnv{timestamp: 1_700_000_000}

@@ -86,8 +86,10 @@ defmodule EEVM.SystemContracts.BlockHashes do
   Executes the block-start system call that records `parent_block_hash` as
   the hash for block `block.number - 1`.
 
-  Uses SYSTEM_ADDRESS as the caller so the contract takes its storage branch.
-  Returns the updated database, or an error tuple if the call reverted (which
+  Uses SYSTEM_ADDRESS as the caller so the contract takes its storage branch,
+  and runs the code deployed at the contract address; when none is deployed yet
+  (the fork's first blocks, before the deployment transaction), the call is a
+  no-op. Returns the updated database, or an error tuple if the call reverted (which
   should never happen with the canonical bytecode, but we surface it rather
   than swallow it).
   """
@@ -95,8 +97,18 @@ defmodule EEVM.SystemContracts.BlockHashes do
           {:ok, Database.t()} | {:error, atom(), Database.t()}
   def commit(%Database{} = db, %BlockEnv{} = block, parent_block_hash)
       when is_binary(parent_block_hash) and byte_size(parent_block_hash) == 32 do
+    # EIP-2935: if no code exists at the address, the call fails silently.
+    # Otherwise it runs the code deployed there (execution-specs
+    # `process_unchecked_system_transaction`).
+    case Database.get_code(db, @address) do
+      <<>> -> {:ok, db}
+      code -> run_system_call(code, db, block, parent_block_hash)
+    end
+  end
+
+  defp run_system_call(code, db, block, parent_block_hash) do
     final_state =
-      @deployed_code
+      code
       |> MachineState.new(
         db: db,
         block: block,
