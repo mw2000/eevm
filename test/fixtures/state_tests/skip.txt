@@ -13,7 +13,8 @@
 # (a 10M-iteration Solidity loop, max-round BLAKE2F). They are speed problems,
 # not known wrong results. Running them costs most of the suite's wall time and
 # makes CI timing-dependent, so they are not run. Re-enable as the interpreter
-# gets faster; `mix bench state_fixtures` times loopMul.
+# gets faster; `mix bench state_fixtures` times loopMul (142 s after #193,
+# https://github.com/mw2000/eevm/issues/208).
 test/fixtures/state_tests/ethereum-tests/GeneralStateTests/VMTests/vmPerformance/loopMul.json
 test/fixtures/state_tests/ethereum-tests/GeneralStateTests/stTimeConsuming/CALLBlake2f_MaxRounds.json
 
