@@ -89,10 +89,6 @@ defmodule EEVM.PurityTest do
     {EEVM.Precompiles.ECRecover, ExSecp256k1} => 197,
     {EEVM.Transaction.Signer, ExSecp256k1} => 197,
     {EEVM.Precompiles.P256Verify, :crypto} => 197,
-    # BLS12-381, KZG, and ModExp (#199)
-    {EEVM.Precompiles.Bls12381.Nif, :erlang} => 199,
-    {EEVM.Precompiles.Bls12381.Nif, :code} => 199,
-    {EEVM.Precompiles.Bls12381.Nif, Application} => 199,
     # The deprecated pre-1.0 backend shim recognises old modules (#204)
     {EEVM.Database.Legacy, Code} => 204,
     {EEVM.Database.Legacy, :erlang} => 204

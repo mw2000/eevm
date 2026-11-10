@@ -54,7 +54,6 @@ defmodule EEVM.MixProject do
       {:ex_rlp, "~> 0.6.0"},
       {:ex_secp256k1, "~> 0.7"},
       {:jason, "~> 1.4"},
-      {:rustler, "~> 0.36", runtime: false},
       # Optional so projects that depend on eevm never fetch it; :prod so `mix bench`
       # measures the build users run.
       {:benchee, "~> 1.3", only: [:dev, :prod], runtime: false, optional: true},

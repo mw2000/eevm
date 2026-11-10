@@ -44,7 +44,8 @@ bn_2g1 =
 
 bn_mul_input = bn_g1 <> :rand.bytes(32)
 
-# BLS12-381 pairing (0x0F): the G1 generator with the G2 generator.
+# BLS12-381 (0x0B-0x11). Points are random multiples of the generators, made with
+# the G1MSM and G2MSM precompiles themselves.
 pad = fn hex -> <<0::128, Base.decode16!(hex, case: :lower)::binary>> end
 
 bls_g1 =
@@ -68,6 +69,42 @@ bls_g2 =
     pad.(
       "0606c4a02ea734cc32acd2b02bc28b99cb3e287e85a763af267492ab572e99ab3f370d275cec1da1aaa9075ff05f79be"
     )
+
+bls_scalar = fn -> :rand.bytes(32) end
+
+bls_mul = fn address, point ->
+  {:ok, product, _gas} = Precompiles.execute(address, point <> bls_scalar.(), gas, config)
+  product
+end
+
+bls_g1_point = fn -> bls_mul.(0x0C, bls_g1) end
+bls_g2_point = fn -> bls_mul.(0x0E, bls_g2) end
+bls_msm_input = fn point, n -> for _ <- 1..n, into: <<>>, do: point.() <> bls_scalar.() end
+
+bls_fp = fn ->
+  <<0::128,
+    rem(
+      :binary.decode_unsigned(:rand.bytes(48)),
+      0x1A0111EA397FE69A4B1BA7B6434BACD764774B84F38512BF6730D2A0F6B0F6241EABFFFEB153FFFFB9FEFFFFFFFFAAAB
+    )::384>>
+end
+
+# KZG point evaluation (0x0A): c-kzg-4844's verify_kzg_proof vector correct_proof_2_2.
+kzg_vector =
+  "test/fixtures/precompiles/kzg_verify_proof_vectors.json"
+  |> File.read!()
+  |> Jason.decode!()
+  |> Enum.find(&(&1["name"] == "verify_kzg_proof_case_correct_proof_2_2"))
+  |> Map.fetch!("input")
+  |> Map.new(fn {key, hex} ->
+    {key, Base.decode16!(String.trim_leading(hex, "0x"), case: :lower)}
+  end)
+
+<<_version, kzg_hash_tail::binary-size(31)>> = EEVM.Crypto.SHA256.hash(kzg_vector["commitment"])
+
+kzg_input =
+  <<1, kzg_hash_tail::binary, kzg_vector["z"]::binary, kzg_vector["y"]::binary,
+    kzg_vector["commitment"]::binary, kzg_vector["proof"]::binary>>
 
 # BLAKE2F (0x09): EIP-152 test vector 5 ("abc", final block), with the round count
 # replaced. 12 rounds is one BLAKE2b compression; 1M rounds is the per-round cost that
@@ -95,7 +132,18 @@ inputs = %{
   "bn256 pairing, 2 pairs (0x08)" => {0x08, bn_pairing_input},
   "blake2f 12 rounds (0x09)" => {0x09, blake2f_input.(12)},
   "blake2f 1M rounds (0x09)" => {0x09, blake2f_input.(1_000_000)},
-  "bls12-381 pairing, 1 pair (0x0F)" => {0x0F, bls_g1 <> bls_g2}
+  "kzg point evaluation (0x0A)" => {0x0A, kzg_input},
+  "bls12-381 g1add (0x0B)" => {0x0B, bls_g1_point.() <> bls_g1_point.()},
+  "bls12-381 g1msm, 1 pair (0x0C)" => {0x0C, bls_msm_input.(bls_g1_point, 1)},
+  "bls12-381 g1msm, 128 pairs (0x0C)" => {0x0C, bls_msm_input.(bls_g1_point, 128)},
+  "bls12-381 g2add (0x0D)" => {0x0D, bls_g2_point.() <> bls_g2_point.()},
+  "bls12-381 g2msm, 1 pair (0x0E)" => {0x0E, bls_msm_input.(bls_g2_point, 1)},
+  "bls12-381 g2msm, 128 pairs (0x0E)" => {0x0E, bls_msm_input.(bls_g2_point, 128)},
+  "bls12-381 pairing, 1 pair (0x0F)" => {0x0F, bls_g1 <> bls_g2},
+  "bls12-381 pairing, 2 pairs (0x0F)" =>
+    {0x0F, bls_g1_point.() <> bls_g2_point.() <> bls_g1_point.() <> bls_g2_point.()},
+  "bls12-381 map fp to g1 (0x10)" => {0x10, bls_fp.()},
+  "bls12-381 map fp2 to g2 (0x11)" => {0x11, bls_fp.() <> bls_fp.()}
 }
 
 # Run every job once to measure its gas, and drop any that fails so one broken

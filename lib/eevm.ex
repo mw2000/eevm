@@ -3,7 +3,7 @@ defmodule EEVM do
   EEVM — Ethereum Virtual Machine implementation in Elixir.
 
   Execution engine for every fork from Frontier to Osaka (Osaka in
-  progress): full opcode set, all precompiles (including BLS12-381 via NIF),
+  progress): full opcode set, all precompiles (BLS12-381 and KZG in pure Elixir),
   transaction validation and processing, whole blocks, MPT-backed state root,
   and harnesses for the official `ethereum/tests` suites. Conformance with
   those suites is still in progress.

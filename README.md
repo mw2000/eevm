@@ -11,8 +11,10 @@
 [![Elixir](https://img.shields.io/badge/Elixir-1.18+-4B275F.svg)](https://elixir-lang.org)
 
 eevm executes EVM bytecode and Ethereum transactions in pure Elixir. It is its own
-implementation, not a wrapper around revm, evmone, or another EVM. The only native
-code is a small Rust NIF for BLS12-381 curve arithmetic (EIP-2537 precompiles).
+implementation, not a wrapper around revm, evmone, or another EVM, and its
+cryptography is Elixir too: the BN254 and BLS12-381 curves, KZG, ModExp, BLAKE2F,
+SHA-256, RIPEMD-160, and Keccak-256 have no native code. The last native
+dependencies (`ex_secp256k1`, and OTP `:crypto` for P-256) are being replaced.
 
 It aims to be a production-grade EVM for the BEAM: easy to embed, easy to read,
 and built from small, pure functions over immutable state. It includes the
@@ -39,10 +41,6 @@ Requirements:
 
 - Elixir 1.18 or later and Erlang/OTP 27 or later. CI tests Elixir 1.18 / OTP 27
   and Elixir 1.19 / OTP 28.
-- A Rust toolchain (`cargo` and `rustc`, for example from [rustup](https://rustup.rs)).
-  The BLS12-381 NIF in `native/eevm_bls` is compiled from source with
-  [Rustler](https://github.com/rusterlium/rustler) when eevm compiles.
-- A C compiler (`build-essential` on Debian/Ubuntu), used by the `blst` crate.
 
 ## Quick start
 

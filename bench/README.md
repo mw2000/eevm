@@ -36,7 +36,9 @@ small assembler in `bench/support/asm.exs`.
 
 `bench/precompiles_bench.exs` calls `EEVM.Precompiles.execute/4` directly with valid
 inputs: ecrecover, sha256, ripemd160, and identity (1 KiB), a 2048-bit ModExp, BN256
-ecAdd, ecMul with a random 256-bit scalar, a two-pair BN256 pairing, BLAKE2F at 12 and 1M rounds, and a one-pair BLS12-381 pairing.
+ecAdd, ecMul with a random 256-bit scalar, a two-pair BN256 pairing, BLAKE2F at 12 and 1M rounds, KZG
+point evaluation, and every BLS12-381 precompile: G1/G2 ADD, MSM with 1 and 128 pairs,
+1- and 2-pair pairings, and both maps to the curve.
 
 `bench/state_fixtures_bench.exs` times the ethereum/tests GeneralStateTests fixtures
 that `test/fixtures/state_tests/skip.txt` skipped as too slow for the conformance
@@ -196,3 +198,62 @@ On loopMul (20k iterations, 6.9M opcodes) the time is spread across the dispatch
 each step rebuilds the frame and machine-state structs. The next gains need a
 structural change, for example keeping pc, gas, and the stack in loop arguments instead
 of the `MachineState` struct, and decoding the code once into a tuple.
+
+## Pure-Elixir BLS12-381, KZG, and ModExp
+
+[#199](https://github.com/mw2000/eevm/issues/199) replaced the last native code in the
+precompiles. The `eevm_bls` Rust NIF (`bls12_381_plus` and `blst`) backed the EIP-2537
+precompiles and KZG point evaluation, and OpenSSL's `:crypto.mod_pow/3` backed ModExp.
+Both are now Elixir: `EEVM.Precompiles.Bls12381.Curve` and a fixed-window
+square-and-multiply. Before the NIF was deleted, a scratch script ran each workload
+through both implementations: same inputs (random points and scalars from a fixed
+seed, c-kzg-4844's `correct_proof_2_2` for KZG), the same orb, `MIX_ENV=prod`, and
+Osaka gas. "native" is the NIF (or the previous `:crypto` ModExp); ips are
+calls per second.
+
+| Precompile | gas | native ips | native Mgas/s | Elixir ips | Elixir Mgas/s | Elixir / native |
+|---|---:|---:|---:|---:|---:|---:|
+| kzg point evaluation (0x0A) | 50,000 | 186 | 9.32 | 59.9 | 2.99 | 0.32× |
+| g1add (0x0B) | 375 | 21,707 | 8.14 | 12,860 | 4.82 | 0.59× |
+| g1msm, 1 pair (0x0C) | 12,000 | 1,783 | 21.4 | 429 | 5.15 | 0.24× |
+| g1msm, 2 pairs (0x0C) | 22,776 | 932 | 21.2 | 208 | 4.74 | 0.22× |
+| g1msm, 8 pairs (0x0C) | 69,888 | 243 | 17.0 | 72.6 | 5.07 | 0.30× |
+| g1msm, 32 pairs (0x0C) | 240,768 | 59.4 | 14.3 | 21.1 | 5.09 | 0.36× |
+| g1msm, 128 pairs (0x0C) | 797,184 | 15.0 | 11.9 | 7.10 | 5.66 | 0.47× |
+| g2add (0x0D) | 600 | 18,084 | 10.9 | 10,227 | 6.14 | 0.57× |
+| g2msm, 1 pair (0x0E) | 22,500 | 661 | 14.9 | 235 | 5.29 | 0.36× |
+| g2msm, 2 pairs (0x0E) | 45,000 | 330 | 14.8 | 97.8 | 4.40 | 0.30× |
+| g2msm, 8 pairs (0x0E) | 143,280 | 85.9 | 12.3 | 34.9 | 5.00 | 0.41× |
+| g2msm, 32 pairs (0x0E) | 465,120 | 22.0 | 10.2 | 11.1 | 5.15 | 0.50× |
+| g2msm, 128 pairs (0x0E) | 1,509,120 | 5.42 | 8.18 | 3.65 | 5.51 | 0.67× |
+| pairing, 1 pair (0x0F) | 70,300 | 568 | 39.9 | 91.2 | 6.41 | 0.16× |
+| pairing, 2 pairs (0x0F) | 102,900 | 285 | 29.3 | 65.3 | 6.72 | 0.23× |
+| pairing, 8 pairs (0x0F) | 298,500 | 69.0 | 20.6 | 25.2 | 7.53 | 0.37× |
+| map fp to g1 (0x10) | 5,500 | 15,766 | 86.7 | 1,193 | 6.56 | 0.08× |
+| map fp2 to g2 (0x11) | 23,800 | 4,984 | 119 | 376 | 8.94 | 0.08× |
+| modexp 2048-bit, even modulus (0x05) | 7,862,272 | 484 | 3,807 | 87.2 | 685 | 0.18× |
+| modexp 2048-bit, odd modulus (0x05) | 7,862,272 | 466 | 3,666 | 68.7 | 540 | 0.15× |
+| modexp 4096-bit, odd modulus (0x05) | 65,003,520 | 65.6 | 4,261 | 11.0 | 714 | 0.17× |
+| modexp 256-bit, odd modulus (0x05) | 4,080 | 33,116 | 135 | 10,829 | 44.2 | 0.33× |
+
+Every EIP-2537 workload runs at 4.4-9 Mgas/s in Elixir, about the interpreter's own
+throughput on compute loops (6-9 Mgas/s, above), so no input to those precompiles is
+much cheaper per gas than ordinary bytecode, though all are slower than native. KZG
+point evaluation is the lowest at 3.0 Mgas/s, and the native version (9.3 Mgas/s) was
+lowest too: of its 16.7 ms, the two-pair pairing check takes 12.7 ms (about 6.5 ms of
+final exponentiation and 3.1 ms of Miller loop per pair), the three-term MSM 2.6 ms,
+and decompression and the two subgroup checks about 1.8 ms.
+
+The furthest below native are:
+
+- map-to-curve (0.08×; blst's SSWU and square roots are heavily optimised);
+- the one-pair pairing (0.16×);
+- single-point G1 MSM (0.24×);
+- KZG (0.32×).
+
+Large MSMs come closest (0.5-0.7×), because Pippenger's bucket method amortises the
+work. ModExp drops to 0.15-0.33× of OpenSSL but stays far above the interpreter's
+Mgas/s. The NIF itself was not native-fast: `bls12_381_plus` multiplies with
+constant-time double-and-add, so a G1 multiplication took 0.56 ms.
+
+`mix bench precompiles` now includes the BLS12-381 and KZG workloads.

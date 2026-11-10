@@ -5,10 +5,12 @@ How to change eevm.
 ## Goal
 
 eevm is a production-grade Ethereum Virtual Machine written entirely in Elixir.
-Never wrap or call out to revm, evmone, or any other EVM. The only native code is
-the Rustler NIF in `native/eevm_bls`, and it does BLS12-381 curve arithmetic
-only. New crypto that Erlang/OTP or existing deps (`ex_secp256k1`)
-cannot provide needs a good reason before it becomes another NIF.
+Never wrap or call out to revm, evmone, or any other EVM. eevm is pure
+functional code with no native code of any kind, so it could in theory run on
+bare metal: no NIFs and no OTP `:crypto` (OpenSSL). Write crypto in Elixir, as
+the BN254 and BLS12-381 curves, KZG, BLAKE2F, ModExp, SHA-256, RIPEMD-160, and
+Keccak-256 are. The remaining native dependencies (`ex_secp256k1`, and `:crypto`
+for P-256) are being replaced (#197); don't add new ones.
 
 Developers embed eevm as a library. In `docs/0` of `mix.exs`, the groups
 "Getting started", "Transactions", "Blocks", and "State" are the public API,
@@ -63,7 +65,7 @@ minor version) before removing anything (#150).
 | Machine state, stack, memory, call-frame merge | `lib/eevm/interpreter/` (`machine_state/`, `stack.ex`, `memory.ex`, `journal.ex`) |
 | Gas: static, dynamic, memory, warm/cold, intrinsic | `lib/eevm/gas/`, plus `lib/eevm/transaction/intrinsic_gas.ex` |
 | Precompiles | `lib/eevm/precompiles/<name>.ex` implementing `EEVM.Precompile`, registered by address in `lib/eevm/precompiles.ex` |
-| BLS12-381 NIF | `native/eevm_bls` (Rust), loaded by `lib/eevm/precompiles/bls12381/nif.ex` |
+| BN254 and BLS12-381 curve arithmetic | `lib/eevm/precompiles/bn256/curve.ex`, `lib/eevm/precompiles/bls12381/curve.ex` |
 | Hardforks | `lib/eevm/hardfork_config.ex` (`@spec_order`, `@eip_activation`), carried in `EEVM.Config` |
 | Transaction pipeline | `lib/eevm/handler.ex` plus `handler/validation.ex`, `pre_execution.ex`, `execution.ex`, `post_execution.ex` |
 | Transactions (structs, envelopes, signing, validation) | `lib/eevm/transaction.ex`, `lib/eevm/transaction/` |
