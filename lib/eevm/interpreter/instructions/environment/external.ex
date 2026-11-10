@@ -134,14 +134,16 @@ defmodule EEVM.Interpreter.Instructions.Environment.External do
 
       case MachineState.consume_gas(state_after_access, access_cost) do
         {:ok, state_after_gas} ->
+          # EIP-1052: 0 for an account that doesn't exist or is empty (EIP-161),
+          # such as one a zero-value SELFDESTRUCT touched into existence.
           hash_value =
-            if Database.account_exists?(state_after_gas.db, addr) do
-              code = Database.get_code(state_after_gas.db, addr)
-              hash = Keccak.hash_256(code)
-              <<hash_int::unsigned-big-256>> = hash
-              hash_int
-            else
+            if Database.account_empty?(state_after_gas.db, addr) do
               0
+            else
+              <<hash_int::unsigned-big-256>> =
+                Keccak.hash_256(Database.get_code(state_after_gas.db, addr))
+
+              hash_int
             end
 
           case Stack.push(state_after_gas.frame.stack, hash_value) do

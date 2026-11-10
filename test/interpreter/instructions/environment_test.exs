@@ -456,21 +456,25 @@ defmodule EEVM.Interpreter.Instructions.EnvironmentTest do
       assert result.frame.gas == initial_gas - expected_spent
     end
 
+    # EIP-1052: an account that exists but is empty (EIP-161) hashes to 0, while
+    # one with only a balance hashes its empty code (ethereum/tests
+    # stBugs/randomStatetestDEFAULT-Tue_07_58_41-15153-575192).
+    test "EXTCODEHASH returns 0 for an empty account and keccak(\"\") for a funded one" do
+      world_state = InMemory.new(accounts: %{1 => %{}, 2 => %{balance: 1}})
+      <<empty_code_hash::256>> = Keccak.hash_256(<<>>)
+
+      assert stack_values(EEVM.Interpreter.run(<<0x60, 1, 0x3F, 0x00>>, db: world_state)) == [0]
+
+      assert stack_values(EEVM.Interpreter.run(<<0x60, 2, 0x3F, 0x00>>, db: world_state)) == [
+               empty_code_hash
+             ]
+    end
+
     test "EXTCODEHASH returns 0 for non-existent account" do
       code = <<0x60, 2, 0x3F, 0x00>>
       result = EEVM.Interpreter.run(code)
 
       assert stack_values(result) == [0]
-    end
-
-    test "EXTCODEHASH returns keccak256 of empty code for existing empty account" do
-      world_state = InMemory.new(accounts: %{1 => %{code: <<>>}})
-      code = <<0x60, 1, 0x3F, 0x00>>
-
-      result = EEVM.Interpreter.run(code, db: world_state)
-
-      <<expected::unsigned-big-256>> = Keccak.hash_256(<<>>)
-      assert stack_values(result) == [expected]
     end
 
     test "EXTCODEHASH returns keccak256 of account code" do
