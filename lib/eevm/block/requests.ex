@@ -21,6 +21,7 @@ defmodule EEVM.Block.Requests do
   alias EEVM.Block.Receipt
   alias EEVM.{BlockEnv, Config, Database, HardforkConfig, Interpreter, TxEnv}
   alias EEVM.Context.Contract
+  alias EEVM.Crypto.SHA256
   alias EEVM.Interpreter.MachineState
 
   @typedoc "A type byte followed by the request payload."
@@ -51,14 +52,15 @@ defmodule EEVM.Block.Requests do
 
   ## Example
 
-      iex> EEVM.Block.Requests.hash([]) == :crypto.hash(:sha256, <<>>)
+      iex> EEVM.Block.Requests.hash([]) == EEVM.Crypto.SHA256.hash(<<>>)
       true
   """
   @spec hash([request()]) :: <<_::256>>
   def hash(requests) when is_list(requests) do
     requests
-    |> Enum.map(&:crypto.hash(:sha256, &1))
-    |> then(&:crypto.hash(:sha256, &1))
+    |> Enum.map(&SHA256.hash/1)
+    |> IO.iodata_to_binary()
+    |> SHA256.hash()
   end
 
   @doc """

@@ -16,6 +16,8 @@ defmodule EEVM.Precompiles.SHA256 do
 
   @behaviour EEVM.Precompile
 
+  alias EEVM.Crypto.SHA256, as: Hash
+
   @base_cost 60
   @word_cost 12
 
@@ -44,7 +46,7 @@ defmodule EEVM.Precompiles.SHA256 do
     if cost > gas_limit do
       {:error, :out_of_gas}
     else
-      {:ok, :crypto.hash(:sha256, input), cost}
+      {:ok, Hash.hash(input), cost}
     end
   end
 
