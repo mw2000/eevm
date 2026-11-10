@@ -369,6 +369,38 @@ defmodule EEVM.Interpreter.Instructions.EnvironmentTest do
     end
   end
 
+  # Yellow Paper Appendix H: an address operand is the stack word mod 2^160
+  # (ethereum/tests stBadOpcode/invalidAddr). PUSH1 0xAB, op, POP warms 0xAB, so
+  # the same op on 0xAB with bits above 160 set must read it warm (EIP-2929).
+  describe "address operands with bits above 160" do
+    @code <<0xAA, 0xBB, 0xCC>>
+    @word 0xFFFF * 2 ** 160 + 0xAB
+
+    test "BALANCE, EXTCODESIZE, and EXTCODEHASH read the low 160 bits" do
+      db = InMemory.new(accounts: %{0xAB => %{balance: 7, code: @code}})
+      <<code_hash::256>> = Keccak.hash_256(@code)
+
+      for {op, expected} <- [{0x31, 7}, {0x3B, 3}, {0x3F, code_hash}] do
+        code = <<0x60, 0xAB, op, 0x50, 0x7F, @word::256, op, 0x00>>
+        result = EEVM.Interpreter.run(code, db: db, gas: 10_000)
+
+        assert stack_values(result) == [expected]
+        # PUSH1 + cold access + POP + PUSH32 + warm access
+        assert result.frame.gas == 10_000 - (3 + 2600 + 2 + 3 + 100)
+      end
+    end
+
+    test "EXTCODECOPY reads the low 160 bits" do
+      db = InMemory.new(accounts: %{0xAB => %{code: @code}})
+      # EXTCODECOPY(word, dest 0, offset 0, size 3), MLOAD 0
+      code = <<0x60, 3, 0x60, 0, 0x60, 0, 0x7F, @word::256, 0x3C, 0x60, 0, 0x51, 0x00>>
+
+      assert stack_values(EEVM.Interpreter.run(code, db: db)) == [
+               :binary.decode_unsigned(<<0xAA, 0xBB, 0xCC, 0::232>>)
+             ]
+    end
+  end
+
   describe "EXTCODE* opcodes" do
     test "EXTCODESIZE returns external code size" do
       world_state = InMemory.new(accounts: %{1 => %{code: <<0xAA, 0xBB, 0xCC, 0xDD>>}})

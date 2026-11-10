@@ -272,6 +272,30 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
     address
   end
 
+  # Yellow Paper Appendix H: the callee address is the stack word mod 2^160
+  # (ethereum/tests stSystemOperationsTest/CallToNameRegistratorAddressTooBigRight).
+  test "CALL, CALLCODE, DELEGATECALL, and STATICCALL call the low 160 bits of the address" do
+    # Callee: MSTORE8 0x2A at 0, RETURN 1 byte
+    callee = <<0x60, 0x2A, 0x60, 0x00, 0x53, 0x60, 0x01, 0x60, 0x00, 0xF3>>
+    db = InMemory.new(accounts: %{0xCA11 => %{code: callee}})
+    word = 0xFFFF * 2 ** 160 + 0xCA11
+    # retSize 1, retOffset 0, argsSize 0, argsOffset 0
+    ret_and_args = <<0x60, 0x01, 0x60, 0x00, 0x60, 0x00, 0x60, 0x00>>
+
+    for {op, value} <- [
+          {0xF1, <<0x60, 0x00>>},
+          {0xF2, <<0x60, 0x00>>},
+          {0xF4, <<>>},
+          {0xFA, <<>>}
+        ] do
+      code = ret_and_args <> value <> <<0x7F, word::256, 0x61, 0xFF, 0xFF, op, 0x00>>
+      result = EEVM.Interpreter.run(code, db: db)
+
+      assert stack_values(result) == [1]
+      assert {<<0x2A>>, _} = Memory.read_bytes(result.frame.memory, 0, 1)
+    end
+  end
+
   describe "CALL (0xF1)" do
     test "a zero-size argument region costs no memory expansion, whatever its offset" do
       world_state =

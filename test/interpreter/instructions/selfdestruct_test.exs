@@ -29,6 +29,22 @@ defmodule EEVM.Interpreter.Instructions.SelfdestructTest do
       assert Database.get_balance(result.db, 0xBB) == 150
     end
 
+    # Yellow Paper Appendix H: the beneficiary is the stack word mod 2^160
+    # (ethereum/tests stSystemOperationsTest/suicideCallerAddresTooBigLeft).
+    test "pays the beneficiary named by the low 160 bits of the operand" do
+      world_state = InMemory.new(accounts: %{0xAA => %{balance: 100}, 0xBB => %{balance: 50}})
+      code = <<0x7F, 0xFFFF * 2 ** 160 + 0xBB::256, 0xFF>>
+
+      result =
+        EEVM.Interpreter.run(code,
+          db: world_state,
+          contract: Contract.new(address: 0xAA),
+          gas: 1_000_000
+        )
+
+      assert Database.get_balance(result.db, 0xBB) == 150
+    end
+
     test "halts execution after SELFDESTRUCT" do
       world_state = InMemory.new(accounts: %{0xAA => %{balance: 10}})
       contract = Contract.new(address: 0xAA)

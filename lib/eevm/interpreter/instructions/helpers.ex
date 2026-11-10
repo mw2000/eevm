@@ -10,6 +10,7 @@ defmodule EEVM.Interpreter.Instructions.Helpers do
     the uint256 stack with signed opcodes (SLT, SGT, SDIV, SMOD, SAR).
   - `mod_pow/3`, square-and-multiply modular exponentiation used by EXP.
   - `check_jumpdest/2` for JUMP / JUMPI destination validation.
+  - `pop_address/1` for opcodes that take an address operand.
   - `touch_account/3`, which before EIP-161 creates the accounts a message
     call or fee credit touches. The transaction handler shares it.
   """
@@ -20,6 +21,7 @@ defmodule EEVM.Interpreter.Instructions.Helpers do
   alias EEVM.Interpreter.MachineState.Frame
 
   @max_uint256 (1 <<< 256) - 1
+  @address_mask (1 <<< 160) - 1
   @sign_bit 1 <<< 255
 
   @doc """
@@ -163,6 +165,21 @@ defmodule EEVM.Interpreter.Instructions.Helpers do
 
     {:ok,
      state |> MachineState.update_frame(&%{&1 | stack: new_stack}) |> MachineState.advance_pc()}
+  end
+
+  @doc """
+  Pops an address operand: the top stack word truncated to its low 160 bits,
+  as BALANCE, EXTCODESIZE, EXTCODECOPY, EXTCODEHASH, the CALL family, and
+  SELFDESTRUCT read it (Yellow Paper Appendix H, `μs[0] mod 2^160`).
+
+      iex> {:ok, stack} = EEVM.Interpreter.Stack.push(EEVM.Interpreter.Stack.new(), 2 ** 200 + 0xAB)
+      iex> {:ok, address, _} = EEVM.Interpreter.Instructions.Helpers.pop_address(stack)
+      iex> address
+      0xAB
+  """
+  @spec pop_address(Stack.t()) :: {:ok, non_neg_integer(), Stack.t()} | {:error, atom()}
+  def pop_address(stack) do
+    with {:ok, word, stack} <- Stack.pop(stack), do: {:ok, word &&& @address_mask, stack}
   end
 
   @doc """

@@ -16,6 +16,7 @@ defmodule EEVM.Interpreter.Instructions.System.Termination do
   alias EEVM.Gas.{Access, Dynamic}
   alias EEVM.Gas.Memory, as: GasMemory
   alias EEVM.HardforkConfig
+  alias EEVM.Interpreter.Instructions.Helpers
   alias EEVM.Interpreter.{MachineState, Memory, Stack}
 
   @cold_account_access_cost 2_600
@@ -73,7 +74,7 @@ defmodule EEVM.Interpreter.Instructions.System.Termination do
   end
 
   def execute(0xFF, state) do
-    with {:ok, beneficiary, s1} <- Stack.pop(state.frame.stack) do
+    with {:ok, beneficiary, s1} <- Helpers.pop_address(state.frame.stack) do
       contract_address = state.frame.contract.address
       balance = Database.get_balance(state.db, contract_address)
 

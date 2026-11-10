@@ -22,7 +22,7 @@ defmodule EEVM.Interpreter.Instructions.Environment.External do
   @spec execute(non_neg_integer(), MachineState.t()) ::
           {:ok, MachineState.t()} | {:error, atom(), MachineState.t()}
   def execute(0x31, state) do
-    with {:ok, addr, s1} <- Stack.pop(state.frame.stack) do
+    with {:ok, addr, s1} <- Helpers.pop_address(state.frame.stack) do
       {access_cost, state_after_access} =
         Access.address_access_cost(MachineState.update_frame(state, &%{&1 | stack: s1}), addr)
 
@@ -50,7 +50,7 @@ defmodule EEVM.Interpreter.Instructions.Environment.External do
   end
 
   def execute(0x3B, state) do
-    with {:ok, addr, s1} <- Stack.pop(state.frame.stack) do
+    with {:ok, addr, s1} <- Helpers.pop_address(state.frame.stack) do
       {access_cost, state_after_access} =
         Access.address_access_cost(MachineState.update_frame(state, &%{&1 | stack: s1}), addr)
 
@@ -78,7 +78,7 @@ defmodule EEVM.Interpreter.Instructions.Environment.External do
   end
 
   def execute(0x3C, state) do
-    with {:ok, addr, s1} <- Stack.pop(state.frame.stack),
+    with {:ok, addr, s1} <- Helpers.pop_address(state.frame.stack),
          {:ok, dest_offset, s2} <- Stack.pop(s1),
          {:ok, code_offset, s3} <- Stack.pop(s2),
          {:ok, length, s4} <- Stack.pop(s3) do
@@ -128,7 +128,7 @@ defmodule EEVM.Interpreter.Instructions.Environment.External do
   end
 
   def execute(0x3F, state) do
-    with {:ok, addr, s1} <- Stack.pop(state.frame.stack) do
+    with {:ok, addr, s1} <- Helpers.pop_address(state.frame.stack) do
       {access_cost, state_after_access} =
         Access.address_access_cost(MachineState.update_frame(state, &%{&1 | stack: s1}), addr)
 

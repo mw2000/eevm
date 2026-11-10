@@ -43,7 +43,7 @@ defmodule EEVM.Interpreter.Instructions.System.Calls do
           {:ok, MachineState.t()} | {:error, atom(), MachineState.t()}
   def execute(0xF1, state) do
     with {:ok, gas_requested, s1} <- Stack.pop(state.frame.stack),
-         {:ok, address, s2} <- Stack.pop(s1),
+         {:ok, address, s2} <- Helpers.pop_address(s1),
          {:ok, value, s3} <- Stack.pop(s2),
          {:ok, args_offset, s4} <- Stack.pop(s3),
          {:ok, args_size, s5} <- Stack.pop(s4),
@@ -73,7 +73,7 @@ defmodule EEVM.Interpreter.Instructions.System.Calls do
 
   def execute(0xF2, state) do
     with {:ok, gas_requested, s1} <- Stack.pop(state.frame.stack),
-         {:ok, address, s2} <- Stack.pop(s1),
+         {:ok, address, s2} <- Helpers.pop_address(s1),
          {:ok, value, s3} <- Stack.pop(s2),
          {:ok, args_offset, s4} <- Stack.pop(s3),
          {:ok, args_size, s5} <- Stack.pop(s4),
@@ -102,7 +102,7 @@ defmodule EEVM.Interpreter.Instructions.System.Calls do
 
   def execute(0xF4, state) do
     with {:ok, gas_requested, s1} <- Stack.pop(state.frame.stack),
-         {:ok, address, s2} <- Stack.pop(s1),
+         {:ok, address, s2} <- Helpers.pop_address(s1),
          {:ok, args_offset, s3} <- Stack.pop(s2),
          {:ok, args_size, s4} <- Stack.pop(s3),
          {:ok, ret_offset, s5} <- Stack.pop(s4),
@@ -128,7 +128,7 @@ defmodule EEVM.Interpreter.Instructions.System.Calls do
 
   def execute(0xFA, state) do
     with {:ok, gas_requested, s1} <- Stack.pop(state.frame.stack),
-         {:ok, address, s2} <- Stack.pop(s1),
+         {:ok, address, s2} <- Helpers.pop_address(s1),
          {:ok, args_offset, s3} <- Stack.pop(s2),
          {:ok, args_size, s4} <- Stack.pop(s3),
          {:ok, ret_offset, s5} <- Stack.pop(s4),
