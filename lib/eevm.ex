@@ -49,6 +49,8 @@ defmodule EEVM do
   alias EEVM.Interpreter.{MachineState, Stack}
   alias EEVM.Tracer
 
+  @address_limit 2 ** 160
+
   @execute_opts [:gas, :hardfork, :config, :db, :block, :tx, :contract]
 
   @run_opts [
@@ -157,6 +159,54 @@ defmodule EEVM do
   @spec transact(Handler.wire_tx(), BlockEnv.t(), Database.t(), Handler.opts()) ::
           {:ok, TransactionResult.t()} | {:error, EEVM.Error.reason()}
   defdelegate transact(tx, block, db, opts \\ []), to: Handler, as: :execute
+
+  @doc """
+  Returns an address as the integer eevm uses everywhere: from a hex string
+  (with or without `0x`, any case), a 20-byte binary, or an integer.
+
+  Raises `ArgumentError` for anything else.
+
+  ## Examples
+
+      iex> EEVM.address("0x00000000000000000000000000000000000000Ff")
+      255
+      iex> EEVM.address(<<0xB0B::160>>)
+      2827
+  """
+  @spec address(String.t() | <<_::160>> | non_neg_integer()) :: non_neg_integer()
+  def address(<<value::unsigned-big-160>>), do: value
+  def address(value) when is_integer(value) and value >= 0 and value < @address_limit, do: value
+  def address("0x" <> hex), do: address(hex)
+
+  def address(hex) when is_binary(hex) and byte_size(hex) == 40 do
+    case Base.decode16(hex, case: :mixed) do
+      {:ok, <<value::unsigned-big-160>>} -> value
+      :error -> raise ArgumentError, "not a hex address: #{inspect(hex)}"
+    end
+  end
+
+  def address(other), do: raise(ArgumentError, "not an address: #{inspect(other)}")
+
+  @doc """
+  Renders bytes or a non-negative integer as `0x`-prefixed lowercase hex.
+
+  A binary keeps every byte, so pass a hash or `<<address::160>>` to keep its
+  width; an integer renders as a JSON-RPC quantity, without leading zeros.
+
+  ## Examples
+
+      iex> EEVM.hex(<<0, 1, 0xAB>>)
+      "0x0001ab"
+      iex> EEVM.hex(255)
+      "0xff"
+      iex> EEVM.hex(0)
+      "0x0"
+  """
+  @spec hex(binary() | non_neg_integer()) :: String.t()
+  def hex(bytes) when is_binary(bytes), do: "0x" <> Base.encode16(bytes, case: :lower)
+
+  def hex(value) when is_integer(value) and value >= 0,
+    do: "0x" <> String.downcase(Integer.to_string(value, 16))
 
   @doc """
   Executes EVM bytecode and returns the final machine state.

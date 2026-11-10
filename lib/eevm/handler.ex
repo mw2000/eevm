@@ -61,8 +61,8 @@ defmodule EEVM.Handler do
     chain_id = config.chain_id
 
     with {:ok, wire_tx} <- Validation.ensure_decoded(tx_or_bytes),
-         {:ok, sender_bytes} <- Validation.recover_sender(wire_tx, chain_id),
-         {:ok, tx_ctx} <- Validation.build_tx_context(wire_tx, sender_bytes),
+         {:ok, sender} <- Validation.recover_sender(wire_tx, chain_id),
+         {:ok, tx_ctx} <- Validation.build_tx_context(wire_tx, sender),
          :ok <- Validation.validate(tx_ctx, db, block, config.hardfork),
          # GASPRICE (0x3A) reads the price per gas the sender pays (EIP-1559).
          tx_ctx = %{tx_ctx | gas_price: PreExecution.effective_gas_price(tx_ctx, block)},
@@ -87,7 +87,7 @@ defmodule EEVM.Handler do
         final_state,
         contract_address,
         tx_ctx,
-        sender_bytes,
+        sender,
         db_authorized,
         block
       )

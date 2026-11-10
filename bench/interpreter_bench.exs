@@ -295,7 +295,7 @@ unsigned_transfer = %Legacy{
   nonce: 0,
   gas_price: 1,
   gas_limit: 100_000,
-  to: <<token::160>>,
+  to: token,
   value: 0,
   data: <<0xA9059CBB::32, recipient::256, 1_000::256>>,
   v: 0,

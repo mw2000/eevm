@@ -16,7 +16,7 @@ defmodule EEVM.BlockEnv do
   | `prev_randao` | PREVRANDAO (0x44) | RANDAO mix from the beacon chain (DIFFICULTY before the Merge) |
   | `base_fee` | BASEFEE (0x48) | Block base fee (EIP-1559) |
   | `blob_base_fee` | BLOBBASEFEE (0x4A) | Block blob base fee (EIP-4844, EIP-7516) |
-  | `block_hashes` | BLOCKHASH (0x40) | Recent block numbers mapped to their hashes |
+  | `block_hashes` | BLOCKHASH (0x40) | Recent block numbers mapped to their 32-byte hashes |
   | `parent_beacon_block_root` | — | Parent beacon block root, stored by the EIP-4788 system call |
   """
 
@@ -33,8 +33,8 @@ defmodule EEVM.BlockEnv do
           prev_randao: non_neg_integer(),
           base_fee: non_neg_integer(),
           blob_base_fee: non_neg_integer(),
-          block_hashes: %{non_neg_integer() => non_neg_integer()},
-          parent_beacon_block_root: non_neg_integer()
+          block_hashes: %{non_neg_integer() => <<_::256>>},
+          parent_beacon_block_root: <<_::256>>
         }
 
   defstruct number: 0,
@@ -45,7 +45,7 @@ defmodule EEVM.BlockEnv do
             base_fee: 0,
             blob_base_fee: 0,
             block_hashes: %{},
-            parent_beacon_block_root: 0
+            parent_beacon_block_root: <<0::256>>
 
   @doc """
   Returns the environment of the block `header` describes.
@@ -85,7 +85,7 @@ defmodule EEVM.BlockEnv do
           else: 0
         ),
       block_hashes: Keyword.get(opts, :block_hashes, %{}),
-      parent_beacon_block_root: header.parent_beacon_block_root || 0
+      parent_beacon_block_root: header.parent_beacon_block_root || <<0::256>>
     }
   end
 
@@ -108,16 +108,20 @@ defmodule EEVM.BlockEnv do
   end
 
   @doc """
-  Returns the block hash for a given block number.
+  Returns the hash of block `block_number` as the word BLOCKHASH pushes.
 
   Returns 0 if the block number is not in the last 256 blocks or is the
   current/future block. This matches the EVM spec — BLOCKHASH can only
-  access the most recent 256 ancestors.
+  access the most recent 256 ancestors. A hash given as an integer is still
+  accepted, for one minor version (deprecated).
   """
   @spec hash(t(), non_neg_integer()) :: non_neg_integer()
   def hash(%__MODULE__{block_hashes: hashes, number: current}, block_number) do
     if block_number < current and block_number >= max(0, current - 256) do
-      Map.get(hashes, block_number, 0)
+      case Map.get(hashes, block_number, 0) do
+        <<hash::unsigned-big-256>> -> hash
+        hash when is_integer(hash) -> hash
+      end
     else
       0
     end

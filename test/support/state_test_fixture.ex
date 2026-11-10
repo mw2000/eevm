@@ -40,7 +40,7 @@ defmodule EEVM.TestSupport.StateTestFixture do
             excess_blob_gas: non_neg_integer() | nil,
             prev_randao: non_neg_integer(),
             chain_id: non_neg_integer(),
-            block_hashes: %{non_neg_integer() => non_neg_integer()}
+            block_hashes: %{non_neg_integer() => <<_::256>>}
           }
 
     defstruct [

@@ -121,8 +121,8 @@ defmodule EEVM.SystemContracts.BlockHashes do
   end
 
   @doc """
-  Reads the hash stored at `block_number mod 8191`, directly from the
-  contract's storage slot.
+  Reads the hash stored at `block_number mod 8191`, as the storage word,
+  directly from the contract's storage slot.
 
   This is a raw storage read: it deliberately does NOT enforce any range
   checks, so callers with no view of the current block number can still

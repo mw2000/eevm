@@ -28,7 +28,7 @@ defmodule EEVM.Block.Header do
   | `withdrawals_root` | EIP-4895 MPT root of the block's withdrawals; `nil` before Shanghai |
   | `blob_gas_used` | EIP-4844 blob gas consumed by the block; `nil` before Cancun |
   | `excess_blob_gas` | EIP-4844 running excess blob gas; `nil` before Cancun |
-  | `parent_beacon_block_root` | EIP-4788 beacon root of the parent slot; `nil` before Cancun |
+  | `parent_beacon_block_root` | EIP-4788 beacon root of the parent slot, a 32-byte binary (an integer is deprecated); `nil` before Cancun |
   | `requests_hash` | EIP-7685 commitment to the block's requests; `nil` before Prague |
   | `hash` | Keccak hash of this header. Set by `decode/1`; `compute_hash/1` derives it |
 
@@ -68,7 +68,7 @@ defmodule EEVM.Block.Header do
           withdrawals_root: binary() | nil,
           blob_gas_used: non_neg_integer() | nil,
           excess_blob_gas: non_neg_integer() | nil,
-          parent_beacon_block_root: non_neg_integer() | nil,
+          parent_beacon_block_root: <<_::256>> | nil,
           requests_hash: binary() | nil,
           hash: binary()
         }
@@ -128,8 +128,18 @@ defmodule EEVM.Block.Header do
   """
   @spec new(keyword()) :: t()
   def new(opts) when is_list(opts) do
-    struct!(__MODULE__, opts)
+    opts
+    |> Enum.map(fn
+      {:parent_beacon_block_root, root} -> {:parent_beacon_block_root, root_bytes(root)}
+      other -> other
+    end)
+    |> then(&struct!(__MODULE__, &1))
   end
+
+  # `parent_beacon_block_root` is a 32-byte binary; the integer form it had
+  # before 1.0 is deprecated and converted here and when encoding.
+  defp root_bytes(root) when is_integer(root), do: <<root::unsigned-big-256>>
+  defp root_bytes(root), do: root
 
   @doc """
   Returns the RLP list for `header`, as embedded in an encoded block.
@@ -314,10 +324,8 @@ defmodule EEVM.Block.Header do
   end
 
   defp decode_fork_field(field, <<_::256>> = value)
-       when field in [:withdrawals_root, :requests_hash],
+       when field in [:withdrawals_root, :parent_beacon_block_root, :requests_hash],
        do: {:ok, value}
-
-  defp decode_fork_field(:parent_beacon_block_root, <<value::unsigned-big-256>>), do: {:ok, value}
 
   defp decode_fork_field(field, value)
        when field in [:base_fee_per_gas, :blob_gas_used, :excess_blob_gas],
@@ -326,10 +334,13 @@ defmodule EEVM.Block.Header do
   defp decode_fork_field(_field, _value), do: {:error, :invalid_block_encoding}
 
   defp encode_fork_field(_field, nil), do: nil
-  defp encode_fork_field(:parent_beacon_block_root, root), do: <<root::unsigned-big-256>>
 
-  defp encode_fork_field(field, value) when field in [:withdrawals_root, :requests_hash],
-    do: value
+  defp encode_fork_field(:parent_beacon_block_root, root) when is_integer(root),
+    do: root_bytes(root)
+
+  defp encode_fork_field(field, value)
+       when field in [:withdrawals_root, :parent_beacon_block_root, :requests_hash],
+       do: value
 
   defp encode_fork_field(_field, value), do: encode_uint(value)
 

@@ -108,8 +108,7 @@ defmodule EEVM.Handler.PreExecution do
 
   defp apply_authorization(auth, chain_id, {db, outcome} = acc) do
     with true <- auth.chain_id in [0, chain_id] and auth.nonce < @max_uint64,
-         {:ok, authority_bytes} <- Signer.recover_authority(struct!(Authorization, wire(auth))) do
-      authority = :binary.decode_unsigned(authority_bytes)
+         {:ok, authority} <- Signer.recover_authority(struct!(Authorization, auth)) do
       outcome = %{outcome | authorities: MapSet.put(outcome.authorities, authority)}
       code = Database.get_code(db, authority)
 
@@ -133,8 +132,6 @@ defmodule EEVM.Handler.PreExecution do
       _invalid -> acc
     end
   end
-
-  defp wire(auth), do: %{auth | address: <<auth.address::unsigned-big-160>>}
 
   @doc "Maximum gas fee debited upfront: `gas_limit` times the fee cap (or gas price)."
   @spec gas_upfront(TxEnv.t()) :: non_neg_integer()

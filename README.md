@@ -100,7 +100,7 @@ config = Config.new(:cancun, chain_id: 1)
 
 {:ok, tx} =
   %FeeMarket{max_priority_fee_per_gas: 1, max_fee_per_gas: 10, gas_limit: 21_000,
-             to: <<recipient::160>>, value: 1_000}
+             to: recipient, value: 1_000}
   |> Signer.sign(private_key, config)
 
 {:ok, result} = EEVM.transact(tx, block, db, config: config)
@@ -115,9 +115,10 @@ EEVM.StateRoot.compute_state_root(result.db) |> Base.encode16(case: :lower)
 #=> "7b838becc60c5d28adc4a332cd44cf603b4ef0e590f50a268de2457cbc78fa09"
 ```
 
-Addresses are integers in the database API and 20-byte binaries in transaction
-structs, matching their wire encoding. `EEVM.transact/4` also accepts raw
-signed transaction bytes.
+Addresses are integers everywhere, transaction `to` included (`nil` creates a
+contract), and hashes and roots are 32-byte binaries. `EEVM.address/1` and
+`EEVM.hex/1` convert hex strings and binaries at the edges. `EEVM.transact/4`
+also accepts raw signed transaction bytes.
 
 ### Build, encode, and execute a block
 
@@ -139,7 +140,7 @@ iex> <<_::binary-size(12), sender::unsigned-big-160>> = ExKeccak.hash_256(public
 iex> db = EEVM.Database.InMemory.new(accounts: %{sender => %{balance: 10 ** 18, nonce: 0, code: <<>>}})
 iex> config = EEVM.Config.new(:cancun, chain_id: 1)
 iex> tx = %FeeMarket{max_priority_fee_per_gas: 1, max_fee_per_gas: 10, gas_limit: 21_000,
-...>   to: <<0xB0B::160>>, value: 1_000}
+...>   to: 0xB0B, value: 1_000}
 iex> {:ok, tx} = Signer.sign(tx, private_key, config)
 iex> parent = EEVM.Block.Header.new(gas_limit: 30_000_000, base_fee_per_gas: 7, hash: <<1::256>>)
 iex> {:ok, block, _result} = Block.build(parent, [tx], db, config: config, timestamp: 12)

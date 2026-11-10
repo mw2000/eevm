@@ -118,6 +118,17 @@ defmodule EEVM.BlockTest do
                Block.execute(block, parent(), db(), tracer: true)
     end
 
+    test "a deprecated integer parent beacon root builds the same block as its 32-byte form" do
+      {:ok, from_binary, _} = build([], parent_beacon_block_root: <<0xBEAC::256>>)
+      {:ok, from_integer, _} = build([], parent_beacon_block_root: 0xBEAC)
+
+      assert from_integer.header.parent_beacon_block_root == <<0xBEAC::256>>
+      assert Block.encode(from_integer) == Block.encode(from_binary)
+
+      assert Header.new(parent_beacon_block_root: 0xBEAC).parent_beacon_block_root ==
+               <<0xBEAC::256>>
+    end
+
     test "runs header validation against the parent" do
       {:ok, block, _} = build([])
 
@@ -276,7 +287,7 @@ defmodule EEVM.BlockTest do
       nonce: 0,
       gas_price: 7,
       gas_limit: 21_000,
-      to: <<@recipient::160>>,
+      to: @recipient,
       value: 0,
       data: :binary.copy(<<1>>, len),
       v: 27,
@@ -324,7 +335,7 @@ defmodule EEVM.BlockTest do
 
   defp deposit_tx(data) do
     signed_transfer(
-      to: <<Requests.mainnet_deposit_contract()::160>>,
+      to: Requests.mainnet_deposit_contract(),
       data: data,
       gas_limit: 100_000
     )
@@ -366,7 +377,7 @@ defmodule EEVM.BlockTest do
           max_priority_fee_per_gas: 1,
           max_fee_per_gas: 10,
           gas_limit: 21_000,
-          to: <<@recipient::160>>,
+          to: @recipient,
           value: 1_000,
           data: <<>>,
           access_list: []

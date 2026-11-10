@@ -306,7 +306,7 @@ defmodule EEVM.Block.Processor do
       gas_limit: header.gas_limit,
       prev_randao: header.prev_randao,
       base_fee: header.base_fee_per_gas || 0,
-      parent_beacon_block_root: header.parent_beacon_block_root || 0
+      parent_beacon_block_root: header.parent_beacon_block_root || <<0::256>>
     }
   end
 end

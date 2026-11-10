@@ -15,7 +15,7 @@ defmodule EEVM.Transaction.EnvelopeTest do
                          "18A5B79CB061B256E3F3661DB0E08A5EB80C583DE4F3E8A038F50EF2FC28E35DCB5B98" <>
                          "0911FCFEA096BC1624F42D03304AA54848FCCFE9FE"
                      )
-  @set_code_signer Base.decode16!("257182563FD0AA86C431D17127F623F0E69949C3")
+  @set_code_signer 0x257182563FD0AA86C431D17127F623F0E69949C3
 
   describe "encode/1 and decode/1 roundtrips" do
     test "legacy transaction" do
@@ -40,11 +40,11 @@ defmodule EEVM.Transaction.EnvelopeTest do
         nonce: 7,
         gas_price: 8,
         gas_limit: 50_000,
-        to: <<>>,
+        to: nil,
         value: 9,
         data: <<0x12, 0x34>>,
         access_list: [
-          {address(0xAA), [slot(0x01), slot(0x02)]}
+          {address(0xAA), [key(0x01), key(0x02)]}
         ],
         y_parity: 1,
         r: 10,
@@ -64,7 +64,7 @@ defmodule EEVM.Transaction.EnvelopeTest do
         to: address(0x22),
         value: 4,
         data: <<0xDE, 0xAD>>,
-        access_list: [{address(0xBB), [slot(0x99)]}],
+        access_list: [{address(0xBB), [key(0x99)]}],
         y_parity: 0,
         r: 12,
         s: 13
@@ -83,7 +83,7 @@ defmodule EEVM.Transaction.EnvelopeTest do
         to: address(0x33),
         value: 4,
         data: <<0xBE, 0xEF>>,
-        access_list: [{address(0xCC), [slot(0x11)]}],
+        access_list: [{address(0xCC), [key(0x11)]}],
         max_fee_per_blob_gas: 5,
         blob_versioned_hashes: [slot(0x77), slot(0x88)],
         y_parity: 1,
@@ -111,7 +111,7 @@ defmodule EEVM.Transaction.EnvelopeTest do
                ]
              } = tx
 
-      assert auth.address == Base.decode16!("9EACADDA90600E3AA05FFC43BF7C0B0D721C5C66")
+      assert auth.address == 0x9EACADDA90600E3AA05FFC43BF7C0B0D721C5C66
       assert Envelope.encode(tx) == @set_code_tx_bytes
       assert {:ok, @set_code_signer} = Signer.recover_sender(tx, 1)
       assert {:ok, @set_code_signer} = Signer.recover_authority(auth)
@@ -121,7 +121,7 @@ defmodule EEVM.Transaction.EnvelopeTest do
       {:ok, tx} = Envelope.decode(@set_code_tx_bytes)
 
       assert {:error, :invalid_fields} =
-               %{tx | to: <<>>} |> Envelope.encode() |> Envelope.decode()
+               %{tx | to: nil} |> Envelope.encode() |> Envelope.decode()
     end
   end
 
@@ -130,7 +130,7 @@ defmodule EEVM.Transaction.EnvelopeTest do
       nonce: 1,
       gas_price: 2,
       gas_limit: 3,
-      to: <<>>,
+      to: nil,
       value: 4,
       data: <<>>,
       v: 27,
@@ -151,7 +151,7 @@ defmodule EEVM.Transaction.EnvelopeTest do
       to: address(0x44),
       value: 5,
       data: <<0xAA>>,
-      access_list: [{address(0x55), [slot(0x66)]}],
+      access_list: [{address(0x55), [key(0x66)]}],
       y_parity: 1,
       r: 7,
       s: 8
@@ -164,16 +164,26 @@ defmodule EEVM.Transaction.EnvelopeTest do
         <<3>>,
         <<4>>,
         <<0x52, 0x08>>,
-        address(0x44),
+        address_bytes(0x44),
         <<5>>,
         <<0xAA>>,
-        [[address(0x55), [slot(0x66)]]],
+        [[address_bytes(0x55), [slot(0x66)]]],
         <<1>>,
         <<7>>,
         <<8>>
       ])
 
     assert Envelope.encode(tx) == <<0x02>> <> expected_payload
+
+    # The binary forms of addresses and storage keys are deprecated but
+    # still encode the same way.
+    binary_forms = %{
+      tx
+      | to: address_bytes(0x44),
+        access_list: [{address_bytes(0x55), [slot(0x66)]}]
+    }
+
+    assert Envelope.encode(binary_forms) == Envelope.encode(tx)
   end
 
   test "decode detects legacy vs typed by first byte" do
@@ -181,7 +191,7 @@ defmodule EEVM.Transaction.EnvelopeTest do
       nonce: 0,
       gas_price: 0,
       gas_limit: 0,
-      to: <<>>,
+      to: nil,
       value: 0,
       data: <<>>,
       v: 27,
@@ -194,7 +204,7 @@ defmodule EEVM.Transaction.EnvelopeTest do
       nonce: 0,
       gas_price: 1,
       gas_limit: 21_000,
-      to: <<>>,
+      to: nil,
       value: 0,
       data: <<>>,
       access_list: [],
@@ -207,6 +217,8 @@ defmodule EEVM.Transaction.EnvelopeTest do
     assert {:ok, %Transaction.AccessList{}} = typed |> Envelope.encode() |> Envelope.decode()
   end
 
-  defp address(byte), do: :binary.copy(<<byte>>, 20)
+  defp address(byte), do: :binary.decode_unsigned(address_bytes(byte))
+  defp address_bytes(byte), do: :binary.copy(<<byte>>, 20)
+  defp key(byte), do: :binary.decode_unsigned(slot(byte))
   defp slot(byte), do: :binary.copy(<<byte>>, 32)
 end

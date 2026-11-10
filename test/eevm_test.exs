@@ -81,6 +81,29 @@ defmodule EEVMTest do
     end
   end
 
+  describe "address/1 and hex/1" do
+    test "convert between hex, 20-byte binaries, and integer addresses" do
+      address = 0x9D8A62F656A8D1615C1294FD71E9CFB3E4855A4F
+
+      assert EEVM.address("0x9d8a62f656a8d1615c1294fd71e9cfb3e4855a4f") == address
+      assert EEVM.address("9D8A62F656A8D1615C1294FD71E9CFB3E4855A4F") == address
+      assert EEVM.address(<<address::160>>) == address
+      assert EEVM.hex(<<address::160>>) == "0x9d8a62f656a8d1615c1294fd71e9cfb3e4855a4f"
+      assert EEVM.hex(<<1::160>>) == "0x0000000000000000000000000000000000000001"
+    end
+
+    test "address/1 rejects anything that isn't a 20-byte address" do
+      for bad <- [
+            "0x" <> String.duplicate("0", 38),
+            "0x" <> String.duplicate("g", 40),
+            <<1::152>>,
+            2 ** 160
+          ] do
+        assert_raise ArgumentError, fn -> EEVM.address(bad) end
+      end
+    end
+  end
+
   describe "Disassembler" do
     test "disassembles simple program" do
       code = <<0x60, 0x01, 0x60, 0x02, 0x01, 0x00>>

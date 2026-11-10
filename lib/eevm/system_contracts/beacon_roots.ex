@@ -86,20 +86,21 @@ defmodule EEVM.SystemContracts.BeaconRoots do
   end
 
   @doc """
-  Executes the block-start system call that records `beacon_root` under
-  `block.timestamp`.
+  Executes the block-start system call that records the 32-byte
+  `beacon_root` under `block.timestamp`. An integer `beacon_root` is
+  deprecated but still accepted for one minor version.
 
   Uses SYSTEM_ADDRESS as the caller so the contract takes its storage branch.
   Returns the updated database, or an error tuple if the call reverted (which
   should never happen with the canonical bytecode, but we surface it rather
   than swallow it).
   """
-  @spec commit(Database.t(), BlockEnv.t(), non_neg_integer()) ::
+  @spec commit(Database.t(), BlockEnv.t(), <<_::256>> | non_neg_integer()) ::
           {:ok, Database.t()} | {:error, atom(), Database.t()}
-  def commit(%Database{} = db, %BlockEnv{} = block, beacon_root)
-      when is_integer(beacon_root) and beacon_root >= 0 do
-    calldata = <<beacon_root::unsigned-big-256>>
+  def commit(%Database{} = db, %BlockEnv{} = block, beacon_root) when is_integer(beacon_root),
+    do: commit(db, block, <<beacon_root::unsigned-big-256>>)
 
+  def commit(%Database{} = db, %BlockEnv{} = block, <<_::256>> = beacon_root) do
     final_state =
       @deployed_code
       |> MachineState.new(
@@ -110,7 +111,7 @@ defmodule EEVM.SystemContracts.BeaconRoots do
           address: @address,
           caller: @system_address,
           callvalue: 0,
-          calldata: calldata
+          calldata: beacon_root
         },
         gas: @system_call_gas
       )
@@ -129,8 +130,9 @@ defmodule EEVM.SystemContracts.BeaconRoots do
   Reads a previously-committed beacon root by timestamp, directly from the
   contract's storage slots.
 
-  Returns `{:ok, root}` when the slot at `timestamp % 8191` matches
-  `timestamp` (i.e. no ring-buffer collision), and `:not_found` otherwise.
+  Returns `{:ok, root}`, the stored storage word, when the slot at
+  `timestamp % 8191` matches `timestamp` (i.e. no ring-buffer collision),
+  and `:not_found` otherwise.
   """
   @spec lookup(Database.t(), non_neg_integer()) :: {:ok, non_neg_integer()} | :not_found
   def lookup(%Database{} = db, timestamp) when is_integer(timestamp) and timestamp >= 0 do

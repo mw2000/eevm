@@ -9,11 +9,18 @@ defmodule EEVM.Transaction do
   `nonce`, `value`, `data`, `access_list`, and `authorization_list` default to
   zero or empty. Build an unsigned struct and sign it with
   `EEVM.Transaction.Signer.sign/3`, which also fills in a missing `chain_id`.
+
+  Addresses are integers, as everywhere in eevm: `to` (`nil` creates a
+  contract), access-list entries, and `Authorization.address`. Access-list
+  storage keys are integers too; `EEVM.Transaction.Envelope` converts at the
+  wire edge. A 20-byte binary address or 32-byte binary storage key is still
+  accepted for one minor version, but is deprecated.
   """
 
-  @type address :: binary()
-  @type hash32 :: binary()
-  @type access_list :: [{address(), [hash32()]}]
+  @type address :: non_neg_integer()
+  @type storage_key :: non_neg_integer()
+  @type hash32 :: <<_::256>>
+  @type access_list :: [{address(), [storage_key()]}]
 
   @type t ::
           EEVM.Transaction.Legacy.t()
@@ -23,6 +30,27 @@ defmodule EEVM.Transaction do
           | EEVM.Transaction.SetCode.t()
 
   @type authorization_tuple :: EEVM.Transaction.Authorization.t()
+
+  @doc false
+  # The wire bytes of `to` and of access-list and authorization addresses.
+  # Also takes the deprecated 20-byte binary form.
+  @spec address_bytes(address() | binary() | nil) :: binary()
+  def address_bytes(nil), do: <<>>
+  def address_bytes(<<>>), do: <<>>
+  def address_bytes(<<_::160>> = bytes), do: bytes
+  def address_bytes(address) when is_integer(address), do: <<address::unsigned-big-160>>
+
+  @doc false
+  # The RLP item list of an access list. Also takes the deprecated binary forms.
+  @spec access_list_rlp(access_list()) :: [[binary() | [binary()]]]
+  def access_list_rlp(access_list) do
+    Enum.map(access_list, fn {address, keys} ->
+      [address_bytes(address), Enum.map(keys, &storage_key_bytes/1)]
+    end)
+  end
+
+  defp storage_key_bytes(<<_::256>> = key), do: key
+  defp storage_key_bytes(key) when is_integer(key), do: <<key::unsigned-big-256>>
 
   defmodule Authorization do
     @moduledoc """
@@ -51,7 +79,7 @@ defmodule EEVM.Transaction do
             nonce: non_neg_integer(),
             gas_price: non_neg_integer(),
             gas_limit: non_neg_integer(),
-            to: binary(),
+            to: EEVM.Transaction.address() | nil,
             value: non_neg_integer(),
             data: binary(),
             v: non_neg_integer(),
@@ -70,7 +98,7 @@ defmodule EEVM.Transaction do
             nonce: non_neg_integer(),
             gas_price: non_neg_integer(),
             gas_limit: non_neg_integer(),
-            to: binary(),
+            to: EEVM.Transaction.address() | nil,
             value: non_neg_integer(),
             data: binary(),
             access_list: EEVM.Transaction.access_list(),
@@ -103,7 +131,7 @@ defmodule EEVM.Transaction do
             max_priority_fee_per_gas: non_neg_integer(),
             max_fee_per_gas: non_neg_integer(),
             gas_limit: non_neg_integer(),
-            to: binary(),
+            to: EEVM.Transaction.address() | nil,
             value: non_neg_integer(),
             data: binary(),
             access_list: EEVM.Transaction.access_list(),

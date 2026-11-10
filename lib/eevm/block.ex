@@ -18,10 +18,12 @@ defmodule EEVM.Block do
   Options follow `EEVM.Handler.execute/4`: a full `:config` (hardfork, chain
   id, custom precompiles) or the `:hardfork` shorthand (default `:cancun`);
   `:chain_id` is deprecated in favour of the config's. `:block_hashes` maps
-  recent block numbers to their hashes for BLOCKHASH. From Prague,
+  recent block numbers to their 32-byte hashes for BLOCKHASH. From Prague,
   `:deposit_contract_address` names the chain's EIP-6110 deposit contract
   (default: mainnet's, `EEVM.Block.Requests.mainnet_deposit_contract/0`).
-  `tracer: true` traces every transaction into `result.trace`.
+  `tracer: true` traces every transaction: `result.trace` is a list with one
+  `EEVM.Tracer` per transaction, in block order (like geth's
+  `debug_traceBlock`), so transaction boundaries stay visible.
 
   Errors are `{:error, reason}` with the reasons catalogued in `EEVM.Error`
   as `t:EEVM.Error.block_error/0`.
@@ -76,7 +78,7 @@ defmodule EEVM.Block do
           hardfork: HardforkConfig.spec_id(),
           config: Config.t(),
           chain_id: non_neg_integer(),
-          block_hashes: %{non_neg_integer() => non_neg_integer()},
+          block_hashes: %{non_neg_integer() => <<_::256>>},
           deposit_contract_address: non_neg_integer(),
           tracer: boolean()
         ]
@@ -85,7 +87,7 @@ defmodule EEVM.Block do
           hardfork: HardforkConfig.spec_id(),
           config: Config.t(),
           chain_id: non_neg_integer(),
-          block_hashes: %{non_neg_integer() => non_neg_integer()},
+          block_hashes: %{non_neg_integer() => <<_::256>>},
           deposit_contract_address: non_neg_integer(),
           tracer: boolean(),
           timestamp: non_neg_integer(),
@@ -93,7 +95,7 @@ defmodule EEVM.Block do
           gas_limit: non_neg_integer(),
           prev_randao: non_neg_integer(),
           extra_data: binary(),
-          parent_beacon_block_root: non_neg_integer(),
+          parent_beacon_block_root: <<_::256>> | non_neg_integer(),
           withdrawals: [Withdrawal.t()]
         ]
 
@@ -172,7 +174,8 @@ defmodule EEVM.Block do
   the result.
 
   With `tracer: true`, each transaction is traced and `result.trace` lists
-  one `EEVM.Tracer` per transaction, in order.
+  one `EEVM.Tracer` per transaction, in block order; system calls are not
+  traced.
 
   Returns `{:ok, %EEVM.Block.Result{}}` whose `db` is the state after the
   block and whose `requests` are the block's requests. A
@@ -214,24 +217,27 @@ defmodule EEVM.Block do
     hardfork = config.hardfork
     withdrawals = if enabled?(hardfork, :eip_4895), do: Keyword.get(opts, :withdrawals, [])
 
-    header = %Header{
-      parent_hash: parent.hash,
-      number: parent.number + 1,
-      timestamp: Keyword.fetch!(opts, :timestamp),
-      coinbase: Keyword.get(opts, :coinbase, 0),
-      gas_limit: Keyword.get(opts, :gas_limit, parent.gas_limit),
-      prev_randao: Keyword.get(opts, :prev_randao, 0),
-      extra_data: Keyword.get(opts, :extra_data, <<>>),
-      base_fee_per_gas:
-        if(enabled?(hardfork, :eip_1559), do: Header.calc_base_fee_per_gas(parent)),
-      withdrawals_root: if(withdrawals, do: withdrawals_root(withdrawals)),
-      blob_gas_used: if(enabled?(hardfork, :eip_4844), do: total_blob_gas(transactions)),
-      excess_blob_gas:
-        if(enabled?(hardfork, :eip_4844), do: BlobGas.calc_excess_blob_gas(parent, hardfork)),
-      parent_beacon_block_root:
-        if(enabled?(hardfork, :eip_4788), do: Keyword.get(opts, :parent_beacon_block_root, 0)),
-      requests_hash: nil
-    }
+    header =
+      Header.new(
+        parent_hash: parent.hash,
+        number: parent.number + 1,
+        timestamp: Keyword.fetch!(opts, :timestamp),
+        coinbase: Keyword.get(opts, :coinbase, 0),
+        gas_limit: Keyword.get(opts, :gas_limit, parent.gas_limit),
+        prev_randao: Keyword.get(opts, :prev_randao, 0),
+        extra_data: Keyword.get(opts, :extra_data, <<>>),
+        base_fee_per_gas:
+          if(enabled?(hardfork, :eip_1559), do: Header.calc_base_fee_per_gas(parent)),
+        withdrawals_root: if(withdrawals, do: withdrawals_root(withdrawals)),
+        blob_gas_used: if(enabled?(hardfork, :eip_4844), do: total_blob_gas(transactions)),
+        excess_blob_gas:
+          if(enabled?(hardfork, :eip_4844), do: BlobGas.calc_excess_blob_gas(parent, hardfork)),
+        parent_beacon_block_root:
+          if(enabled?(hardfork, :eip_4788),
+            do: Keyword.get(opts, :parent_beacon_block_root, <<0::256>>)
+          ),
+        requests_hash: nil
+      )
 
     block = %__MODULE__{header: header, transactions: transactions, withdrawals: withdrawals}
 
@@ -342,7 +348,9 @@ defmodule EEVM.Block do
   # EIP-4788 then EIP-2935, both before any transaction.
   defp system_calls(%Header{} = header, hardfork) do
     beacon_root = fn db, ctx ->
-      unwrap_system_call(BeaconRoots.commit(db, ctx, header.parent_beacon_block_root || 0))
+      unwrap_system_call(
+        BeaconRoots.commit(db, ctx, header.parent_beacon_block_root || <<0::256>>)
+      )
     end
 
     block_hash = fn db, ctx ->

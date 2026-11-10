@@ -1,6 +1,9 @@
 defmodule EEVM.Transaction.Envelope do
   @moduledoc """
   Transaction envelope encoding/decoding for legacy and typed transactions.
+
+  Decoding turns wire addresses into integers, an empty `to` into `nil`, and
+  access-list storage keys into integers; encoding does the reverse.
   """
 
   alias EEVM.Transaction
@@ -18,7 +21,7 @@ defmodule EEVM.Transaction.Envelope do
       encode_integer(tx.nonce),
       encode_integer(tx.gas_price),
       encode_integer(tx.gas_limit),
-      tx.to,
+      Transaction.address_bytes(tx.to),
       encode_integer(tx.value),
       tx.data,
       encode_integer(tx.v),
@@ -34,10 +37,10 @@ defmodule EEVM.Transaction.Envelope do
       encode_integer(tx.nonce),
       encode_integer(tx.gas_price),
       encode_integer(tx.gas_limit),
-      tx.to,
+      Transaction.address_bytes(tx.to),
       encode_integer(tx.value),
       tx.data,
-      encode_access_list(tx.access_list),
+      Transaction.access_list_rlp(tx.access_list),
       encode_integer(tx.y_parity),
       encode_integer(tx.r),
       encode_integer(tx.s)
@@ -53,10 +56,10 @@ defmodule EEVM.Transaction.Envelope do
       encode_integer(tx.max_priority_fee_per_gas),
       encode_integer(tx.max_fee_per_gas),
       encode_integer(tx.gas_limit),
-      tx.to,
+      Transaction.address_bytes(tx.to),
       encode_integer(tx.value),
       tx.data,
-      encode_access_list(tx.access_list),
+      Transaction.access_list_rlp(tx.access_list),
       encode_integer(tx.y_parity),
       encode_integer(tx.r),
       encode_integer(tx.s)
@@ -72,10 +75,10 @@ defmodule EEVM.Transaction.Envelope do
       encode_integer(tx.max_priority_fee_per_gas),
       encode_integer(tx.max_fee_per_gas),
       encode_integer(tx.gas_limit),
-      tx.to,
+      Transaction.address_bytes(tx.to),
       encode_integer(tx.value),
       tx.data,
-      encode_access_list(tx.access_list),
+      Transaction.access_list_rlp(tx.access_list),
       encode_integer(tx.max_fee_per_blob_gas),
       tx.blob_versioned_hashes,
       encode_integer(tx.y_parity),
@@ -93,10 +96,10 @@ defmodule EEVM.Transaction.Envelope do
       encode_integer(tx.max_priority_fee_per_gas),
       encode_integer(tx.max_fee_per_gas),
       encode_integer(tx.gas_limit),
-      tx.to,
+      Transaction.address_bytes(tx.to),
       encode_integer(tx.value),
       tx.data,
-      encode_access_list(tx.access_list),
+      Transaction.access_list_rlp(tx.access_list),
       Enum.map(tx.authorization_list, &encode_authorization/1),
       encode_integer(tx.y_parity),
       encode_integer(tx.r),
@@ -162,7 +165,7 @@ defmodule EEVM.Transaction.Envelope do
     with {:ok, nonce} <- decode_integer(nonce),
          {:ok, gas_price} <- decode_integer(gas_price),
          {:ok, gas_limit} <- decode_integer(gas_limit),
-         :ok <- validate_address(to, allow_empty?: true),
+         {:ok, to} <- decode_address(to, allow_empty?: true),
          {:ok, value} <- decode_integer(value),
          true <- is_binary(data),
          {:ok, v} <- decode_integer(v),
@@ -205,7 +208,7 @@ defmodule EEVM.Transaction.Envelope do
          {:ok, nonce} <- decode_integer(nonce),
          {:ok, gas_price} <- decode_integer(gas_price),
          {:ok, gas_limit} <- decode_integer(gas_limit),
-         :ok <- validate_address(to, allow_empty?: true),
+         {:ok, to} <- decode_address(to, allow_empty?: true),
          {:ok, value} <- decode_integer(value),
          true <- is_binary(data),
          {:ok, access_list} <- decode_access_list(access_list),
@@ -253,7 +256,7 @@ defmodule EEVM.Transaction.Envelope do
          {:ok, max_priority_fee_per_gas} <- decode_integer(max_priority_fee_per_gas),
          {:ok, max_fee_per_gas} <- decode_integer(max_fee_per_gas),
          {:ok, gas_limit} <- decode_integer(gas_limit),
-         :ok <- validate_address(to, allow_empty?: true),
+         {:ok, to} <- decode_address(to, allow_empty?: true),
          {:ok, value} <- decode_integer(value),
          true <- is_binary(data),
          {:ok, access_list} <- decode_access_list(access_list),
@@ -304,7 +307,7 @@ defmodule EEVM.Transaction.Envelope do
          {:ok, max_priority_fee_per_gas} <- decode_integer(max_priority_fee_per_gas),
          {:ok, max_fee_per_gas} <- decode_integer(max_fee_per_gas),
          {:ok, gas_limit} <- decode_integer(gas_limit),
-         :ok <- validate_address(to, allow_empty?: false),
+         {:ok, to} <- decode_address(to, allow_empty?: false),
          {:ok, value} <- decode_integer(value),
          true <- is_binary(data),
          {:ok, access_list} <- decode_access_list(access_list),
@@ -360,7 +363,7 @@ defmodule EEVM.Transaction.Envelope do
          {:ok, max_priority_fee_per_gas} <- decode_integer(max_priority_fee_per_gas),
          {:ok, max_fee_per_gas} <- decode_integer(max_fee_per_gas),
          {:ok, gas_limit} <- decode_integer(gas_limit),
-         :ok <- validate_address(to, allow_empty?: false),
+         {:ok, to} <- decode_address(to, allow_empty?: false),
          {:ok, value} <- decode_integer(value),
          true <- is_binary(data),
          {:ok, access_list} <- decode_access_list(access_list),
@@ -395,7 +398,7 @@ defmodule EEVM.Transaction.Envelope do
   defp encode_authorization(%Authorization{} = auth) do
     [
       encode_integer(auth.chain_id),
-      auth.address,
+      Transaction.address_bytes(auth.address),
       encode_integer(auth.nonce),
       encode_integer(auth.y_parity),
       encode_integer(auth.r),
@@ -421,7 +424,7 @@ defmodule EEVM.Transaction.Envelope do
 
   defp decode_authorization([chain_id, address, nonce, y_parity, r, s]) do
     with {:ok, chain_id} <- decode_integer(chain_id),
-         :ok <- validate_address(address, allow_empty?: false),
+         {:ok, address} <- decode_address(address, allow_empty?: false),
          {:ok, nonce} <- decode_integer(nonce),
          {:ok, y_parity} <- decode_integer(y_parity),
          {:ok, r} <- decode_integer(r),
@@ -440,17 +443,11 @@ defmodule EEVM.Transaction.Envelope do
 
   defp decode_authorization(_), do: {:error, :invalid_fields}
 
-  defp encode_access_list(access_list) do
-    Enum.map(access_list, fn {address, slots} ->
-      [address, slots]
-    end)
-  end
-
   defp decode_access_list(access_list) when is_list(access_list) do
     access_list
     |> Enum.reduce_while({:ok, []}, fn
       [address, slots], {:ok, acc} when is_binary(address) and is_list(slots) ->
-        with :ok <- validate_address(address, allow_empty?: false),
+        with {:ok, address} <- decode_address(address, allow_empty?: false),
              {:ok, decoded_slots} <- decode_slots(slots) do
           {:cont, {:ok, [{address, decoded_slots} | acc]}}
         else
@@ -471,7 +468,7 @@ defmodule EEVM.Transaction.Envelope do
   defp decode_slots(slots) do
     slots
     |> Enum.reduce_while({:ok, []}, fn
-      slot, {:ok, acc} when is_binary(slot) and byte_size(slot) == 32 ->
+      <<slot::unsigned-big-256>>, {:ok, acc} ->
         {:cont, {:ok, [slot | acc]}}
 
       _slot, _acc ->
@@ -500,15 +497,11 @@ defmodule EEVM.Transaction.Envelope do
 
   defp decode_blob_hashes(_), do: {:error, :invalid_fields}
 
-  defp validate_address(address, opts) do
-    allow_empty? = Keyword.fetch!(opts, :allow_empty?)
-
-    cond do
-      is_binary(address) and byte_size(address) == 20 -> :ok
-      allow_empty? and address == <<>> -> :ok
-      true -> {:error, :invalid_fields}
-    end
-  end
+  # A 20-byte wire address decodes to an integer; an empty `to`, where
+  # allowed, to `nil` (contract creation).
+  defp decode_address(<<address::unsigned-big-160>>, _opts), do: {:ok, address}
+  defp decode_address(<<>>, allow_empty?: true), do: {:ok, nil}
+  defp decode_address(_bytes, _opts), do: {:error, :invalid_fields}
 
   defp decode_y_parity(value) do
     with {:ok, y_parity} <- decode_integer(value),

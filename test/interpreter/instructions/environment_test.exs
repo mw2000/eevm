@@ -199,7 +199,7 @@ defmodule EEVM.Interpreter.Instructions.EnvironmentTest do
       block =
         BlockEnv.new(
           number: 100,
-          block_hashes: %{99 => 0xAAAA, 98 => 0xBBBB}
+          block_hashes: %{99 => <<0xAAAA::256>>, 98 => <<0xBBBB::256>>}
         )
 
       # PUSH1 99, BLOCKHASH, STOP

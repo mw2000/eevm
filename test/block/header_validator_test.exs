@@ -15,7 +15,7 @@ defmodule EEVM.Block.HeaderValidatorTest do
     withdrawals_root: <<0::256>>,
     blob_gas_used: 0,
     excess_blob_gas: 0,
-    parent_beacon_block_root: 0
+    parent_beacon_block_root: <<0::256>>
   ]
 
   @parent Header.new(

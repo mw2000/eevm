@@ -64,9 +64,7 @@ defmodule EEVM.TestSupport.BlockchainTestRunner do
   # the BLOCKHASH window of its own ancestry, and its total difficulty.
   defp run_blocks(blocks, db, %Header{} = genesis, test) do
     known = %{
-      genesis.hash =>
-        {db, genesis, %{genesis.number => :binary.decode_unsigned(genesis.hash)},
-         genesis.difficulty}
+      genesis.hash => {db, genesis, %{genesis.number => genesis.hash}, genesis.difficulty}
     }
 
     Enum.reduce_while(blocks, {:ok, known, genesis.hash}, fn block, {:ok, known, head} ->
@@ -131,7 +129,7 @@ defmodule EEVM.TestSupport.BlockchainTestRunner do
          config = block_config(test, header, parent_td),
          {:ok, result} <- Block.execute(block, parent, db, config: config, block_hashes: hashes) do
       {:ok,
-       {result.db, header, Map.put(hashes, header.number, :binary.decode_unsigned(header.hash)),
+       {result.db, header, Map.put(hashes, header.number, header.hash),
         parent_td + header.difficulty}}
     end
   end

@@ -48,7 +48,7 @@ defmodule EEVM.SystemContracts.BeaconRootsTest do
       block = %BlockEnv{timestamp: 1_700_000_000}
       root = 0xDEADBEEFCAFEBABE0000000000000000000000000000000000000000FACEFEED
 
-      {:ok, db} = BeaconRoots.commit(db, block, root)
+      {:ok, db} = BeaconRoots.commit(db, block, <<root::256>>)
 
       index = rem(1_700_000_000, @history)
       assert Database.storage_load(db, BeaconRoots.address(), index) == 1_700_000_000
@@ -60,9 +60,17 @@ defmodule EEVM.SystemContracts.BeaconRootsTest do
       block = %BlockEnv{timestamp: 1_700_000_000}
       root = 0xFEED0001
 
-      {:ok, db} = BeaconRoots.commit(db, block, root)
+      {:ok, db} = BeaconRoots.commit(db, block, <<root::256>>)
 
       assert BeaconRoots.lookup(db, 1_700_000_000) == {:ok, root}
+    end
+
+    test "still accepts the deprecated integer root" do
+      db = BeaconRoots.install(InMemory.new())
+      block = %BlockEnv{timestamp: 1_700_000_000}
+
+      assert BeaconRoots.commit(db, block, 0xFEED) ==
+               BeaconRoots.commit(db, block, <<0xFEED::256>>)
     end
 
     test "lookup/2 returns :not_found for unknown timestamps" do
@@ -73,8 +81,8 @@ defmodule EEVM.SystemContracts.BeaconRootsTest do
     test "ring buffer overwrites when timestamps collide mod 8191" do
       db = BeaconRoots.install(InMemory.new())
 
-      {:ok, db} = BeaconRoots.commit(db, %BlockEnv{timestamp: 1_000}, 0xAAAA)
-      {:ok, db} = BeaconRoots.commit(db, %BlockEnv{timestamp: 1_000 + @history}, 0xBBBB)
+      {:ok, db} = BeaconRoots.commit(db, %BlockEnv{timestamp: 1_000}, <<0xAAAA::256>>)
+      {:ok, db} = BeaconRoots.commit(db, %BlockEnv{timestamp: 1_000 + @history}, <<0xBBBB::256>>)
 
       # The older timestamp now fails the verify check — ring slot belongs to the newer one.
       assert BeaconRoots.lookup(db, 1_000) == :not_found
@@ -90,7 +98,7 @@ defmodule EEVM.SystemContracts.BeaconRootsTest do
         0x1111111111111111111111111111111111111111111111111111111111111111
 
       db = BeaconRoots.install(InMemory.new())
-      {:ok, db} = BeaconRoots.commit(db, %BlockEnv{timestamp: timestamp}, root)
+      {:ok, db} = BeaconRoots.commit(db, %BlockEnv{timestamp: timestamp}, <<root::256>>)
 
       # Execute the contract directly as a user would via CALL: non-system caller,
       # 32-byte timestamp calldata. The bytecode must MSTORE+RETURN the root.

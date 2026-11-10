@@ -57,7 +57,7 @@ defmodule EEVM.Transaction.SignerTest do
         to: address(0x22),
         value: 4,
         data: <<0xDE, 0xAD>>,
-        access_list: [{address(0xBB), [slot(0x99)]}],
+        access_list: [{address(0xBB), [key(0x99)]}],
         y_parity: 0,
         r: 0,
         s: 0
@@ -83,7 +83,7 @@ defmodule EEVM.Transaction.SignerTest do
       }
 
       assert {:ok, address} = Signer.recover_sender(tx, 1)
-      assert address == hex!("1a642f0e3c3af545e7acbd38b07251b3990914f1")
+      assert address == 0x1A642F0E3C3AF545E7ACBD38B07251B3990914F1
     end
 
     test "rejects invalid signature when r is zero" do
@@ -91,7 +91,7 @@ defmodule EEVM.Transaction.SignerTest do
         nonce: 0,
         gas_price: 1,
         gas_limit: 21_000,
-        to: <<>>,
+        to: nil,
         value: 0,
         data: <<>>,
         v: 27,
@@ -107,7 +107,7 @@ defmodule EEVM.Transaction.SignerTest do
         nonce: 0,
         gas_price: 1,
         gas_limit: 21_000,
-        to: <<>>,
+        to: nil,
         value: 0,
         data: <<>>,
         v: 27,
@@ -146,7 +146,7 @@ defmodule EEVM.Transaction.SignerTest do
       assert {:ok, signed} = Signer.sign(tx, @eip155_key, Config.new(:cancun, chain_id: 5))
       assert signed.v in [45, 46]
       assert {:ok, sender} = Signer.recover_sender(signed, 5)
-      assert Base.encode16(sender, case: :lower) == @eip155_sender
+      assert EEVM.hex(<<sender::160>>) == "0x" <> @eip155_sender
     end
 
     test "a typed transaction takes the config's chain id only when it has none" do
@@ -161,7 +161,7 @@ defmodule EEVM.Transaction.SignerTest do
 
       assert {:ok, %FeeMarket{chain_id: 5} = signed} = Signer.sign(tx, @eip155_key, config)
       assert {:ok, sender} = Signer.recover_sender(signed, 5)
-      assert Base.encode16(sender, case: :lower) == @eip155_sender
+      assert EEVM.hex(<<sender::160>>) == "0x" <> @eip155_sender
 
       assert {:ok, %FeeMarket{chain_id: 7}} =
                Signer.sign(%{tx | chain_id: 7}, @eip155_key, config)
@@ -181,8 +181,8 @@ defmodule EEVM.Transaction.SignerTest do
     end
   end
 
-  defp address(byte), do: :binary.copy(<<byte>>, 20)
-  defp slot(byte), do: :binary.copy(<<byte>>, 32)
+  defp address(byte), do: :binary.decode_unsigned(:binary.copy(<<byte>>, 20))
+  defp key(byte), do: :binary.decode_unsigned(:binary.copy(<<byte>>, 32))
 
   defp hex!(value) do
     Base.decode16!(value, case: :mixed)

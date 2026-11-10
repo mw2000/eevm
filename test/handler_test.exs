@@ -91,7 +91,7 @@ defmodule EEVM.HandlerTest do
         nonce: 0,
         gas_price: 1,
         gas_limit: 21_000,
-        to: <<@recipient::unsigned-big-160>>,
+        to: @recipient,
         value: 0,
         data: <<>>,
         v: 27,
@@ -103,11 +103,24 @@ defmodule EEVM.HandlerTest do
     end
   end
 
+  describe "execute/4 — deprecated binary addresses" do
+    test "a 20-byte binary `to` runs the same as the integer address" do
+      db = Database.put_code(db_with_sender(), @recipient, <<0x60, 1, 0x60, 0, 0x55, 0x00>>)
+      tx = legacy_value_transfer(gas_limit: 50_000)
+      binary_to = legacy_value_transfer(gas_limit: 50_000, to: <<@recipient::160>>)
+
+      assert {:ok, expected} = run(tx, db)
+      assert {:ok, result} = run(binary_to, db)
+      assert Database.storage_load(result.db, @recipient, 0) == 1
+      assert result.gas_used == expected.gas_used
+    end
+  end
+
   describe "execute/4 — chain id" do
     test "comes from the config and must match an EIP-155 signature" do
       {:ok, tx} =
         Signer.sign(
-          %Legacy{gas_price: 1, gas_limit: 21_000, to: <<@recipient::160>>},
+          %Legacy{gas_price: 1, gas_limit: 21_000, to: @recipient},
           @priv_key,
           Config.new(:cancun, chain_id: 5)
         )
@@ -136,7 +149,7 @@ defmodule EEVM.HandlerTest do
           max_priority_fee_per_gas: 2,
           max_fee_per_gas: 10,
           gas_limit: 21_000,
-          to: <<@recipient::unsigned-big-160>>,
+          to: @recipient,
           value: 0,
           data: <<>>,
           access_list: [],
@@ -168,7 +181,7 @@ defmodule EEVM.HandlerTest do
           max_priority_fee_per_gas: 2,
           max_fee_per_gas: 10,
           gas_limit: 100_000,
-          to: <<@recipient::unsigned-big-160>>,
+          to: @recipient,
           value: 0,
           data: <<>>,
           access_list: [],
@@ -235,7 +248,7 @@ defmodule EEVM.HandlerTest do
             nonce: 0,
             gas_price: 1,
             gas_limit: 200_000,
-            to: <<>>,
+            to: nil,
             value: 0,
             data: initcode,
             v: 0,
@@ -317,7 +330,7 @@ defmodule EEVM.HandlerTest do
     # SHA256 (0x02) costs 60 + 12 per word; "abc" is one word → 72 gas.
     # Intrinsic gas: 21_000 + 3 non-zero calldata bytes × 16 = 21_048.
     test "runs the precompile, charges its gas, and returns its output" do
-      tx = legacy_value_transfer(to: <<0x02::unsigned-big-160>>, data: "abc", gas_limit: 30_000)
+      tx = legacy_value_transfer(to: 0x02, data: "abc", gas_limit: 30_000)
 
       assert {:ok, result} = run(tx, db_with_sender())
       assert result.status == :success
@@ -326,7 +339,7 @@ defmodule EEVM.HandlerTest do
     end
 
     test "a precompile that runs out of gas consumes the whole gas limit" do
-      tx = legacy_value_transfer(to: <<0x02::unsigned-big-160>>, data: "abc", gas_limit: 21_100)
+      tx = legacy_value_transfer(to: 0x02, data: "abc", gas_limit: 21_100)
 
       assert {:ok, result} = run(tx, db_with_sender())
       assert result.status != :success
@@ -524,7 +537,7 @@ defmodule EEVM.HandlerTest do
       {:ok, tx} =
         Signer.sign(
           %FeeMarket{
-            to: <<@recipient::160>>,
+            to: @recipient,
             gas_limit: 50_000,
             max_fee_per_gas: 1,
             max_priority_fee_per_gas: 0
@@ -604,7 +617,7 @@ defmodule EEVM.HandlerTest do
       max_priority_fee_per_gas: 0,
       max_fee_per_gas: 1,
       gas_limit: 500_000,
-      to: <<authority_address()::unsigned-big-160>>,
+      to: authority_address(),
       value: 0,
       data: <<>>,
       access_list: [],
@@ -626,7 +639,7 @@ defmodule EEVM.HandlerTest do
 
     %Authorization{
       chain_id: chain_id,
-      address: <<address::unsigned-big-160>>,
+      address: address,
       nonce: nonce,
       y_parity: y_parity,
       r: r,
@@ -652,7 +665,7 @@ defmodule EEVM.HandlerTest do
         nonce: Keyword.get(opts, :nonce, 0),
         gas_price: Keyword.get(opts, :gas_price, 1),
         gas_limit: Keyword.get(opts, :gas_limit, 21_000),
-        to: Keyword.get(opts, :to, <<@recipient::unsigned-big-160>>),
+        to: Keyword.get(opts, :to, @recipient),
         value: Keyword.get(opts, :value, 0),
         data: Keyword.get(opts, :data, <<>>),
         v: 0,
@@ -664,7 +677,7 @@ defmodule EEVM.HandlerTest do
   end
 
   defp create_tx(initcode, value) do
-    legacy_value_transfer(to: <<>>, data: initcode, value: value, gas_limit: 200_000)
+    legacy_value_transfer(to: nil, data: initcode, value: value, gas_limit: 200_000)
   end
 
   defp sign_legacy(%Legacy{} = tx, chain_id) do
@@ -692,7 +705,7 @@ defmodule EEVM.HandlerTest do
       max_priority_fee_per_gas: 2,
       max_fee_per_gas: 10,
       gas_limit: 21_000,
-      to: <<@recipient::unsigned-big-160>>,
+      to: @recipient,
       value: 0,
       data: <<>>,
       access_list: [],

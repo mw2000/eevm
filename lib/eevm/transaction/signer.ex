@@ -5,14 +5,14 @@ defmodule EEVM.Transaction.Signer do
   ## Example
 
       iex> alias EEVM.Transaction.{FeeMarket, Signer}
-      iex> tx = %FeeMarket{max_priority_fee_per_gas: 1, max_fee_per_gas: 10, gas_limit: 21_000, to: <<0xB0B::160>>}
+      iex> tx = %FeeMarket{max_priority_fee_per_gas: 1, max_fee_per_gas: 10, gas_limit: 21_000, to: 0xB0B}
       iex> private_key = :binary.copy(<<0x46>>, 32)
       iex> {:ok, signed} = Signer.sign(tx, private_key, EEVM.Config.new(:cancun, chain_id: 5))
       iex> signed.chain_id
       5
       iex> {:ok, sender} = Signer.recover_sender(signed, 5)
-      iex> Base.encode16(sender)
-      "9D8A62F656A8D1615C1294FD71E9CFB3E4855A4F"
+      iex> EEVM.hex(<<sender::160>>)
+      "0x9d8a62f656a8d1615c1294fd71e9cfb3e4855a4f"
   """
 
   alias EEVM.{Config, Transaction}
@@ -67,7 +67,7 @@ defmodule EEVM.Transaction.Signer do
       encode_integer(tx.nonce),
       encode_integer(tx.gas_price),
       encode_integer(tx.gas_limit),
-      tx.to,
+      Transaction.address_bytes(tx.to),
       encode_integer(tx.value),
       tx.data
     ]
@@ -80,7 +80,7 @@ defmodule EEVM.Transaction.Signer do
       encode_integer(tx.nonce),
       encode_integer(tx.gas_price),
       encode_integer(tx.gas_limit),
-      tx.to,
+      Transaction.address_bytes(tx.to),
       encode_integer(tx.value),
       tx.data,
       encode_integer(chain_id),
@@ -97,10 +97,10 @@ defmodule EEVM.Transaction.Signer do
       encode_integer(tx.nonce),
       encode_integer(tx.gas_price),
       encode_integer(tx.gas_limit),
-      tx.to,
+      Transaction.address_bytes(tx.to),
       encode_integer(tx.value),
       tx.data,
-      encode_access_list(tx.access_list)
+      Transaction.access_list_rlp(tx.access_list)
     ]
 
     ExKeccak.hash_256(<<0x01>> <> ExRLP.encode(payload))
@@ -113,10 +113,10 @@ defmodule EEVM.Transaction.Signer do
       encode_integer(tx.max_priority_fee_per_gas),
       encode_integer(tx.max_fee_per_gas),
       encode_integer(tx.gas_limit),
-      tx.to,
+      Transaction.address_bytes(tx.to),
       encode_integer(tx.value),
       tx.data,
-      encode_access_list(tx.access_list)
+      Transaction.access_list_rlp(tx.access_list)
     ]
 
     ExKeccak.hash_256(<<0x02>> <> ExRLP.encode(payload))
@@ -129,10 +129,10 @@ defmodule EEVM.Transaction.Signer do
       encode_integer(tx.max_priority_fee_per_gas),
       encode_integer(tx.max_fee_per_gas),
       encode_integer(tx.gas_limit),
-      tx.to,
+      Transaction.address_bytes(tx.to),
       encode_integer(tx.value),
       tx.data,
-      encode_access_list(tx.access_list),
+      Transaction.access_list_rlp(tx.access_list),
       encode_integer(tx.max_fee_per_blob_gas),
       tx.blob_versioned_hashes
     ]
@@ -147,18 +147,19 @@ defmodule EEVM.Transaction.Signer do
       encode_integer(tx.max_priority_fee_per_gas),
       encode_integer(tx.max_fee_per_gas),
       encode_integer(tx.gas_limit),
-      tx.to,
+      Transaction.address_bytes(tx.to),
       encode_integer(tx.value),
       tx.data,
-      encode_access_list(tx.access_list),
+      Transaction.access_list_rlp(tx.access_list),
       Enum.map(tx.authorization_list, &authorization_fields/1)
     ]
 
     ExKeccak.hash_256(<<0x04>> <> ExRLP.encode(payload))
   end
 
-  @doc "Recover the sender address from a signed transaction."
-  @spec recover_sender(Transaction.t(), non_neg_integer()) :: {:ok, binary()} | {:error, atom()}
+  @doc "Recover the sender address, as an integer, from a signed transaction."
+  @spec recover_sender(Transaction.t(), non_neg_integer()) ::
+          {:ok, Transaction.address()} | {:error, atom()}
   def recover_sender(tx, chain_id) do
     with {:ok, y_parity, r, s} <- extract_signature(tx, chain_id) do
       recover(signing_hash(tx, chain_id), y_parity, r, s)
@@ -172,12 +173,12 @@ defmodule EEVM.Transaction.Signer do
   Signatures with `y_parity` outside `0..1`, `r` outside `1..n-1`, or a
   high `s` (EIP-2) are rejected with `{:error, :invalid_signature}`.
   """
-  @spec recover_authority(Authorization.t()) :: {:ok, binary()} | {:error, atom()}
+  @spec recover_authority(Authorization.t()) :: {:ok, Transaction.address()} | {:error, atom()}
   def recover_authority(%Authorization{y_parity: y_parity} = auth) when y_parity in [0, 1] do
     message =
       ExRLP.encode([
         encode_integer(auth.chain_id),
-        auth.address,
+        Transaction.address_bytes(auth.address),
         encode_integer(auth.nonce)
       ])
 
@@ -227,28 +228,19 @@ defmodule EEVM.Transaction.Signer do
 
   defp validate_signature_scalars(_, _), do: {:error, :invalid_signature}
 
-  defp public_key_to_address(<<4, key::binary-size(64)>>) do
-    <<_::binary-size(12), address::binary-size(20)>> = ExKeccak.hash_256(key)
-    {:ok, address}
-  end
+  defp public_key_to_address(<<4, key::binary-size(64)>>), do: public_key_to_address(key)
 
   defp public_key_to_address(key) when is_binary(key) and byte_size(key) == 64 do
-    <<_::binary-size(12), address::binary-size(20)>> = ExKeccak.hash_256(key)
+    <<_::binary-size(12), address::unsigned-big-160>> = ExKeccak.hash_256(key)
     {:ok, address}
   end
 
   defp public_key_to_address(_), do: {:error, :invalid_signature}
 
-  defp encode_access_list(access_list) do
-    Enum.map(access_list, fn {address, slots} ->
-      [address, slots]
-    end)
-  end
-
   defp authorization_fields(%Authorization{} = auth) do
     [
       encode_integer(auth.chain_id),
-      auth.address,
+      Transaction.address_bytes(auth.address),
       encode_integer(auth.nonce),
       encode_integer(auth.y_parity),
       encode_integer(auth.r),

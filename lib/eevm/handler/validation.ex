@@ -74,8 +74,9 @@ defmodule EEVM.Handler.Validation do
   def ensure_decoded(bytes) when is_binary(bytes), do: Envelope.decode(bytes)
   def ensure_decoded(_), do: {:error, :invalid_transaction_input}
 
-  @doc "Recover the 20-byte sender address; see `EEVM.Transaction.Signer.recover_sender/2`."
-  @spec recover_sender(decoded_tx(), non_neg_integer()) :: {:ok, binary()} | {:error, atom()}
+  @doc "Recover the sender address; see `EEVM.Transaction.Signer.recover_sender/2`."
+  @spec recover_sender(decoded_tx(), non_neg_integer()) ::
+          {:ok, non_neg_integer()} | {:error, atom()}
   defdelegate recover_sender(tx, chain_id), to: Signer
 
   @doc "Validate the transaction against state; see `EEVM.Transaction.Validator.validate/4`."
@@ -84,11 +85,11 @@ defmodule EEVM.Handler.Validation do
   defdelegate validate(tx_ctx, db, block, hardfork), to: Validator
 
   @doc "Build the `EEVM.TxEnv` the EVM sees from a decoded transaction."
-  @spec build_tx_context(decoded_tx(), binary()) :: {:ok, TxEnv.t()}
-  def build_tx_context(%Legacy{} = tx, sender_bytes) do
+  @spec build_tx_context(decoded_tx(), non_neg_integer()) :: {:ok, TxEnv.t()}
+  def build_tx_context(%Legacy{} = tx, sender) do
     {:ok,
      TxEnv.new(
-       origin: decode_address(sender_bytes),
+       origin: sender,
        nonce: tx.nonce,
        gas_limit: tx.gas_limit,
        to: optional_address(tx.to),
@@ -104,10 +105,10 @@ defmodule EEVM.Handler.Validation do
      )}
   end
 
-  def build_tx_context(%AccessList{} = tx, sender_bytes) do
+  def build_tx_context(%AccessList{} = tx, sender) do
     {:ok,
      TxEnv.new(
-       origin: decode_address(sender_bytes),
+       origin: sender,
        nonce: tx.nonce,
        gas_limit: tx.gas_limit,
        to: optional_address(tx.to),
@@ -123,10 +124,10 @@ defmodule EEVM.Handler.Validation do
      )}
   end
 
-  def build_tx_context(%FeeMarket{} = tx, sender_bytes) do
+  def build_tx_context(%FeeMarket{} = tx, sender) do
     {:ok,
      TxEnv.new(
-       origin: decode_address(sender_bytes),
+       origin: sender,
        nonce: tx.nonce,
        gas_limit: tx.gas_limit,
        to: optional_address(tx.to),
@@ -142,10 +143,10 @@ defmodule EEVM.Handler.Validation do
      )}
   end
 
-  def build_tx_context(%Blob{} = tx, sender_bytes) do
+  def build_tx_context(%Blob{} = tx, sender) do
     {:ok,
      TxEnv.new(
-       origin: decode_address(sender_bytes),
+       origin: sender,
        nonce: tx.nonce,
        gas_limit: tx.gas_limit,
        to: optional_address(tx.to),
@@ -161,10 +162,10 @@ defmodule EEVM.Handler.Validation do
      )}
   end
 
-  def build_tx_context(%SetCode{} = tx, sender_bytes) do
+  def build_tx_context(%SetCode{} = tx, sender) do
     {:ok,
      TxEnv.new(
-       origin: decode_address(sender_bytes),
+       origin: sender,
        nonce: tx.nonce,
        gas_limit: tx.gas_limit,
        to: optional_address(tx.to),
@@ -181,25 +182,24 @@ defmodule EEVM.Handler.Validation do
      )}
   end
 
-  @doc "Convert a 20-byte address to its integer form."
-  @spec decode_address(binary()) :: non_neg_integer()
-  def decode_address(bytes) when is_binary(bytes) and byte_size(bytes) == 20,
-    do: :binary.decode_unsigned(bytes)
-
+  # Transaction structs hold integer addresses and storage keys; the
+  # deprecated binary forms are converted here.
+  defp optional_address(nil), do: nil
   defp optional_address(<<>>), do: nil
-
-  defp optional_address(bytes) when is_binary(bytes) and byte_size(bytes) == 20,
-    do: :binary.decode_unsigned(bytes)
+  defp optional_address(address), do: EEVM.address(address)
 
   defp decode_authorization(%Authorization{} = auth) do
     auth
     |> Map.from_struct()
-    |> Map.update!(:address, &decode_address/1)
+    |> Map.update!(:address, &EEVM.address/1)
   end
 
   defp decode_access_list(access_list) do
-    Enum.map(access_list, fn {address, slots} ->
-      {:binary.decode_unsigned(address), Enum.map(slots, &:binary.decode_unsigned/1)}
+    Enum.map(access_list, fn {address, keys} ->
+      {EEVM.address(address), Enum.map(keys, &storage_key/1)}
     end)
   end
+
+  defp storage_key(<<key::unsigned-big-256>>), do: key
+  defp storage_key(key) when is_integer(key), do: key
 end

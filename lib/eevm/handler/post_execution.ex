@@ -20,7 +20,7 @@ defmodule EEVM.Handler.PostExecution do
   alias EEVM.BlockEnv
   alias EEVM.CallResult
   alias EEVM.Database
-  alias EEVM.Handler.{PreExecution, Validation}
+  alias EEVM.Handler.PreExecution
   alias EEVM.Interpreter.MachineState
   alias EEVM.TransactionResult
   alias EEVM.TxEnv
@@ -36,7 +36,7 @@ defmodule EEVM.Handler.PostExecution do
           MachineState.t(),
           non_neg_integer() | nil,
           TxEnv.t(),
-          binary(),
+          non_neg_integer(),
           Database.t(),
           BlockEnv.t()
         ) :: {:ok, TransactionResult.t()}
@@ -44,7 +44,7 @@ defmodule EEVM.Handler.PostExecution do
         %MachineState{} = final_state,
         contract_address,
         %TxEnv{} = tx,
-        sender_bytes,
+        sender,
         %Database{} = db_nonce_bumped,
         %BlockEnv{} = block
       ) do
@@ -70,7 +70,7 @@ defmodule EEVM.Handler.PostExecution do
        status: status,
        gas_used: gas_used,
        gas_refunded: max(final_state.frame.gas, 0),
-       sender: Validation.decode_address(sender_bytes),
+       sender: sender,
        contract_address: if(status == :success, do: contract_address, else: nil),
        return_data: if(status == :success, do: final_state.frame.return_data, else: <<>>),
        logs: logs,
