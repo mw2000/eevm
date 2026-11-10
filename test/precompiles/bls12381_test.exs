@@ -97,6 +97,80 @@ defmodule EEVM.Precompiles.Bls12381Test do
     end
   end
 
+  describe "official EIP-2537 vectors" do
+    # assets/eip-2537 from ethereum/EIPs, checked in as
+    # test/fixtures/precompiles/bls12381_eip2537_*.json (see the README there).
+    # MUL vectors run through MSM with one pair. Success vectors give the
+    # expected output and gas; fail vectors must return an error.
+    for {file, function} <- [
+          {"add_G1", :execute_g1_add},
+          {"add_G2", :execute_g2_add},
+          {"mul_G1", :execute_g1_msm},
+          {"mul_G2", :execute_g2_msm},
+          {"pairing_check", :execute_pairing},
+          {"map_fp_to_G1", :execute_map_fp_to_g1},
+          {"map_fp2_to_G2", :execute_map_fp2_to_g2}
+        ],
+        vector <-
+          "test/fixtures/precompiles/bls12381_eip2537_#{file}_bls.json"
+          |> File.read!()
+          |> Jason.decode!() do
+      @vector vector
+      @function function
+      test "#{file} #{@vector["Name"]}" do
+        input = Base.decode16!(@vector["Input"], case: :mixed)
+        expected = Base.decode16!(@vector["Expected"], case: :mixed)
+        gas = @vector["Gas"]
+
+        assert {:ok, ^expected, ^gas} = apply(Bls12381, @function, [input, gas])
+      end
+    end
+
+    for {file, function} <- [
+          {"add_G1", :execute_g1_add},
+          {"add_G2", :execute_g2_add},
+          {"mul_G1", :execute_g1_msm},
+          {"mul_G2", :execute_g2_msm},
+          {"msm_G1", :execute_g1_msm},
+          {"msm_G2", :execute_g2_msm},
+          {"pairing_check", :execute_pairing},
+          {"map_fp_to_G1", :execute_map_fp_to_g1},
+          {"map_fp2_to_G2", :execute_map_fp2_to_g2}
+        ],
+        vector <-
+          "test/fixtures/precompiles/bls12381_eip2537_fail_#{file}_bls.json"
+          |> File.read!()
+          |> Jason.decode!() do
+      @vector vector
+      @function function
+      test "fail-#{file} #{@vector["Name"]} (#{@vector["ExpectedError"]})" do
+        input = Base.decode16!(@vector["Input"], case: :mixed)
+
+        assert {:error, _reason} = apply(Bls12381, @function, [input, 10_000_000])
+      end
+    end
+  end
+
+  describe "field element encoding" do
+    # EIP-2537: every Fp element must be below p. The ZCash serialization uses
+    # the top bits of x as flags, and its infinity flag alone (0x40 followed by
+    # zeros) decodes to infinity in libraries built on it; as an EIP-2537
+    # coordinate it is 2^382 >= p, so it is invalid.
+    test "rejects the ZCash infinity flag as a G1 or G2 coordinate" do
+      flag = <<0::128, 0x40, 0::376>>
+
+      assert {:error, :invalid_input} =
+               Bls12381.execute_g1_add(flag <> <<0::512>> <> @g1_infinity, 375)
+
+      g2_flag = <<0::512>> <> flag <> <<0::1024>>
+
+      assert {:error, :invalid_input} =
+               Bls12381.execute_g2_add(g2_flag <> :binary.copy(<<0>>, 256), 600)
+
+      assert {:error, :invalid_input} = Bls12381.execute_g2_msm(g2_flag <> <<1::256>>, 22_500)
+    end
+  end
+
   describe "dispatcher and Prague gating" do
     test "Prague registers 0x0B through 0x11" do
       config = Config.new(:prague)
