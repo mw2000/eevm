@@ -2,8 +2,8 @@ defmodule EEVM.StateRoot do
   @moduledoc """
   Computes Ethereum storage roots and state roots from the current `EEVM.Database`.
 
-  Both enumerate the backend, so it must implement the optional
-  `c:EEVM.Database.accounts/1` and `c:EEVM.Database.storage_slots/2`.
+  Both enumerate the backend through `c:EEVM.Database.accounts/1` and
+  `c:EEVM.Database.storage_slots/2`, so the backend must support them.
   """
 
   alias EEVM.Crypto.Keccak

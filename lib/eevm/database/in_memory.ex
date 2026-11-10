@@ -100,10 +100,11 @@ defmodule EEVM.Database.InMemory do
 
   @impl Database
   def accounts(%{accounts: accounts, storage: storage}),
-    do: Enum.uniq(Map.keys(accounts) ++ Map.keys(storage))
+    do: {:ok, Enum.uniq(Map.keys(accounts) ++ Map.keys(storage))}
 
   @impl Database
-  def storage_slots(%{storage: storage}, address), do: Map.to_list(Map.get(storage, address, %{}))
+  def storage_slots(%{storage: storage}, address),
+    do: {:ok, Map.to_list(Map.get(storage, address, %{}))}
 
   defp apply_change({address, :destroyed}, state) do
     %{
@@ -188,7 +189,7 @@ defmodule EEVM.Database.InMemory do
 
   @doc false
   @deprecated "Use EEVM.Database.account_addresses/1"
-  def account_addresses(state), do: accounts(state)
+  def account_addresses(state), do: state |> accounts() |> elem(1)
 
   @doc false
   @deprecated "Use EEVM.Database.account_addresses/1"

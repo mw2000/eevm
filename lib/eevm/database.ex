@@ -10,14 +10,18 @@ defmodule EEVM.Database do
 
   When a transaction or block finishes, `changes/1` returns the overlay as an
   `EEVM.StateChanges`. `EEVM.transact/4` and `EEVM.Block.execute/4` hand it
-  to the backend's optional `c:commit/2` and return the committed database;
-  with a backend that has no `commit/2`, the result keeps the overlay and
-  the caller applies `result.changes` itself. `EEVM.run/2` never commits.
+  to the backend's `c:commit/2` and return the committed database. When
+  `commit/2` returns `{:error, :unsupported}`, the result keeps the overlay
+  and the caller applies `result.changes` itself. `EEVM.run/2` never commits.
 
-  `EEVM.StateRoot` also needs to enumerate the backend, through the optional
-  `c:accounts/1` and `c:storage_slots/2`; an RPC-backed adapter can leave
-  them out and still execute transactions. Without `c:storage_slots/2`, the
-  EIP-7610 check that a CREATE target has no storage sees only the overlay.
+  `EEVM.StateRoot` also needs to enumerate the backend, through
+  `c:accounts/1` and `c:storage_slots/2`. A backend that can't, such as one
+  over JSON-RPC, returns `{:error, :unsupported}` from them and still
+  executes transactions; the EIP-7610 check that a CREATE target has no
+  storage then sees only the overlay.
+
+  Every callback is required, so what a backend can do is stated in its
+  code: eevm never asks the code server which functions a module exports.
 
   `EEVM.Database.InMemory` implements every callback. See the "Writing a
   database adapter" guide to write your own.
@@ -29,15 +33,21 @@ defmodule EEVM.Database do
   `EEVM.Block.build/4`) returns `{:error, {:database, reason}}`. Called
   directly, the functions in this module raise `EEVM.Database.ReadError`.
 
-  ## Deprecated callbacks
+  ## Deprecated backends
 
-  Before 1.0 the behaviour also had write and query callbacks
-  (`get_account/2`, `set_balance/3`, `storage_store/4`, and so on). A module
-  that implements only those still works for one minor version: `new/2`
-  wraps it in `EEVM.Database.Legacy`.
+  These still work for one minor version:
+
+  - A backend that leaves out `c:commit/2`, `c:accounts/1`, or
+    `c:storage_slots/2` (optional before #204) is treated as returning
+    `{:error, :unsupported}`, and a bare enumerable from `c:accounts/1` or
+    `c:storage_slots/2` is accepted.
+  - A module that implements only the pre-1.0 write and query callbacks
+    (`get_account/2`, `set_balance/3`, `storage_store/4`, and so on) is
+    wrapped in `EEVM.Database.Legacy` by `new/2`.
   """
 
   alias EEVM.Crypto.Keccak
+  alias EEVM.Database.Legacy
   alias EEVM.StateChanges
 
   defmodule ReadError do
@@ -111,16 +121,25 @@ defmodule EEVM.Database do
   @callback block_hash(state :: term(), number :: non_neg_integer()) ::
               {:ok, <<_::256>> | nil} | {:error, term()}
 
-  @doc "Applies a finished set of changes and returns the new backend state."
-  @callback commit(state :: term(), StateChanges.t()) :: {:ok, term()} | {:error, term()}
+  @doc """
+  Applies a finished set of changes and returns the new backend state.
+  A read-only backend returns `{:error, :unsupported}`.
+  """
+  @callback commit(state :: term(), StateChanges.t()) ::
+              {:ok, term()} | {:error, :unsupported | term()}
 
-  @doc "Enumerates every address with an account or storage. Needed only for state roots."
-  @callback accounts(state :: term()) :: Enumerable.t()
+  @doc """
+  Enumerates every address with an account or storage, or returns
+  `{:error, :unsupported}`. Only state roots need it.
+  """
+  @callback accounts(state :: term()) :: {:ok, Enumerable.t()} | {:error, :unsupported | term()}
 
-  @doc "Enumerates `{slot, value}` for every set slot of `address`. Needed only for state roots."
-  @callback storage_slots(state :: term(), address()) :: Enumerable.t()
-
-  @optional_callbacks commit: 2, accounts: 1, storage_slots: 2
+  @doc """
+  Enumerates `{slot, value}` for every set slot of `address`, or returns
+  `{:error, :unsupported}`. Only state roots and the EIP-7610 CREATE check need it.
+  """
+  @callback storage_slots(state :: term(), address()) ::
+              {:ok, Enumerable.t()} | {:error, :unsupported | term()}
 
   # ---------------------------------------------------------------------------
   # Constructor and commit
@@ -140,11 +159,8 @@ defmodule EEVM.Database do
   """
   @spec new(module(), term()) :: t()
   def new(impl, state) do
-    Code.ensure_loaded(impl)
-
-    if function_exported?(impl, :account, 2) or not function_exported?(impl, :get_account, 2),
-      do: %__MODULE__{impl: impl, state: state},
-      else: %__MODULE__{impl: EEVM.Database.Legacy, state: {impl, state}}
+    {impl, state} = Legacy.adapt(impl, state)
+    %__MODULE__{impl: impl, state: state}
   end
 
   @doc """
@@ -191,16 +207,14 @@ defmodule EEVM.Database do
   @doc """
   Commits the overlay to the backend with its `c:commit/2` and returns the
   database with an empty overlay. Returns `{:error, :commit_not_supported}`
-  when the backend has no `commit/2`.
+  when the backend's `commit/2` returns `{:error, :unsupported}`.
   """
   @spec commit(t()) :: {:ok, t()} | {:error, term()}
   def commit(%__MODULE__{impl: impl, state: state} = db) do
-    if function_exported?(impl, :commit, 2) do
-      with {:ok, new_state} <- impl.commit(state, changes(db)) do
-        {:ok, %__MODULE__{impl: impl, state: new_state}}
-      end
-    else
-      {:error, :commit_not_supported}
+    case capability(impl, :commit, fn -> impl.commit(state, changes(db)) end) do
+      {:ok, new_state} -> {:ok, %__MODULE__{impl: impl, state: new_state}}
+      {:error, :unsupported} -> {:error, :commit_not_supported}
+      {:error, reason} -> {:error, reason}
     end
   end
 
@@ -315,10 +329,8 @@ defmodule EEVM.Database do
   """
   @spec account_addresses(t()) :: [address()]
   def account_addresses(%__MODULE__{impl: impl, state: state} = db) do
-    backend =
-      if function_exported?(impl, :accounts, 1), do: Enum.to_list(impl.accounts(state)), else: []
-
-    backend
+    impl
+    |> enumerate(:accounts, fn -> impl.accounts(state) end)
     |> Enum.concat(Map.keys(db.accounts))
     |> Enum.concat(Map.keys(db.storage))
     |> Enum.uniq()
@@ -332,10 +344,10 @@ defmodule EEVM.Database do
   @spec storage_slots(t(), address()) :: [{non_neg_integer(), non_neg_integer()}]
   def storage_slots(%__MODULE__{impl: impl, state: state} = db, address) do
     backend =
-      if not MapSet.member?(db.destroyed, address) and
-           function_exported?(impl, :storage_slots, 2),
-         do: Map.new(impl.storage_slots(state, address)),
-         else: %{}
+      if MapSet.member?(db.destroyed, address),
+        do: %{},
+        else:
+          Map.new(enumerate(impl, :storage_slots, fn -> impl.storage_slots(state, address) end))
 
     backend
     |> Map.merge(Map.get(db.storage, address, %{}))
@@ -469,4 +481,27 @@ defmodule EEVM.Database do
 
   defp read!({:ok, value}), do: value
   defp read!({:error, reason}), do: raise(ReadError, reason: reason)
+
+  # A backend enumeration; one the backend doesn't support enumerates nothing.
+  defp enumerate(impl, callback, fun) do
+    case capability(impl, callback, fun) do
+      {:ok, entries} -> entries
+      {:error, :unsupported} -> []
+      {:error, reason} -> raise ReadError, reason: reason
+      # Deprecated: before #204, accounts/1 and storage_slots/2 returned the bare enumerable.
+      entries -> entries
+    end
+  end
+
+  # Deprecated: before #204, commit/2, accounts/1 and storage_slots/2 were
+  # optional callbacks. A backend that leaves one out still works for one minor
+  # version, as if it returned `{:error, :unsupported}`.
+  defp capability(impl, callback, fun) do
+    fun.()
+  rescue
+    error in UndefinedFunctionError ->
+      if error.module == impl and error.function == callback,
+        do: {:error, :unsupported},
+        else: reraise(error, __STACKTRACE__)
+  end
 end

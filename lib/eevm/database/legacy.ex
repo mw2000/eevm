@@ -6,6 +6,9 @@ defmodule EEVM.Database.Legacy do
   to the read-only behaviour. `EEVM.Database.new/2` wraps such a module
   automatically; this shim is kept for one minor version.
 
+  Recognising such a module is the one place eevm asks the code server which
+  functions a module exports (`adapt/2`). It goes away with this module.
+
   Its state is `{module, module_state}`. Reads call the old query callbacks,
   `commit/2` replays the changes through the old write callbacks, and
   BLOCKHASH falls back to the block environment only.
@@ -14,6 +17,17 @@ defmodule EEVM.Database.Legacy do
   @behaviour EEVM.Database
 
   alias EEVM.StateChanges
+
+  @doc false
+  # Backs EEVM.Database.new/2: wraps a module with only the pre-1.0 callbacks.
+  @spec adapt(module(), term()) :: {module(), term()}
+  def adapt(impl, state) do
+    Code.ensure_loaded(impl)
+
+    if function_exported?(impl, :account, 2) or not function_exported?(impl, :get_account, 2),
+      do: {impl, state},
+      else: {__MODULE__, {impl, state}}
+  end
 
   @impl true
   def account({impl, state}, address) do
@@ -46,10 +60,10 @@ defmodule EEVM.Database.Legacy do
 
   @impl true
   def accounts({impl, state}),
-    do: Enum.uniq(impl.account_addresses(state) ++ impl.storage_addresses(state))
+    do: {:ok, Enum.uniq(impl.account_addresses(state) ++ impl.storage_addresses(state))}
 
   @impl true
-  def storage_slots({impl, state}, address), do: impl.storage_slots(state, address)
+  def storage_slots({impl, state}, address), do: {:ok, impl.storage_slots(state, address)}
 
   defp apply_change(impl, {address, :destroyed}, state), do: impl.delete_account(state, address)
 

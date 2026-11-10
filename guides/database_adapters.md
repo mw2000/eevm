@@ -14,16 +14,20 @@ An adapter has four required callbacks, all reads:
 | `storage(state, address, slot)` | `{:ok, word}`, 0 when the slot is unset |
 | `block_hash(state, number)` | `{:ok, <<_::256>>}`, or `{:ok, nil}` when unknown; asked only for hashes the `EEVM.BlockEnv` doesn't carry |
 
-Three callbacks are optional:
+Three more callbacks are required too, but a backend that can't do what
+they ask returns `{:error, :unsupported}`. eevm never checks which functions
+a module exports, so what an adapter supports is stated in its code:
 
 - `commit(state, changes)` applies an `EEVM.StateChanges` and returns
   `{:ok, new_state}`. With it, `EEVM.transact/4` and `EEVM.Block.execute/4`
-  commit for you and return the committed database. Without it, they return
-  the database with the writes still in its overlay, and you apply
-  `result.changes` yourself. `EEVM.run/2` never commits.
-- `accounts(state)` and `storage_slots(state, address)` enumerate the state.
-  Only `EEVM.StateRoot` needs them, so `EEVM.Block.execute/4`, which checks
-  the header's state root, needs them too.
+  commit for you and return the committed database. When it returns
+  `{:error, :unsupported}`, they return the database with the writes still
+  in its overlay, and you apply `result.changes` yourself. `EEVM.run/2` never
+  commits.
+- `accounts(state)` and `storage_slots(state, address)` enumerate the state
+  as `{:ok, enumerable}`. Only `EEVM.StateRoot` needs them, so
+  `EEVM.Block.execute/4`, which checks the header's state root, needs them
+  too.
 
 Addresses and storage words are integers; hashes are 32-byte binaries.
 
@@ -79,11 +83,11 @@ defmodule MyApp.EtsDatabase do
   end
 
   @impl true
-  def accounts(table), do: :ets.select(table, [{{{:account, :"$1"}, :_}, [], [:"$1"]}])
+  def accounts(table), do: {:ok, :ets.select(table, [{{{:account, :"$1"}, :_}, [], [:"$1"]}])}
 
   @impl true
   def storage_slots(table, address),
-    do: :ets.select(table, [{{{:storage, address, :"$1"}, :"$2"}, [], [{{:"$1", :"$2"}}]}])
+    do: {:ok, :ets.select(table, [{{{:storage, address, :"$1"}, :"$2"}, [], [{{:"$1", :"$2"}}]}])}
 
   defp delete_account(table, address) do
     :ets.delete(table, {:account, address})
@@ -118,8 +122,9 @@ eevm then hashes the code when it needs the hash.
 An adapter can also read state from a node's JSON-RPC at a fixed block, which
 lets you run transactions against mainnet state without a local copy. This
 sketch takes the RPC client as a function, `rpc.(method, params)`, that
-returns `{:ok, result}` or `{:error, reason}`. It has no `commit/2` or
-enumeration callbacks, so `EEVM.transact/4` returns the writes in
+returns `{:ok, result}` or `{:error, reason}`. It can't commit or enumerate,
+so `commit/2`, `accounts/1` and `storage_slots/2` return
+`{:error, :unsupported}`, and `EEVM.transact/4` returns the writes in
 `result.changes` and leaves the node alone.
 
 ```elixir
@@ -160,6 +165,15 @@ defmodule MyApp.RpcDatabase do
     end
   end
 
+  @impl true
+  def commit(_state, _changes), do: {:error, :unsupported}
+
+  @impl true
+  def accounts(_state), do: {:error, :unsupported}
+
+  @impl true
+  def storage_slots(_state, _address), do: {:error, :unsupported}
+
   defp call(rpc, method, params) do
     with {:ok, "0x" <> hex} <- rpc.(method, params) do
       {:ok, if(hex == "", do: 0, else: String.to_integer(hex, 16))}
@@ -179,3 +193,9 @@ Before 1.0 the behaviour also had write and query callbacks (`get_balance/2`,
 accepts a module that implements only those, through the deprecated
 `EEVM.Database.Legacy` shim, for one minor version. Move to the read
 callbacks above before then.
+
+Adapters written for the first read-only behaviour, where `commit/2`,
+`accounts/1` and `storage_slots/2` were optional and the enumerations
+returned a bare list, also keep working for one minor version: a missing
+callback counts as `{:error, :unsupported}`. Add the three callbacks to
+silence the compiler's missing-callback warning.

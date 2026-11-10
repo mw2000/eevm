@@ -9,8 +9,8 @@ defmodule EEVM.DatabaseTest do
   doctest Database
   doctest InMemory
 
-  # A read-only backend over a map: the four required callbacks only. A
-  # `:fail` entry makes that read return an error.
+  # A read-only backend over a map that can't commit or enumerate. A `:fail`
+  # entry makes that read return an error.
   defmodule ReadOnly do
     @behaviour EEVM.Database
 
@@ -22,13 +22,31 @@ defmodule EEVM.DatabaseTest do
     def storage(state, address, slot), do: lookup(state, {:storage, address, slot}, 0)
     @impl true
     def block_hash(state, number), do: lookup(state, {:block_hash, number}, nil)
+    @impl true
+    def commit(_state, _changes), do: {:error, :unsupported}
+    @impl true
+    def accounts(_state), do: {:error, :unsupported}
+    @impl true
+    def storage_slots(state, address), do: lookup(state, {:storage_slots, address}, :unsupported)
 
     defp lookup(state, key, default) do
       case Map.get(state, key, default) do
         :fail -> {:error, :backend_down}
+        :unsupported -> {:error, :unsupported}
         value -> {:ok, value}
       end
     end
+  end
+
+  # A backend written for the first read-only behaviour (before #204): commit/2,
+  # accounts/1 and storage_slots/2 were optional, and the enumerations returned
+  # bare lists. No @behaviour, so leaving callbacks out doesn't warn.
+  defmodule StepSix do
+    def account(state, address), do: {:ok, Map.get(state.accounts, address)}
+    def code(_state, _hash), do: {:ok, <<>>}
+    def storage(state, address, slot), do: {:ok, Map.get(state.storage, {address, slot}, 0)}
+    def block_hash(_state, _number), do: {:ok, nil}
+    def accounts(state), do: Map.keys(state.accounts)
   end
 
   # A backend written against the pre-1.0 callbacks.
@@ -304,7 +322,7 @@ defmodule EEVM.DatabaseTest do
 
       assert {:ok, result} = EEVM.transact(transfer_tx(), block(), db)
       assert result.status == :success
-      # No commit/2: the writes stay in the overlay and the backend is untouched.
+      # commit/2 is unsupported: the writes stay in the overlay and the backend is untouched.
       assert result.db.state == state
       assert Database.get_balance(result.db, @recipient) == 1_000
       assert Database.commit(result.db) == {:error, :commit_not_supported}
@@ -329,6 +347,29 @@ defmodule EEVM.DatabaseTest do
                {:error, {:database, :backend_down}}
 
       assert_raise Database.ReadError, fn -> Database.storage_load(db, 0xA, 0) end
+
+      failing_slots = Database.new(ReadOnly, %{{:storage_slots, 0xA} => :fail})
+      assert_raise Database.ReadError, fn -> Database.storage_slots(failing_slots, 0xA) end
+    end
+
+    test "unsupported enumerations see only the overlay" do
+      db = ReadOnly |> Database.new(%{}) |> Database.storage_store(0xA, 1, 2)
+
+      assert Database.storage_slots(db, 0xA) == [{1, 2}]
+      assert Database.account_addresses(db) == [0xA]
+    end
+
+    test "a backend without the #204 callbacks still runs, enumerates, and doesn't commit" do
+      state = %{accounts: %{sender() => %{balance: 10 ** 18, nonce: 0, code: <<>>}}, storage: %{}}
+      db = Database.new(StepSix, state)
+      assert db.impl == StepSix
+
+      assert {:ok, result} = EEVM.transact(transfer_tx(), block(), db)
+      assert result.db.state == state
+      assert Database.commit(result.db) == {:error, :commit_not_supported}
+      # The bare list from accounts/1 is accepted; storage_slots/2 is missing.
+      assert sender() in Database.account_addresses(result.db)
+      assert Database.storage_slots(result.db, sender()) == []
     end
 
     test "code is fetched by hash only when it isn't returned with the account" do
