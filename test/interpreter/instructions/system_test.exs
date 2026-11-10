@@ -517,6 +517,26 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
         assert Database.storage_load(result.db, 0, 0) == 0
         assert Database.storage_load(result.db, 0xAA, 0) == 0
       end
+
+      # execution-specs grow memory over both areas before the balance and depth
+      # checks (EEST frontier/opcodes/test_call_memory_expands_on_early_revert).
+      test "#{opcode} on #{reason} still expands memory over the argument and return areas" do
+        world_state = InMemory.new(accounts: %{0 => %{balance: unquote(balance)}})
+
+        # {args_offset, ret_offset} (both 32 bytes) and the MSIZE each must give.
+        for {args_offset, ret_offset, msize} <- [{0x00, 0x100, 0x120}, {0x200, 0x00, 0x220}] do
+          # CALL(gas 100, 0xAA, value 5, args_offset, 32, ret_offset, 32), MSIZE, STOP
+          code =
+            <<0x60, 0x20, 0x61, ret_offset::16, 0x60, 0x20, 0x61, args_offset::16, 0x60, 5, 0x60,
+              0xAA, 0x60, 100, unquote(op), 0x59, 0x00>>
+
+          result =
+            EEVM.Interpreter.run(code, gas: 100_000, depth: unquote(depth), db: world_state)
+
+          assert result.status == :stopped
+          assert stack_values(result) == [msize, 0]
+        end
+      end
     end
   end
 

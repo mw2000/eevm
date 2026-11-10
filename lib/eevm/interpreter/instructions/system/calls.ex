@@ -221,7 +221,9 @@ defmodule EEVM.Interpreter.Instructions.System.Calls do
               state_after_cost,
               &%{&1 | memory: memory_after_read, gas: &1.gas + Dynamic.call_stipend(value)}
             ),
-            stack
+            stack,
+            ret_offset,
+            ret_size
           )
 
         {:ok, state_after_forward} ->
@@ -345,12 +347,21 @@ defmodule EEVM.Interpreter.Instructions.System.Calls do
       # A value transfer the caller can't fund fails like the depth limit: the
       # forwarded gas and the stipend come back.
       {:error, :insufficient_balance} ->
+        {_calldata, memory} = Memory.read_bytes(state.frame.memory, args_offset, args_size)
+
         call_failed(
           MachineState.update_frame(
             state,
-            &%{&1 | stack: stack, gas: &1.gas - call_cost + Dynamic.call_stipend(value)}
+            &%{
+              &1
+              | stack: stack,
+                memory: memory,
+                gas: &1.gas - call_cost + Dynamic.call_stipend(value)
+            }
           ),
-          stack
+          stack,
+          ret_offset,
+          ret_size
         )
 
       {:error, :out_of_gas, halted_state} ->
@@ -419,7 +430,9 @@ defmodule EEVM.Interpreter.Instructions.System.Calls do
               state_after_cost,
               &%{&1 | memory: memory_after_read, gas: &1.gas + stipend}
             ),
-            stack
+            stack,
+            ret_offset,
+            ret_size
           )
 
         {:ok, state_after_forward} ->
@@ -574,12 +587,21 @@ defmodule EEVM.Interpreter.Instructions.System.Calls do
 
   # A call that fails before running (depth limit, insufficient balance)
   # empties the return data buffer, as geth's `interpreter.returnData = ret` does.
-  defp call_failed(state, stack) do
+  # Memory still expands over the return area, whose cost the CALL already paid:
+  # execution-specs grow memory before the balance and depth checks.
+  defp call_failed(state, stack, ret_offset, ret_size) do
     {:ok, stack_after_call} = Stack.push(stack, 0)
 
     {:ok,
      state
-     |> MachineState.update_frame(&%{&1 | stack: stack_after_call, return_data: <<>>})
+     |> MachineState.update_frame(
+       &%{
+         &1
+         | stack: stack_after_call,
+           memory: Memory.write_output(&1.memory, ret_offset, ret_size, <<>>),
+           return_data: <<>>
+       }
+     )
      |> MachineState.advance_pc()}
   end
 end

@@ -2,9 +2,6 @@
 # Each line is a directory (dir/), a fixture file, a test (file#name), or a case.
 # Regenerate after fixing failures with:
 #   mix eevm.blockchain_tests 'test/fixtures/eest/fixtures_develop/blockchain_tests/**/*.json' --fork osaka --timeout 300000 --write-known-failures test/fixtures/eest/known_failures_osaka_blockchain.txt
-blockchain_tests/frontier/identity_precompile/test_call_identity_precompile.json#tests/frontier/identity_precompile/test_identity.py::test_call_identity_precompile[fork_Osaka-blockchain_test_from_state_test-identity_1_nonzerovalue_insufficient_balance-call_type_CALLCODE]
-blockchain_tests/frontier/identity_precompile/test_call_identity_precompile.json#tests/frontier/identity_precompile/test_identity.py::test_call_identity_precompile[fork_Osaka-blockchain_test_from_state_test-identity_1_nonzerovalue_insufficient_balance-call_type_CALL]
-blockchain_tests/frontier/opcodes/test_call_memory_expands_on_early_revert.json
 blockchain_tests/prague/eip2537_bls_12_381_precompiles/test_invalid.json#tests/prague/eip2537_bls_12_381_precompiles/test_bls12_g1add.py::test_invalid[fork_Osaka-blockchain_test_from_state_test--bls_g1add_point_not_on_curve-]
 blockchain_tests/prague/eip2537_bls_12_381_precompiles/test_invalid.json#tests/prague/eip2537_bls_12_381_precompiles/test_bls12_g1add.py::test_invalid[fork_Osaka-blockchain_test_from_state_test--inf_plus_rand_not_on_curve_0-]
 blockchain_tests/prague/eip2537_bls_12_381_precompiles/test_invalid.json#tests/prague/eip2537_bls_12_381_precompiles/test_bls12_g1add.py::test_invalid[fork_Osaka-blockchain_test_from_state_test--invalid_point_a_1-]
@@ -112,7 +109,6 @@ blockchain_tests/static/state_tests/stBadOpcode/invalidAddr.json#tests/static/st
 blockchain_tests/static/state_tests/stBadOpcode/invalidAddr.json#tests/static/state_tests/stBadOpcode/invalidAddrFiller.yml::invalidAddr[fork_Osaka-blockchain_test_from_state_test-ok-85]
 blockchain_tests/static/state_tests/stBadOpcode/invalidAddr.json#tests/static/state_tests/stBadOpcode/invalidAddrFiller.yml::invalidAddr[fork_Osaka-blockchain_test_from_state_test-ok-8]
 blockchain_tests/static/state_tests/stBadOpcode/invalidAddr.json#tests/static/state_tests/stBadOpcode/invalidAddrFiller.yml::invalidAddr[fork_Osaka-blockchain_test_from_state_test-ok-9]
-blockchain_tests/static/state_tests/stMemExpandingEIP150Calls/NewGasPriceForCodesWithMemExpandingCalls.json
 blockchain_tests/static/state_tests/stRandom/randomStatetest14.json
 blockchain_tests/static/state_tests/stRandom/randomStatetest173.json
 blockchain_tests/static/state_tests/stRandom/randomStatetest201.json
