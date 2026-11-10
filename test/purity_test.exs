@@ -93,8 +93,6 @@ defmodule EEVM.PurityTest do
     {EEVM.Precompiles.Bls12381.Nif, :erlang} => 199,
     {EEVM.Precompiles.Bls12381.Nif, :code} => 199,
     {EEVM.Precompiles.Bls12381.Nif, Application} => 199,
-    {EEVM.Precompiles.KZGPointEval, EEVM.Precompiles.Bls12381.Nif} => 199,
-    {EEVM.Precompiles.KZGPointEval, :crypto} => 199,
     {EEVM.Precompiles.ModExp, :crypto} => 199,
     # The deprecated pre-1.0 backend shim recognises old modules (#204)
     {EEVM.Database.Legacy, Code} => 204,
