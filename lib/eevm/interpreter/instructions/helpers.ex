@@ -10,14 +10,42 @@ defmodule EEVM.Interpreter.Instructions.Helpers do
     the uint256 stack with signed opcodes (SLT, SGT, SDIV, SMOD, SAR).
   - `mod_pow/3`, square-and-multiply modular exponentiation used by EXP.
   - `check_jumpdest/2` for JUMP / JUMPI destination validation.
+  - `touch_account/3`, which before EIP-161 creates the accounts a message
+    call or fee credit touches. The transaction handler shares it.
   """
   import Bitwise
 
+  alias EEVM.{Database, HardforkConfig}
   alias EEVM.Interpreter.{MachineState, Stack}
   alias EEVM.Interpreter.MachineState.Frame
 
   @max_uint256 (1 <<< 256) - 1
   @sign_bit 1 <<< 255
+
+  @doc """
+  Before EIP-161 (Spurious Dragon), touching an account that doesn't exist
+  creates it empty, even when no value moves: the target of every message
+  call, and the coinbase credited a zero fee (execution-specs Frontier
+  `process_message` calls `touch_account`; `process_transaction` sets the
+  coinbase balance). From EIP-161 the account is not created, and touched
+  empty accounts are deleted when the transaction ends.
+
+  ## Example
+
+      iex> alias EEVM.{Database, HardforkConfig}
+      iex> alias EEVM.Interpreter.Instructions.Helpers
+      iex> db = EEVM.Database.InMemory.new()
+      iex> Database.account_exists?(Helpers.touch_account(db, 0xAB, HardforkConfig.new(:frontier)), 0xAB)
+      true
+      iex> Database.account_exists?(Helpers.touch_account(db, 0xAB, HardforkConfig.new(:spurious_dragon)), 0xAB)
+      false
+  """
+  @spec touch_account(Database.t(), non_neg_integer(), HardforkConfig.t()) :: Database.t()
+  def touch_account(%Database{} = db, address, %HardforkConfig{} = hardfork) do
+    if HardforkConfig.enabled?(hardfork, :eip_161) or Database.account_exists?(db, address),
+      do: db,
+      else: Database.put_account(db, address, %{})
+  end
 
   @doc """
   Pops two values from the stack, applies a comparison, and pushes 1 or 0.

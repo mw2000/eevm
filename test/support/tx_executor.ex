@@ -12,6 +12,7 @@ defmodule EEVM.TestSupport.TxExecutor do
 
   alias EEVM.{BlockEnv, Config, Database, TxEnv}
   alias EEVM.Handler.{Execution, PreExecution}
+  alias EEVM.Interpreter.Instructions.Helpers
   alias EEVM.Interpreter.MachineState
   alias EEVM.Transaction.{IntrinsicGas, Validator}
 
@@ -49,6 +50,7 @@ defmodule EEVM.TestSupport.TxExecutor do
       finalized_db =
         settled
         |> credit_balance(tx.origin, (tx.gas_limit - gas_used) * tx.gas_price)
+        |> Helpers.touch_account(block.coinbase, config.hardfork)
         |> credit_balance(block.coinbase, gas_used * max(tx.gas_price - block.base_fee, 0))
 
       {:ok, %{db: finalized_db, machine: machine, gas_used: gas_used, failed?: failed?}}

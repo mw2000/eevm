@@ -32,6 +32,7 @@ defmodule EEVM.Interpreter.Instructions.System.Calls do
   alias EEVM.Gas.Dynamic
   alias EEVM.Gas.Memory, as: GasMemory
   alias EEVM.Interpreter
+  alias EEVM.Interpreter.Instructions.Helpers
   alias EEVM.Interpreter.{Journal, MachineState, Memory, Stack}
   alias EEVM.Precompiles
 
@@ -192,12 +193,9 @@ defmodule EEVM.Interpreter.Instructions.System.Calls do
              call_cost
            ),
          {:ok, db_after_transfer} <-
-           Database.transfer(
-             state_after_cost.db,
-             state_after_cost.frame.contract.address,
-             address,
-             value
-           ) do
+           state_after_cost.db
+           |> Helpers.touch_account(address, state_after_cost.env.config.hardfork)
+           |> Database.transfer(state_after_cost.frame.contract.address, address, value) do
       {calldata, memory_after_read} =
         Memory.read_bytes(state_after_cost.frame.memory, args_offset, args_size)
 

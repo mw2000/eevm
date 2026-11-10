@@ -26,6 +26,7 @@ defmodule EEVM.Handler.Execution do
   alias EEVM.Crypto.Keccak
   alias EEVM.Handler.PreExecution
   alias EEVM.Interpreter
+  alias EEVM.Interpreter.Instructions.Helpers
   alias EEVM.Interpreter.Instructions.System.Creation
   alias EEVM.Interpreter.MachineState
 
@@ -69,7 +70,11 @@ defmodule EEVM.Handler.Execution do
 
   def run_top_level(%TxEnv{to: to} = tx, db, block, config, execution_gas, authorization, tracer)
       when is_integer(to) do
-    db_after_value = transfer_value(db, tx.origin, to, tx.value)
+    db_after_value =
+      db
+      |> Helpers.touch_account(to, config.hardfork)
+      |> transfer_value(tx.origin, to, tx.value)
+
     {code, delegate} = resolve_code(db_after_value, to, config)
 
     # EIP-7702: a delegation to a precompile runs the (empty) delegate code,

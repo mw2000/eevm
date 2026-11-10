@@ -21,6 +21,7 @@ defmodule EEVM.Handler.PostExecution do
   alias EEVM.CallResult
   alias EEVM.Database
   alias EEVM.Handler.PreExecution
+  alias EEVM.Interpreter.Instructions.Helpers
   alias EEVM.Interpreter.MachineState
   alias EEVM.TransactionResult
   alias EEVM.TxEnv
@@ -52,7 +53,11 @@ defmodule EEVM.Handler.PostExecution do
     effective_price = PreExecution.effective_gas_price(tx, block)
 
     settled_db = settle_state(final_state, db_nonce_bumped, tx, gas_used, effective_price)
-    coinbase_credited_db = credit_coinbase(settled_db, block, tx, gas_used, effective_price)
+
+    coinbase_credited_db =
+      settled_db
+      |> Helpers.touch_account(block.coinbase, final_state.env.config.hardfork)
+      |> credit_coinbase(block, tx, gas_used, effective_price)
 
     status = status(final_state.status)
     logs = if status == :success, do: Enum.reverse(final_state.substate.logs), else: []

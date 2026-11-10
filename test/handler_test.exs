@@ -117,6 +117,27 @@ defmodule EEVM.HandlerTest do
     end
   end
 
+  describe "execute/4 — before Spurious Dragon" do
+    # execution-specs Frontier process_message touches the call target, and
+    # process_transaction sets the coinbase balance, so both exist afterwards
+    # even with no value and no fee (EEST frontier/touch/test_zero_gas_price_and_touching).
+    test "a zero-value, zero-fee call creates the target and the coinbase until EIP-161" do
+      tx = pre_eip155_legacy(to: @recipient, gas_limit: 21_000, gas_price: 0)
+
+      assert {:ok, %TransactionResult{status: :success, db: frontier}} =
+               run_fork(tx, db_with_sender(), :frontier)
+
+      assert Database.get_account(frontier, @recipient) == %{balance: 0, nonce: 0, code: <<>>}
+      assert Database.get_account(frontier, @coinbase) == %{balance: 0, nonce: 0, code: <<>>}
+
+      assert {:ok, %TransactionResult{status: :success, db: spurious}} =
+               run_fork(tx, db_with_sender(), :spurious_dragon)
+
+      refute Database.account_exists?(spurious, @recipient)
+      refute Database.account_exists?(spurious, @coinbase)
+    end
+  end
+
   describe "execute/4 — chain id" do
     test "comes from the config and must match an EIP-155 signature" do
       {:ok, tx} =
@@ -638,6 +659,10 @@ defmodule EEVM.HandlerTest do
     Handler.execute(tx, block, db, config: Config.new(:cancun, chain_id: @chain_id))
   end
 
+  defp run_fork(tx, db, fork) do
+    Handler.execute(tx, simple_block(), db, config: Config.new(fork, chain_id: @chain_id))
+  end
+
   defp run_prague(tx, db) do
     Handler.execute(tx, simple_block(), db, config: Config.new(:prague, chain_id: @chain_id))
   end
@@ -719,6 +744,17 @@ defmodule EEVM.HandlerTest do
       ExSecp256k1.sign_compact(hash, @priv_key)
 
     %{tx | v: 35 + 2 * chain_id + recovery_id, r: r, s: s}
+  end
+
+  # A pre-EIP-155 signature (v = 27 or 28), as forks before Spurious Dragon require.
+  defp pre_eip155_legacy(fields) do
+    tx = struct!(%Legacy{nonce: 0, gas_price: 1, value: 0, data: <<>>, v: 27, r: 0, s: 0}, fields)
+    hash = Signer.signing_hash(tx, nil)
+
+    {:ok, {<<r::unsigned-big-256, s::unsigned-big-256>>, recovery_id}} =
+      ExSecp256k1.sign_compact(hash, @priv_key)
+
+    %{tx | v: 27 + recovery_id, r: r, s: s}
   end
 
   defp sign_eip1559(%FeeMarket{} = tx) do
