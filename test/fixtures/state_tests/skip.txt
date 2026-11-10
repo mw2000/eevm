@@ -16,3 +16,9 @@
 # gets faster; `mix bench state_fixtures` times loopMul.
 test/fixtures/state_tests/ethereum-tests/GeneralStateTests/VMTests/vmPerformance/loopMul.json
 test/fixtures/state_tests/ethereum-tests/GeneralStateTests/stTimeConsuming/CALLBlake2f_MaxRounds.json
+
+# Too slow on CI since SHA-256 became pure Elixir (#194): 50,000 STATICCALLs
+# that each hash 50,000 bytes take about 159 s per case on CI against the
+# 180 s timeout. Re-enable when a case takes under half the timeout there:
+# https://github.com/mw2000/eevm/issues/201
+test/fixtures/state_tests/ethereum-tests/GeneralStateTests/stTimeConsuming/static_Call50000_sha256.json

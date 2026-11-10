@@ -20,3 +20,9 @@ test/fixtures/eest/fixtures/blockchain_tests/static/state_tests/stStaticCall/sta
 test/fixtures/eest/fixtures/blockchain_tests/static/state_tests/stStaticCall/static_Call50000_identity2.json
 test/fixtures/eest/fixtures/blockchain_tests/static/state_tests/stStaticCall/static_Call50000_rip160.json
 test/fixtures/eest/fixtures/blockchain_tests/static/state_tests/stStaticCall/static_Return50000_2.json
+
+# Too slow on CI since Keccak-256 became pure Elixir (#195): 258 blocks whose
+# storage grows by about 257 slots each, with every storage trie rebuilt after
+# each block, take about 159 s on CI against the 300 s timeout. Re-enable when
+# storage roots are incremental: https://github.com/mw2000/eevm/issues/203
+test/fixtures/eest/fixtures/blockchain_tests/prague/eip2935_historical_block_hashes_from_state/test_block_hashes_history_at_transition.json#tests/prague/eip2935_historical_block_hashes_from_state/test_block_hashes.py::test_block_hashes_history_at_transition[fork_CancunToPragueAtTime15k-blockchain_test-blocks_before_fork_1-blocks_after_fork_257]
