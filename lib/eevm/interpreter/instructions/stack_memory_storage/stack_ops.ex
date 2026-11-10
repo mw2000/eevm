@@ -25,12 +25,26 @@ defmodule EEVM.Interpreter.Instructions.StackMemoryStorage.StackOps do
   @spec stack_op(non_neg_integer(), [non_neg_integer()]) :: [non_neg_integer()]
   def stack_op(0x50, [_top | rest]), do: rest
 
+  # One clause per depth, so each DUPn and SWAPn is a single list pattern
+  # rather than a walk with `:lists.nth/2` or `:lists.split/2` (about a fifth
+  # of a Solidity loop's time before, #193). For DUP3 and SWAP2:
+  #
+  #     def stack_op(0x82, [_, _, copied | _] = stack), do: [copied | stack]
+  #     def stack_op(0x91, [top, x1, target | rest]), do: [target, x1, top | rest]
   for n <- 1..16 do
-    def stack_op(unquote(0x7F + n), stack), do: [:lists.nth(unquote(n), stack) | stack]
+    skipped = List.duplicate(quote(do: _), n - 1)
 
-    def stack_op(unquote(0x8F + n), [top | rest]) do
-      {between, [target | below]} = :lists.split(unquote(n - 1), rest)
-      [target | between ++ [top | below]]
-    end
+    def stack_op(unquote(0x7F + n), [unquote_splicing(skipped), copied | _] = stack),
+      do: [copied | stack]
+
+    [top | between_and_target] = Macro.generate_unique_arguments(n + 1, __MODULE__)
+    {between, [target]} = Enum.split(between_and_target, n - 1)
+
+    def stack_op(unquote(0x8F + n), [
+          unquote(top),
+          unquote_splicing(between),
+          unquote(target) | rest
+        ]),
+        do: [unquote(target), unquote_splicing(between), unquote(top) | rest]
   end
 end
