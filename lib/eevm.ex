@@ -91,7 +91,9 @@ defmodule EEVM do
   Any other option raises `ArgumentError`.
 
   Returns `{:ok, %EEVM.CallResult{}}` however execution ends; check
-  `result.status`.
+  `result.status`. Writes stay in `result.db`'s overlay and are listed in
+  `result.changes`; nothing is committed to the backend. A backend read
+  failure returns `{:error, {:database, reason}}`.
 
   ## Examples
 
@@ -116,31 +118,35 @@ defmodule EEVM do
         calldata: opts[:calldata]
       )
 
-    state =
-      Interpreter.run(
-        code,
-        [
-          gas: opts[:gas],
-          db: db,
-          config: Validation.resolve_config(opts),
-          contract: contract,
-          tracer: Validation.resolve_tracer(opts)
-        ] ++ Keyword.take(opts, [:block, :tx])
-      )
+    Database.catch_read_errors(fn ->
+      state =
+        Interpreter.run(
+          code,
+          [
+            gas: opts[:gas],
+            db: db,
+            config: Validation.resolve_config(opts),
+            contract: contract,
+            tracer: Validation.resolve_tracer(opts)
+          ] ++ Keyword.take(opts, [:block, :tx])
+        )
 
-    status = PostExecution.status(state.status)
+      status = PostExecution.status(state.status)
+      db_after = if status == :success, do: state.db, else: db
 
-    {:ok,
-     %CallResult{
-       status: status,
-       return_data: state.frame.return_data,
-       gas_used: opts[:gas] - state.frame.gas,
-       gas_left: state.frame.gas,
-       logs: if(status == :success, do: Enum.reverse(state.substate.logs), else: []),
-       db: if(status == :success, do: state.db, else: db),
-       trace: state.tracer,
-       stack: if(opts[:debug], do: Stack.to_list(state.frame.stack))
-     }}
+      {:ok,
+       %CallResult{
+         status: status,
+         return_data: state.frame.return_data,
+         gas_used: opts[:gas] - state.frame.gas,
+         gas_left: state.frame.gas,
+         logs: if(status == :success, do: Enum.reverse(state.substate.logs), else: []),
+         db: db_after,
+         changes: Database.changes(db_after),
+         trace: state.tracer,
+         stack: if(opts[:debug], do: Stack.to_list(state.frame.stack))
+       }}
+    end)
   end
 
   @doc """

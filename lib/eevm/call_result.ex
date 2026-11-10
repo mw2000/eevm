@@ -9,7 +9,8 @@ defmodule EEVM.CallResult do
   | `gas_used` | Gas consumed, after the refund |
   | `gas_left` | Gas remaining from the `:gas` limit |
   | `logs` | Logs emitted, in order; empty unless `status` is `:success` |
-  | `db` | The `EEVM.Database` after the call; unchanged unless `status` is `:success` |
+  | `db` | The `EEVM.Database` after the call, writes still in its overlay; unchanged unless `status` is `:success` |
+  | `changes` | `db`'s pending writes as an `EEVM.StateChanges`; `run/2` never commits them |
   | `trace` | The `EEVM.Tracer` when run with `tracer:`, else `nil` |
   | `stack` | The final stack, top first, when run with `debug: true`, else `nil` |
   """
@@ -33,6 +34,7 @@ defmodule EEVM.CallResult do
           gas_left: non_neg_integer(),
           logs: [Bloom.log_entry()],
           db: Database.t(),
+          changes: EEVM.StateChanges.t(),
           trace: Tracer.t() | nil,
           stack: [non_neg_integer()] | nil
         }
@@ -43,6 +45,7 @@ defmodule EEVM.CallResult do
             gas_left: 0,
             logs: [],
             db: nil,
+            changes: %EEVM.StateChanges{},
             trace: nil,
             stack: nil
 end

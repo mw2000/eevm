@@ -70,7 +70,7 @@ minor version) before removing anything (#150).
 | Transactions (structs, envelopes, signing, validation) | `lib/eevm/transaction.ex`, `lib/eevm/transaction/` |
 | Blocks, receipts, bloom, withdrawals | `lib/eevm/block/` |
 | System contracts (EIP-4788, EIP-2935) | `lib/eevm/system_contracts/` |
-| State and tries | `lib/eevm/database.ex`, `database/in_memory.ex`, `mpt/`, `state_root.ex` |
+| State and tries | `lib/eevm/database.ex` (read-only behaviour, write overlay), `database/in_memory.ex`, `mpt/`, `state_root.ex` |
 
 Adding an opcode: add it to the Registry `@opcodes` map with its `module`, add
 its static cost to `Gas.Static`, implement an `execute/2` clause in that module,

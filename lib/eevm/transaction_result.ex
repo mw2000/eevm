@@ -14,7 +14,8 @@ defmodule EEVM.TransactionResult do
   | `return_data` | The top-level RETURN data on success, else empty |
   | `logs` | Logs emitted, in order; empty unless `status` is `:success` |
   | `receipt` | The `EEVM.Block.Receipt`, with `cumulative_gas_used` equal to `gas_used` |
-  | `db` | The `EEVM.Database` after the transaction, fees and refunds included |
+  | `db` | The `EEVM.Database` after the transaction, fees and refunds included; committed when the backend implements `c:EEVM.Database.commit/2` |
+  | `changes` | The `EEVM.StateChanges` the transaction wrote |
   | `trace` | The `EEVM.Tracer` when run with `tracer:`, else `nil` |
 
   `post_state_db` and `logs_bloom` are deprecated copies of `db` and
@@ -40,6 +41,7 @@ defmodule EEVM.TransactionResult do
           logs: [log_entry()],
           receipt: Receipt.t(),
           db: Database.t(),
+          changes: EEVM.StateChanges.t() | nil,
           trace: Tracer.t() | nil,
           post_state_db: Database.t(),
           logs_bloom: Bloom.t()
@@ -55,6 +57,7 @@ defmodule EEVM.TransactionResult do
     :logs,
     :receipt,
     :db,
+    :changes,
     :trace,
     :post_state_db,
     :logs_bloom

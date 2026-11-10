@@ -1,8 +1,75 @@
 defmodule EEVM.DatabaseTest do
   use ExUnit.Case, async: true
 
-  alias EEVM.Database
+  alias EEVM.{BlockEnv, Database, StateChanges}
   alias EEVM.Database.InMemory
+  alias EEVM.Transaction.{Legacy, Signer}
+
+  doctest Database
+  doctest InMemory
+
+  # A read-only backend over a map: the four required callbacks only. A
+  # `:fail` entry makes that read return an error.
+  defmodule ReadOnly do
+    @behaviour EEVM.Database
+
+    @impl true
+    def account(state, address), do: lookup(state, {:account, address}, nil)
+    @impl true
+    def code(state, hash), do: lookup(state, {:code, hash}, <<>>)
+    @impl true
+    def storage(state, address, slot), do: lookup(state, {:storage, address, slot}, 0)
+    @impl true
+    def block_hash(state, number), do: lookup(state, {:block_hash, number}, nil)
+
+    defp lookup(state, key, default) do
+      case Map.get(state, key, default) do
+        :fail -> {:error, :backend_down}
+        value -> {:ok, value}
+      end
+    end
+  end
+
+  # A backend written against the pre-1.0 callbacks.
+  defmodule OldStyle do
+    def get_account(state, address), do: Map.get(state.accounts, address)
+    def account_exists?(state, address), do: Map.has_key?(state.accounts, address)
+    def get_code(state, address), do: state |> get_account(address) |> field(:code, <<>>)
+    def get_balance(state, address), do: state |> get_account(address) |> field(:balance, 0)
+    def get_nonce(state, address), do: state |> get_account(address) |> field(:nonce, 0)
+    def storage_load(state, address, key), do: Map.get(state.storage, {address, key}, 0)
+    def put_account(state, address, account), do: put_in(state.accounts[address], account)
+
+    def storage_store(state, address, key, value),
+      do: put_in(state.storage[{address, key}], value)
+
+    def account_addresses(state), do: Map.keys(state.accounts)
+    def storage_addresses(_state), do: []
+    def storage_slots(_state, _address), do: []
+
+    def delete_account(state, address),
+      do: %{state | accounts: Map.delete(state.accounts, address)}
+
+    defp field(nil, _key, default), do: default
+    defp field(account, key, default), do: Map.get(account, key, default)
+  end
+
+  @private_key <<0x46::256>>
+  @recipient 0xB0B
+
+  defp sender do
+    {:ok, <<4, key::binary-size(64)>>} = ExSecp256k1.create_public_key(@private_key)
+    <<_::binary-size(12), address::unsigned-big-160>> = ExKeccak.hash_256(key)
+    address
+  end
+
+  defp transfer_tx do
+    tx = %Legacy{gas_price: 1, gas_limit: 21_000, to: @recipient, value: 1_000}
+    {:ok, signed} = Signer.sign(tx, @private_key, EEVM.Config.new(:cancun))
+    signed
+  end
+
+  defp block, do: BlockEnv.new(gas_limit: 30_000_000, coinbase: 0xC0FFEE)
 
   describe "InMemory.new/1" do
     test "creates empty database" do
@@ -31,7 +98,7 @@ defmodule EEVM.DatabaseTest do
 
     test "get_account returns account map" do
       db = InMemory.new(accounts: %{1 => %{balance: 50, code: <<0xAA>>}})
-      assert Database.get_account(db, 1) == %{balance: 50, code: <<0xAA>>}
+      assert Database.get_account(db, 1) == %{balance: 50, nonce: 0, code: <<0xAA>>}
     end
 
     test "account_exists? returns false for missing accounts" do
@@ -227,11 +294,134 @@ defmodule EEVM.DatabaseTest do
       assert db |> Database.storage_slots(0xAA) |> Enum.sort() == [{0, 10}, {9, 11}]
       assert Database.storage_slots(db, 0xBB) == []
     end
+  end
 
-    test "storage_addresses/1 returns addresses with tracked storage" do
-      db = InMemory.new(storage: %{0xAA => %{0 => 1}, 0xBB => %{2 => 2}})
+  describe "read-only backends" do
+    test "transact runs against reads only and returns its writes as changes, uncommitted" do
+      state = %{{:account, sender()} => %{balance: 10 ** 18, nonce: 0, code: <<>>}}
+      db = Database.new(ReadOnly, state)
 
-      assert db |> Database.storage_addresses() |> Enum.sort() == [0xAA, 0xBB]
+      assert {:ok, result} = EEVM.transact(transfer_tx(), block(), db)
+      assert result.status == :success
+      # No commit/2: the writes stay in the overlay and the backend is untouched.
+      assert result.db.state == state
+      assert Database.get_balance(result.db, @recipient) == 1_000
+      assert Database.commit(result.db) == {:error, :commit_not_supported}
+
+      %StateChanges{accounts: changes} = result.changes
+      assert changes[@recipient].balance == 1_000
+      assert changes[sender()].nonce == 1
+      assert changes[sender()].balance == 10 ** 18 - 1_000 - 21_000
+      assert Map.keys(changes) |> Enum.sort() == Enum.sort([@recipient, sender(), 0xC0FFEE])
+    end
+
+    test "a failed read returns {:error, {:database, reason}} from every entry point" do
+      # SLOAD of slot 0.
+      code = <<0x60, 0x00, 0x54, 0x00>>
+      db = Database.new(ReadOnly, %{{:storage, 0xA, 0} => :fail})
+
+      assert EEVM.run(code, address: 0xA, db: db) == {:error, {:database, :backend_down}}
+
+      failing_sender = Database.new(ReadOnly, %{{:account, sender()} => :fail})
+
+      assert EEVM.transact(transfer_tx(), block(), failing_sender) ==
+               {:error, {:database, :backend_down}}
+
+      assert_raise Database.ReadError, fn -> Database.storage_load(db, 0xA, 0) end
+    end
+
+    test "code is fetched by hash only when it isn't returned with the account" do
+      code = <<0x60, 0x07, 0x00>>
+      hash = ExKeccak.hash_256(code)
+
+      state = %{
+        {:account, 0xC} => %{balance: 0, nonce: 1, code_hash: hash},
+        {:code, hash} => code
+      }
+
+      assert Database.get_code(Database.new(ReadOnly, state), 0xC) == code
+      assert Database.get_code_hash(Database.new(ReadOnly, state), 0xC) == hash
+    end
+  end
+
+  describe "overlay and commit" do
+    test "run/2 lists its writes in changes and never commits them" do
+      # PUSH1 5 PUSH1 0 SSTORE STOP
+      db = InMemory.new()
+      assert {:ok, result} = EEVM.run(<<0x60, 5, 0x60, 0, 0x55, 0x00>>, address: 0xA, db: db)
+
+      assert result.db.state == db.state
+      assert %{0xA => %{storage: %{0 => 5}}} = result.changes.accounts
+    end
+
+    test "transact commits to an InMemory backend, leaving an empty overlay" do
+      db = InMemory.new(accounts: %{sender() => %{balance: 10 ** 18}})
+
+      assert {:ok, result} = EEVM.transact(transfer_tx(), block(), db)
+      assert result.db.accounts == %{} and result.db.storage == %{}
+      assert result.db.state.accounts[@recipient].balance == 1_000
+      assert result.changes.accounts[@recipient].balance == 1_000
+    end
+
+    test "deleting an account hides its old storage, and commit clears it" do
+      db = InMemory.new(accounts: %{0xA => %{nonce: 1}}, storage: %{0xA => %{0 => 1, 1 => 2}})
+
+      db = db |> Database.delete_account(0xA) |> Database.set_nonce(0xA, 1)
+      db = Database.storage_store(db, 0xA, 1, 9)
+
+      assert Database.storage_load(db, 0xA, 0) == 0
+      assert Database.storage_load(db, 0xA, 1) == 9
+      assert %{destroyed?: true, storage: %{1 => 9}} = Database.changes(db).accounts[0xA]
+
+      {:ok, committed} = Database.commit(db)
+      assert Database.storage_slots(committed, 0xA) == [{1, 9}]
+    end
+
+    test "a deleted account commits as :destroyed and a zero write clears its slot" do
+      db =
+        InMemory.new(accounts: %{0xA => %{balance: 1}, 0xB => %{}}, storage: %{0xB => %{3 => 4}})
+
+      db = db |> Database.delete_account(0xA) |> Database.storage_store(0xB, 3, 0)
+
+      assert Database.changes(db).accounts[0xA] == :destroyed
+
+      {:ok, committed} = Database.commit(db)
+      refute Database.account_exists?(committed, 0xA)
+      assert Database.storage_slots(committed, 0xB) == []
+      assert committed.state.storage == %{}
+    end
+
+    test "a backend with the pre-1.0 callbacks is wrapped and still commits" do
+      state = %{accounts: %{sender() => %{balance: 10 ** 18}}, storage: %{}}
+      db = Database.new(OldStyle, state)
+      assert db.impl == EEVM.Database.Legacy
+
+      assert {:ok, result} = EEVM.transact(transfer_tx(), block(), db)
+      {OldStyle, committed} = result.db.state
+      assert OldStyle.get_balance(committed, @recipient) == 1_000
+      assert OldStyle.get_nonce(committed, sender()) == 1
+    end
+  end
+
+  describe "block hashes" do
+    # PUSH1 99 BLOCKHASH STOP. BLOCKHASH sees the 256 blocks before the current one.
+    @blockhash_99 <<0x60, 99, 0x40, 0x00>>
+
+    test "BLOCKHASH falls back to the backend for a recent block the environment lacks" do
+      db = InMemory.new(block_hashes: %{99 => <<0xAA::256>>})
+
+      assert {:ok, %{stack: [0xAA]}} =
+               EEVM.run(@blockhash_99, db: db, block: BlockEnv.new(number: 355), debug: true)
+
+      assert {:ok, %{stack: [0]}} =
+               EEVM.run(@blockhash_99, db: db, block: BlockEnv.new(number: 356), debug: true)
+
+      assert {:ok, %{stack: [0xBB]}} =
+               EEVM.run(@blockhash_99,
+                 db: db,
+                 block: BlockEnv.new(number: 100, block_hashes: %{99 => <<0xBB::256>>}),
+                 debug: true
+               )
     end
   end
 

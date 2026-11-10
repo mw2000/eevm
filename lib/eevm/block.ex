@@ -187,10 +187,13 @@ defmodule EEVM.Block do
   @spec execute(t(), Header.t(), Database.t(), opts()) ::
           {:ok, Result.t()} | {:error, EEVM.Error.block_error()}
   def execute(%__MODULE__{} = block, %Header{} = parent, %Database{} = db, opts \\ []) do
-    with :ok <- validate(block, parent, opts),
-         {:ok, result} <- run(block, db, Validation.resolve_config(opts), opts) do
-      check_result(result, block.header)
-    end
+    Database.catch_read_errors(fn ->
+      with :ok <- validate(block, parent, opts),
+           {:ok, result} <- run(block, db, Validation.resolve_config(opts), opts),
+           {:ok, result} <- check_result(result, block.header) do
+        finish(result)
+      end
+    end)
   end
 
   @doc """
@@ -241,18 +244,33 @@ defmodule EEVM.Block do
 
     block = %__MODULE__{header: header, transactions: transactions, withdrawals: withdrawals}
 
-    with {:ok, result} <- run(block, db, config, opts) do
-      header = %{
-        header
-        | state_root: result.state_root,
-          transactions_root: result.transactions_root,
-          receipts_root: result.receipts_root,
-          logs_bloom: result.logs_bloom,
-          gas_used: result.gas_used,
-          requests_hash: result.requests && Requests.hash(result.requests)
-      }
+    Database.catch_read_errors(fn ->
+      with {:ok, result} <- run(block, db, config, opts),
+           {:ok, result} <- finish(result) do
+        {:ok, seal(block, header, result), result}
+      end
+    end)
+  end
 
-      {:ok, %{block | header: %{header | hash: Header.compute_hash(header)}}, result}
+  defp seal(block, header, result) do
+    header = %{
+      header
+      | state_root: result.state_root,
+        transactions_root: result.transactions_root,
+        receipts_root: result.receipts_root,
+        logs_bloom: result.logs_bloom,
+        gas_used: result.gas_used,
+        requests_hash: result.requests && Requests.hash(result.requests)
+    }
+
+    %{block | header: %{header | hash: Header.compute_hash(header)}}
+  end
+
+  # The block's writes become `changes`, committed once for the whole block
+  # when the backend supports it.
+  defp finish(%Result{db: db} = result) do
+    with {:ok, committed} <- Database.commit_if_supported(db) do
+      {:ok, %{result | db: committed, post_state_db: committed, changes: Database.changes(db)}}
     end
   end
 
@@ -282,7 +300,7 @@ defmodule EEVM.Block do
 
   defp tx_executor(config, tracer?) do
     fn tx, block_ctx, db ->
-      case Handler.execute(tx, block_ctx, db, config: config, tracer: tracer?) do
+      case Handler.execute(tx, block_ctx, db, config: config, tracer: tracer?, commit: false) do
         {:ok, %TransactionResult{} = result} ->
           {:ok,
            %{

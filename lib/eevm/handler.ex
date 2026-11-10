@@ -25,6 +25,7 @@ defmodule EEVM.Handler do
           hardfork: EEVM.HardforkConfig.spec_id(),
           config: Config.t(),
           tracer: boolean() | EEVM.Tracer.t(),
+          commit: boolean(),
           chain_id: non_neg_integer()
         ]
 
@@ -43,6 +44,10 @@ defmodule EEVM.Handler do
     `:cancun`). `:config` takes precedence when both are given.
   - `:tracer` — `true` or an `EEVM.Tracer` to record an EIP-3155 trace,
     returned as `result.trace`.
+  - `:commit` — `false` to leave the writes in `result.db`'s overlay and
+    skip `result.changes`; `EEVM.Block` does this to commit once per block.
+    By default the writes are committed when the backend implements
+    `c:EEVM.Database.commit/2`.
   - `:chain_id` — deprecated; set it with `EEVM.Config.new/2`. Overrides the
     config's chain id when given.
 
@@ -52,11 +57,20 @@ defmodule EEVM.Handler do
     validation, including reverted and halted ones. Inspect `result.status`
     to tell them apart.
   - `{:error, reason}` when decoding, sender recovery, validation, or upfront
-    balance charging fail. The database is returned unchanged in that case.
+    balance charging fail, and `{:error, {:database, reason}}` when the
+    backend fails a read or commit. The database is unchanged in each case.
   """
   @spec execute(wire_tx(), BlockEnv.t(), Database.t(), opts()) ::
           {:ok, TransactionResult.t()} | {:error, EEVM.Error.reason()}
   def execute(tx_or_bytes, %BlockEnv{} = block, %Database{} = db, opts \\ []) do
+    Database.catch_read_errors(fn ->
+      with {:ok, result} <- run(tx_or_bytes, block, db, opts) do
+        finish(result, Keyword.get(opts, :commit, true))
+      end
+    end)
+  end
+
+  defp run(tx_or_bytes, block, db, opts) do
     config = Validation.resolve_config(opts)
     chain_id = config.chain_id
 
@@ -83,14 +97,15 @@ defmodule EEVM.Handler do
           Validation.resolve_tracer(opts)
         )
 
-      PostExecution.finalize(
-        final_state,
-        contract_address,
-        tx_ctx,
-        sender,
-        db_authorized,
-        block
-      )
+      PostExecution.finalize(final_state, contract_address, tx_ctx, sender, db_authorized, block)
+    end
+  end
+
+  defp finish(%TransactionResult{} = result, false), do: {:ok, result}
+
+  defp finish(%TransactionResult{db: db} = result, true) do
+    with {:ok, committed} <- Database.commit_if_supported(db) do
+      {:ok, %{result | db: committed, post_state_db: committed, changes: Database.changes(db)}}
     end
   end
 end

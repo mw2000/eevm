@@ -1,23 +1,32 @@
 defmodule EEVM.Database.InMemory do
   @moduledoc """
-  In-memory `EEVM.Database` backend backed by plain maps.
+  In-memory `EEVM.Database` backend backed by plain maps. It implements
+  every callback, `commit/2` included, so `EEVM.transact/4` and
+  `EEVM.Block.execute/4` return it with their changes applied.
 
-  The state is a map with two keys:
+  The state is a map with these keys:
 
-  - `:accounts` — `%{address => account_map}` (balances, nonces, code)
+  - `:accounts` — `%{address => %{balance, nonce, code, code_hash}}`
   - `:storage` — `%{address => %{slot => value}}` (per-contract storage)
+  - `:codes` — `%{code_hash => code}`
+  - `:block_hashes` — `%{number => hash}`, served to BLOCKHASH
 
-  Suitable for testing and single-transaction execution. For persistent
-  state, implement the `EEVM.Database` behaviour against a disk-backed store.
+  The pre-1.0 write and query functions (`get_balance/2`, `set_balance/3`,
+  and so on) still work on this state but are deprecated; use the
+  `EEVM.Database` functions on a database from `new/1`.
   """
 
   @behaviour EEVM.Database
 
-  alias EEVM.Database
+  alias EEVM.{Database, StateChanges}
+
+  @empty_code_hash <<0xC5D2460186F7233C927E7DB2DCC703C0E500B653CA82273B7BFAD8045D85A470::256>>
 
   @type state :: %{
-          accounts: %{non_neg_integer() => Database.account()},
-          storage: %{non_neg_integer() => %{non_neg_integer() => non_neg_integer()}}
+          accounts: %{non_neg_integer() => map()},
+          storage: %{non_neg_integer() => %{non_neg_integer() => non_neg_integer()}},
+          codes: %{binary() => binary()},
+          block_hashes: %{non_neg_integer() => <<_::256>>}
         }
 
   @doc """
@@ -25,192 +34,210 @@ defmodule EEVM.Database.InMemory do
 
   ## Options
 
-  - `:accounts` — initial account map (default: `%{}`)
-  - `:storage` — initial per-address storage map (default: `%{}`)
+  - `:accounts` — `%{address => %{balance:, nonce:, code:}}`; missing fields
+    default to zero and no code (default `%{}`)
+  - `:storage` — `%{address => %{slot => value}}` (default `%{}`)
+  - `:block_hashes` — `%{number => <<_::256>>}` for BLOCKHASH (default `%{}`)
 
-  ## Examples
-
-      iex> state = EEVM.Database.InMemory.init()
-      iex> EEVM.Database.InMemory.get_balance(state, 0x1234)
-      0
+  ## Example
 
       iex> state = EEVM.Database.InMemory.init(accounts: %{1 => %{balance: 100}})
-      iex> EEVM.Database.InMemory.get_balance(state, 1)
-      100
+      iex> EEVM.Database.InMemory.account(state, 1)
+      {:ok, %{balance: 100, nonce: 0, code: <<>>, code_hash: EEVM.Database.InMemory.empty_code_hash()}}
   """
   @spec init(keyword()) :: state()
   def init(opts \\ []) do
+    accounts =
+      Map.new(Keyword.get(opts, :accounts, %{}), fn {address, account} ->
+        {address, normalize(account)}
+      end)
+
     %{
-      accounts: Keyword.get(opts, :accounts, %{}),
-      storage: Keyword.get(opts, :storage, %{})
+      accounts: accounts,
+      storage: Keyword.get(opts, :storage, %{}),
+      codes: Map.new(accounts, fn {_address, account} -> {account.code_hash, account.code} end),
+      block_hashes: Keyword.get(opts, :block_hashes, %{})
     }
   end
 
   @doc """
-  Convenience: creates a fully wrapped `%Database{}` with InMemory backend.
+  Creates a database with this backend; takes the options of `init/1`.
 
-  This is the most common way to create a database for execution.
+  ## Example
 
-  ## Examples
-
-      iex> db = EEVM.Database.InMemory.new()
-      iex> EEVM.Database.get_balance(db, 0x1234)
-      0
+      iex> db = EEVM.Database.InMemory.new(accounts: %{1 => %{balance: 100}})
+      iex> EEVM.Database.get_balance(db, 1)
+      100
   """
   @spec new(keyword()) :: Database.t()
-  def new(opts \\ []) do
-    Database.new(__MODULE__, init(opts))
+  def new(opts \\ []), do: Database.new(__MODULE__, init(opts))
+
+  @doc "Returns keccak256 of empty code, the code hash of an account with no code."
+  @spec empty_code_hash() :: <<_::256>>
+  def empty_code_hash, do: @empty_code_hash
+
+  # ---------------------------------------------------------------------------
+  # EEVM.Database callbacks
+  # ---------------------------------------------------------------------------
+
+  @impl Database
+  def account(%{accounts: accounts}, address), do: {:ok, Map.get(accounts, address)}
+
+  @impl Database
+  def code(%{codes: codes}, code_hash), do: {:ok, Map.get(codes, code_hash, <<>>)}
+
+  @impl Database
+  def storage(%{storage: storage}, address, slot),
+    do: {:ok, storage |> Map.get(address, %{}) |> Map.get(slot, 0)}
+
+  @impl Database
+  def block_hash(%{block_hashes: hashes}, number), do: {:ok, Map.get(hashes, number)}
+
+  @impl Database
+  def commit(state, %StateChanges{accounts: changes}),
+    do: {:ok, Enum.reduce(changes, state, &apply_change/2)}
+
+  @impl Database
+  def accounts(%{accounts: accounts, storage: storage}),
+    do: Enum.uniq(Map.keys(accounts) ++ Map.keys(storage))
+
+  @impl Database
+  def storage_slots(%{storage: storage}, address), do: Map.to_list(Map.get(storage, address, %{}))
+
+  defp apply_change({address, :destroyed}, state) do
+    %{
+      state
+      | accounts: Map.delete(state.accounts, address),
+        storage: Map.delete(state.storage, address)
+    }
+  end
+
+  defp apply_change({address, change}, state) do
+    old_slots = if change.destroyed?, do: %{}, else: Map.get(state.storage, address, %{})
+
+    slots =
+      Enum.reduce(change.storage, old_slots, fn
+        {slot, 0}, acc -> Map.delete(acc, slot)
+        {slot, value}, acc -> Map.put(acc, slot, value)
+      end)
+
+    code = change.code || Map.get(state.codes, change.code_hash, <<>>)
+
+    %{
+      state
+      | accounts:
+          Map.put(state.accounts, address, %{
+            balance: change.balance,
+            nonce: change.nonce,
+            code: code,
+            code_hash: change.code_hash
+          }),
+        storage:
+          if(slots == %{},
+            do: Map.delete(state.storage, address),
+            else: Map.put(state.storage, address, slots)
+          ),
+        codes: Map.put(state.codes, change.code_hash, code)
+    }
+  end
+
+  defp normalize(account) do
+    code = Map.get(account, :code, <<>>)
+
+    %{
+      balance: Map.get(account, :balance, 0),
+      nonce: Map.get(account, :nonce, 0),
+      code: code,
+      code_hash: if(code == <<>>, do: @empty_code_hash, else: ExKeccak.hash_256(code))
+    }
   end
 
   # ---------------------------------------------------------------------------
-  # Account reads
+  # Deprecated pre-1.0 functions on the raw state
   # ---------------------------------------------------------------------------
 
-  @impl true
-  def get_account(%{accounts: accounts}, address) do
-    Map.get(accounts, address)
-  end
+  @doc false
+  @deprecated "Use EEVM.Database.get_account/2"
+  def get_account(state, address), do: state |> wrap() |> Database.get_account(address)
 
-  @impl true
-  def account_exists?(%{accounts: accounts}, address) do
-    Map.has_key?(accounts, address)
-  end
+  @doc false
+  @deprecated "Use EEVM.Database.account_exists?/2"
+  def account_exists?(state, address), do: Map.has_key?(state.accounts, address)
 
-  @impl true
-  def get_code(state, address) do
-    case get_account(state, address) do
-      nil -> <<>>
-      account -> Map.get(account, :code, <<>>)
-    end
-  end
+  @doc false
+  @deprecated "Use EEVM.Database.get_code/2"
+  def get_code(state, address), do: state |> wrap() |> Database.get_code(address)
 
-  @impl true
-  def get_balance(state, address) do
-    case get_account(state, address) do
-      nil -> 0
-      account -> Map.get(account, :balance, 0)
-    end
-  end
+  @doc false
+  @deprecated "Use EEVM.Database.get_balance/2"
+  def get_balance(state, address), do: state |> wrap() |> Database.get_balance(address)
 
-  @impl true
-  def get_nonce(state, address) do
-    case get_account(state, address) do
-      nil -> 0
-      account -> Map.get(account, :nonce, 0)
-    end
-  end
+  @doc false
+  @deprecated "Use EEVM.Database.get_nonce/2"
+  def get_nonce(state, address), do: state |> wrap() |> Database.get_nonce(address)
 
-  @impl true
-  def account_empty?(state, address) do
-    get_balance(state, address) == 0 and
-      get_nonce(state, address) == 0 and
-      get_code(state, address) == <<>>
-  end
+  @doc false
+  @deprecated "Use EEVM.Database.account_empty?/2"
+  def account_empty?(state, address), do: state |> wrap() |> Database.account_empty?(address)
 
-  # ---------------------------------------------------------------------------
-  # Account writes
-  # ---------------------------------------------------------------------------
+  @doc false
+  @deprecated "Use EEVM.Database.storage_load/3"
+  def storage_load(state, address, key),
+    do: state |> wrap() |> Database.storage_load(address, key)
 
-  @impl true
-  def put_account(%{accounts: accounts} = state, address, account) when is_map(account) do
-    %{state | accounts: Map.put(accounts, address, account)}
-  end
+  @doc false
+  @deprecated "Use EEVM.Database.account_addresses/1"
+  def account_addresses(state), do: accounts(state)
 
-  @impl true
-  def delete_account(%{accounts: accounts, storage: storage} = state, address) do
-    %{state | accounts: Map.delete(accounts, address), storage: Map.delete(storage, address)}
-  end
+  @doc false
+  @deprecated "Use EEVM.Database.account_addresses/1"
+  def storage_addresses(%{storage: storage}), do: Map.keys(storage)
 
-  @impl true
-  def put_code(state, address, code) when is_binary(code) do
-    update_account(state, address, fn account -> Map.put(account, :code, code) end)
-  end
+  @doc false
+  @deprecated "Use EEVM.Database.put_account/3"
+  def put_account(state, address, account),
+    do: write(state, &Database.put_account(&1, address, account))
 
-  @impl true
-  def set_balance(state, address, balance) do
-    update_account(state, address, fn account -> Map.put(account, :balance, balance) end)
-  end
+  @doc false
+  @deprecated "Use EEVM.Database.delete_account/2"
+  def delete_account(state, address), do: write(state, &Database.delete_account(&1, address))
 
-  @impl true
-  def set_nonce(state, address, nonce) do
-    update_account(state, address, fn account -> Map.put(account, :nonce, nonce) end)
-  end
+  @doc false
+  @deprecated "Use EEVM.Database.put_code/3"
+  def put_code(state, address, code), do: write(state, &Database.put_code(&1, address, code))
 
-  @impl true
-  def increment_nonce(state, address) do
-    update_account(state, address, fn account ->
-      Map.put(account, :nonce, Map.get(account, :nonce, 0) + 1)
-    end)
-  end
+  @doc false
+  @deprecated "Use EEVM.Database.set_balance/3"
+  def set_balance(state, address, balance),
+    do: write(state, &Database.set_balance(&1, address, balance))
 
-  @impl true
-  def transfer(state, _from, _to, 0), do: {:ok, state}
+  @doc false
+  @deprecated "Use EEVM.Database.set_nonce/3"
+  def set_nonce(state, address, nonce), do: write(state, &Database.set_nonce(&1, address, nonce))
 
+  @doc false
+  @deprecated "Use EEVM.Database.increment_nonce/2"
+  def increment_nonce(state, address), do: write(state, &Database.increment_nonce(&1, address))
+
+  @doc false
+  @deprecated "Use EEVM.Database.storage_store/4"
+  def storage_store(state, address, key, value),
+    do: write(state, &Database.storage_store(&1, address, key, value))
+
+  @doc false
+  @deprecated "Use EEVM.Database.transfer/4"
   def transfer(state, from, to, amount) do
-    from_balance = get_balance(state, from)
-
-    if from_balance < amount do
-      {:error, :insufficient_balance}
-    else
-      # Credit from the debited state so a self-transfer leaves the balance unchanged.
-      debited = set_balance(state, from, from_balance - amount)
-      updated_state = set_balance(debited, to, get_balance(debited, to) + amount)
-
-      {:ok, updated_state}
+    with {:ok, db} <- Database.transfer(wrap(state), from, to, amount) do
+      {:ok, committed_state(db)}
     end
   end
 
-  # ---------------------------------------------------------------------------
-  # Storage
-  # ---------------------------------------------------------------------------
+  defp wrap(state), do: %Database{impl: __MODULE__, state: state}
 
-  @impl true
-  def storage_load(%{storage: storage}, address, key) do
-    storage
-    |> Map.get(address, %{})
-    |> Map.get(key, 0)
-  end
+  defp write(state, fun), do: state |> wrap() |> fun.() |> committed_state()
 
-  @impl true
-  def account_addresses(%{accounts: accounts}) do
-    Map.keys(accounts)
-  end
-
-  @impl true
-  def storage_slots(%{storage: storage}, address) do
-    storage
-    |> Map.get(address, %{})
-    |> Map.to_list()
-  end
-
-  @impl true
-  def storage_addresses(%{storage: storage}) do
-    Map.keys(storage)
-  end
-
-  @impl true
-  def storage_store(%{storage: storage} = state, address, key, value) do
-    address_storage = Map.get(storage, address, %{})
-    updated_slot = Map.put(address_storage, key, band_256(value))
-    %{state | storage: Map.put(storage, address, updated_slot)}
-  end
-
-  # ---------------------------------------------------------------------------
-  # Helpers
-  # ---------------------------------------------------------------------------
-
-  defp update_account(state, address, updater) when is_function(updater, 1) do
-    existing =
-      case get_account(state, address) do
-        nil -> %{}
-        account -> account
-      end
-
-    put_account(state, address, updater.(existing))
-  end
-
-  defp band_256(value) do
-    import Bitwise
-    Bitwise.band(value, (1 <<< 256) - 1)
+  defp committed_state(db) do
+    {:ok, %Database{state: state}} = Database.commit(db)
+    state
   end
 end

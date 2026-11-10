@@ -10,7 +10,7 @@ defmodule EEVM.Interpreter.Instructions.Environment.Simple do
   GASLIMIT, CHAINID, BASEFEE, BLOBBASEFEE, GAS, BLOCKHASH, and BLOBHASH.
   """
 
-  alias EEVM.BlockEnv
+  alias EEVM.{BlockEnv, Database}
   alias EEVM.Interpreter.Instructions.Helpers
   alias EEVM.Interpreter.{MachineState, Stack}
 
@@ -39,7 +39,7 @@ defmodule EEVM.Interpreter.Instructions.Environment.Simple do
 
   def execute(0x40, state) do
     with {:ok, block_num, s1} <- Stack.pop(state.frame.stack),
-         hash = BlockEnv.hash(state.env.block, block_num),
+         hash = block_hash(state, block_num),
          {:ok, s2} <- Stack.push(s1, hash) do
       {:ok, state |> MachineState.update_frame(&%{&1 | stack: s2}) |> MachineState.advance_pc()}
     else
@@ -65,4 +65,19 @@ defmodule EEVM.Interpreter.Instructions.Environment.Simple do
   end
 
   def execute(_opcode, state), do: {:ok, MachineState.halt(state, :invalid)}
+
+  # A recent block's hash comes from the block environment, or else from the
+  # database backend (`c:EEVM.Database.block_hash/2`).
+  defp block_hash(state, block_num) do
+    case BlockEnv.hash(state.env.block, block_num) do
+      0 when block_num < state.env.block.number and block_num + 256 >= state.env.block.number ->
+        case Database.block_hash(state.db, block_num) do
+          <<hash::unsigned-big-256>> -> hash
+          nil -> 0
+        end
+
+      hash ->
+        hash
+    end
+  end
 end

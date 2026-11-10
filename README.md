@@ -153,8 +153,23 @@ iex> {result.gas_used, EEVM.Database.get_balance(result.db, 0xB0B)}
 `EEVM.Block.Processor.process_block/4` is the lower-level engine underneath; use
 it directly to plug in your own transaction executor.
 
-State lives behind the `EEVM.Database` behaviour. `EEVM.Database.InMemory` is the
-built-in backend; implement the behaviour to execute against your own storage.
+### State
+
+State lives behind the read-only `EEVM.Database` behaviour: an adapter answers
+`account/2`, `code/2`, `storage/3`, and `block_hash/2`, and eevm keeps every
+write in its own overlay. Results carry the writes as `changes`, an
+`EEVM.StateChanges`. `EEVM.transact/4` and `EEVM.Block.execute/4` commit them
+when the adapter implements `commit/2`; `EEVM.run/2` never does.
+`EEVM.Database.InMemory` is the built-in adapter, and the
+[database adapter guide](guides/database_adapters.md) shows ETS- and RPC-backed
+ones.
+
+```elixir
+iex> code = <<0x60, 5, 0x60, 0, 0x55, 0x00>>  # PUSH1 5, PUSH1 0, SSTORE, STOP
+iex> {:ok, result} = EEVM.run(code, address: 0xA, db: EEVM.Database.InMemory.new())
+iex> result.changes.accounts[0xA].storage
+%{0 => 5}
+```
 
 ## Hardforks and EIPs
 

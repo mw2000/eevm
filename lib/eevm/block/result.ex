@@ -18,6 +18,9 @@ defmodule EEVM.Block.Result do
     final receipt's `cumulative_gas_used`, `0` when the block is empty).
   - `requests` — the block's EIP-7685 requests, each a type byte followed by
     its payload (see `EEVM.Block.Requests`); `nil` before Prague.
+  - `changes` — the block's writes as an `EEVM.StateChanges`. `EEVM.Block`
+    has already committed them to `db` when the backend implements
+    `c:EEVM.Database.commit/2`; `EEVM.Block.Processor` leaves this `nil`.
   - `trace` — with the `:tracer` option, one `EEVM.Tracer` per transaction,
     in block order; otherwise `nil`.
   """
@@ -35,6 +38,7 @@ defmodule EEVM.Block.Result do
           logs_bloom: Bloom.t(),
           gas_used: non_neg_integer(),
           requests: [binary()] | nil,
+          changes: EEVM.StateChanges.t() | nil,
           trace: [Tracer.t()] | nil,
           post_state_db: Database.t()
         }
@@ -48,6 +52,7 @@ defmodule EEVM.Block.Result do
     :logs_bloom,
     :gas_used,
     :requests,
+    :changes,
     :trace,
     :post_state_db
   ]

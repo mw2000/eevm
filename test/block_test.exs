@@ -84,6 +84,10 @@ defmodule EEVM.BlockTest do
       assert Database.get_balance(result.db, @recipient) == 1_000
       # Coinbase earns the 1 wei tip per gas; the 7 wei base fee is burned.
       assert Database.get_balance(result.db, @coinbase) == 21_000
+
+      # The block's writes are committed once, and listed in changes.
+      assert result.db.accounts == %{}
+      assert result.changes.accounts[@recipient].balance == 1_000
     end
 
     test "rejects a body or result that doesn't match the header" do

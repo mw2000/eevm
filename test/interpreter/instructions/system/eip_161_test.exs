@@ -30,7 +30,7 @@ defmodule EEVM.Interpreter.Instructions.System.EIP161Test do
 
     assert result.status == :stopped
     assert stack_values(result) == [1]
-    assert Database.get_account(result.db, 0xAA) == %{nonce: 1}
+    assert Database.get_account(result.db, 0xAA) == %{balance: 0, nonce: 1, code: <<>>}
   end
 
   test "touches from reverted child calls do not survive" do
@@ -48,7 +48,7 @@ defmodule EEVM.Interpreter.Instructions.System.EIP161Test do
 
     assert result.status == :stopped
     assert stack_values(result) == [0]
-    assert Database.get_account(result.db, 0xAA) == %{}
+    assert Database.get_account(result.db, 0xAA) == %{balance: 0, nonce: 0, code: <<>>}
   end
 
   test "SELFDESTRUCT beneficiary is touched and cleared when empty" do

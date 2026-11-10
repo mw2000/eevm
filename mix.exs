@@ -99,6 +99,7 @@ defmodule EEVM.MixProject do
       source_ref: "main",
       extras: [
         "README.md",
+        "guides/database_adapters.md",
         {"bench/README.md", filename: "benchmarks", title: "Benchmarks"},
         "LICENSE"
       ],
@@ -128,7 +129,13 @@ defmodule EEVM.MixProject do
           EEVM.Block.Receipt,
           EEVM.Block.Result
         ],
-        State: [EEVM.Database, EEVM.Database.InMemory, EEVM.StateRoot],
+        State: [
+          EEVM.Database,
+          EEVM.Database.InMemory,
+          EEVM.Database.ReadError,
+          EEVM.StateChanges,
+          EEVM.StateRoot
+        ],
         Extending: [
           EEVM.Precompile,
           EEVM.Tracer,
@@ -138,7 +145,7 @@ defmodule EEVM.MixProject do
           EEVM.Block.Bloom,
           ~r/^EEVM\.SystemContracts\./
         ],
-        Deprecated: [EEVM.Context.Block, EEVM.Context.Transaction],
+        Deprecated: [EEVM.Context.Block, EEVM.Context.Transaction, EEVM.Database.Legacy],
         Internals: [~r/^EEVM\./]
       ]
     ]

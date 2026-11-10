@@ -1,6 +1,9 @@
 defmodule EEVM.StateRoot do
   @moduledoc """
   Computes Ethereum storage roots and state roots from the current `EEVM.Database`.
+
+  Both enumerate the backend, so it must implement the optional
+  `c:EEVM.Database.accounts/1` and `c:EEVM.Database.storage_slots/2`.
   """
 
   alias EEVM.Database
@@ -9,6 +12,7 @@ defmodule EEVM.StateRoot do
   @storage_key_bytes 32
   @address_bytes 20
 
+  @doc "Returns the storage trie root of `address`."
   @spec compute_storage_root(Database.t(), non_neg_integer()) :: binary()
   def compute_storage_root(%Database{} = db, address) when is_integer(address) and address >= 0 do
     entries =
@@ -23,17 +27,14 @@ defmodule EEVM.StateRoot do
     Trie.secure_root_hash(entries)
   end
 
+  @doc "Returns the world-state trie root of `db`, overlay included."
   @spec compute_state_root(Database.t()) :: binary()
   def compute_state_root(%Database{} = db) do
-    account_addresses =
+    entries =
       db
       |> Database.account_addresses()
-      |> Enum.concat(storage_backed_addresses(db))
-      |> Enum.uniq()
       |> Enum.sort()
-
-    entries =
-      Enum.map(account_addresses, fn address ->
+      |> Enum.map(fn address ->
         {encode_uint(address, @address_bytes), encode_account(db, address)}
       end)
 
@@ -44,21 +45,9 @@ defmodule EEVM.StateRoot do
     nonce = Database.get_nonce(db, address)
     balance = Database.get_balance(db, address)
     storage_root = compute_storage_root(db, address)
-    code_hash = ExKeccak.hash_256(Database.get_code(db, address))
+    code_hash = Database.get_code_hash(db, address) || ExKeccak.hash_256(<<>>)
 
     ExRLP.encode([nonce, balance, storage_root, code_hash])
-  end
-
-  defp storage_backed_addresses(db) do
-    db
-    |> Database.storage_addresses()
-    |> Enum.flat_map(fn address ->
-      case Database.storage_slots(db, address)
-           |> Enum.reject(fn {_slot, value} -> value == 0 end) do
-        [] -> []
-        _slots -> [address]
-      end
-    end)
   end
 
   defp encode_uint(value, bytes) when is_integer(value) and value >= 0 do
