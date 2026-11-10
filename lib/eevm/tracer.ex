@@ -86,14 +86,22 @@ defmodule EEVM.Tracer do
   @spec steps(t()) :: [TraceStep.t()]
   def steps(%__MODULE__{steps: steps}), do: Enum.reverse(steps)
 
-  @doc "Returns the opcode name atom for a byte (e.g. `0x01` -> `:ADD`)."
+  @doc """
+  Returns the opcode name atom for a byte, or `:UNKNOWN` for an undefined one.
+
+      iex> EEVM.Tracer.op_name(0x01)
+      :ADD
+      iex> EEVM.Tracer.op_name(0x0C)
+      :UNKNOWN
+  """
   @spec op_name(non_neg_integer()) :: atom()
-  def op_name(opcode) do
-    case Registry.info(opcode) do
-      {:ok, %{name: name}} -> String.to_atom(name)
-      {:error, _} -> :UNKNOWN
-    end
+  # One clause per opcode, built from the Registry at compile time, so tracing
+  # creates no atoms at run time.
+  for opcode <- 0..255, {:ok, %{name: name}} <- [Registry.info(opcode)] do
+    def op_name(unquote(opcode)), do: unquote(String.to_atom(name))
   end
+
+  def op_name(_opcode), do: :UNKNOWN
 
   @doc """
   Renders the trace as EIP-3155 / geth `--json` compatible JSON lines.

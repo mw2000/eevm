@@ -5,6 +5,8 @@ defmodule EEVM.TracerTest do
   alias EEVM.Tracer
   alias EEVM.Tracer.TraceStep
 
+  doctest Tracer
+
   describe "opt-in behavior" do
     test "tracer is nil by default — no trace recorded" do
       state = run_code(<<0x60, 0x01, 0x60, 0x02, 0x01, 0x00>>)
@@ -66,6 +68,27 @@ defmodule EEVM.TracerTest do
       assert add.op_byte == 0x01
       assert stop.op == :STOP
       assert stop.op_byte == 0x00
+    end
+  end
+
+  describe "op_name/1" do
+    # Mnemonics from the Yellow Paper, Appendix H, and EIP-3855 (PUSH0).
+    test "names every opcode family, including both ends of the generated ranges" do
+      assert Tracer.op_name(0x00) == :STOP
+      assert Tracer.op_name(0x5F) == :PUSH0
+      assert Tracer.op_name(0x60) == :PUSH1
+      assert Tracer.op_name(0x7F) == :PUSH32
+      assert Tracer.op_name(0x80) == :DUP1
+      assert Tracer.op_name(0x8F) == :DUP16
+      assert Tracer.op_name(0x90) == :SWAP1
+      assert Tracer.op_name(0x9F) == :SWAP16
+      assert Tracer.op_name(0xFE) == :INVALID
+      assert Tracer.op_name(0xFF) == :SELFDESTRUCT
+    end
+
+    test "undefined bytes are :UNKNOWN" do
+      assert Tracer.op_name(0x0C) == :UNKNOWN
+      assert Tracer.op_name(0xEF) == :UNKNOWN
     end
   end
 
