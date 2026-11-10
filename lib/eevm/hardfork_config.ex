@@ -29,6 +29,7 @@ defmodule EEVM.HardforkConfig do
   |                  | EIP-2935 (block hashes), EIP-7685 requests: EIP-6110 deposits, EIP-7002 withdrawals, EIP-7251 consolidations |
   | `:osaka`         | EIP-7825 (tx gas limit cap), EIP-7918 (blob base fee floor), EIP-7934 (block RLP size limit), EIP-7939 (CLZ) |
   |                  | EIP-7823 (ModExp bounds), EIP-7883 (ModExp repricing), EIP-7951 (P256VERIFY precompile) |
+  |                  | EIP-7594 (at most 6 blobs per transaction) |
   """
 
   @type spec_id ::
@@ -191,7 +192,9 @@ defmodule EEVM.HardforkConfig do
     # EIP-7939 (Osaka/Fusaka): CLZ opcode
     eip_7939: :osaka,
     # EIP-7951 (Osaka): P256VERIFY (secp256r1) precompile at 0x100
-    eip_7951: :osaka
+    eip_7951: :osaka,
+    # EIP-7594 (Osaka): PeerDAS; at most 6 blobs per transaction
+    eip_7594: :osaka
   }
 
   @doc """

@@ -82,11 +82,13 @@ defmodule EEVM.Error do
   | `:nonce_too_high` | `nonce` is above the sender's account nonce |
   | `:nonce_is_max` | `nonce` is 2^64 - 1, so the sender's nonce can't be incremented (EIP-2681) |
   | `:priority_fee_above_max_fee` | `max_priority_fee_per_gas` exceeds `max_fee_per_gas` (EIP-1559) |
-  | `:max_fee_below_basefee` | `max_fee_per_gas` is below the block base fee (EIP-1559) |
+  | `:max_fee_below_basefee` | `max_fee_per_gas`, or `gas_price` for legacy and EIP-2930 transactions, is below the block base fee (EIP-1559) |
   | `:insufficient_balance` | Balance can't cover `gas_limit * max price + blob gas * max_fee_per_blob_gas + value` |
   | `:sender_not_eoa` | Sender has code other than a delegation designator (EIP-3607, EIP-7702) |
   | `:blob_tx_no_creation` | Blob transaction has no `to` address (EIP-4844) |
   | `:no_blob_data` | Blob transaction carries no blob hashes (EIP-4844) |
+  | `:too_many_blobs` | Blob transaction carries more blobs than a block allows (EIP-4844), or more than 6 (EIP-7594) |
+  | `:invalid_versioned_hash` | A blob versioned hash doesn't start with `0x01` (EIP-4844) |
   | `:blob_fee_too_low` | `max_fee_per_blob_gas` is below the block blob base fee (EIP-4844) |
   | `:initcode_too_large` | Contract-creation data exceeds 49,152 bytes (EIP-3860) |
   | `:effective_gas_price_below_basefee` | The effective gas price is below the block base fee (checked again when charging the sender) |
@@ -206,6 +208,8 @@ defmodule EEVM.Error do
           | :sender_not_eoa
           | :blob_tx_no_creation
           | :no_blob_data
+          | :too_many_blobs
+          | :invalid_versioned_hash
           | :blob_fee_too_low
           | :initcode_too_large
           | :effective_gas_price_below_basefee
@@ -299,6 +303,7 @@ defmodule EEVM.Error do
     sender_not_eoa: "sender is not an externally owned account",
     blob_tx_no_creation: "blob transaction can't create a contract",
     no_blob_data: "blob transaction without blobs",
+    too_many_blobs: "too many blobs in one transaction",
     blob_fee_too_low: "max blob fee below the blob base fee",
     effective_gas_price_below_basefee: "effective gas price below the base fee",
     unknown_parent: "parent hash doesn't match the parent",

@@ -8,6 +8,8 @@ defmodule EEVM.Transaction.ValidatorTest do
   alias EEVM.TxEnv
 
   @origin 0xA11CE
+  # A blob versioned hash with the KZG version byte (0x01) EIP-4844 requires.
+  @blob_hash 0x0100000000000000000000000000000000000000000000000000000000001234
 
   describe "validate/3" do
     test "happy path passes for valid legacy transaction" do
@@ -197,7 +199,7 @@ defmodule EEVM.Transaction.ValidatorTest do
           gas_price: 0,
           max_fee_per_gas: 100,
           max_priority_fee_per_gas: 2,
-          blob_hashes: [0x1234],
+          blob_hashes: [@blob_hash],
           max_fee_per_blob_gas: 10
         )
 
@@ -235,7 +237,7 @@ defmodule EEVM.Transaction.ValidatorTest do
           gas_price: 0,
           max_fee_per_gas: 100,
           max_priority_fee_per_gas: 2,
-          blob_hashes: [0x1234],
+          blob_hashes: [@blob_hash],
           max_fee_per_blob_gas: 9
         )
 
@@ -245,6 +247,79 @@ defmodule EEVM.Transaction.ValidatorTest do
                  db_for_sender(balance: 10_000_000),
                  valid_block(base_fee: 1, blob_base_fee: 10)
                )
+    end
+
+    # EIP-4844: every versioned hash starts with VERSIONED_HASH_VERSION_KZG
+    # (EEST test_invalid_blob_hash_versioning_single_tx).
+    test "rejects a blob versioned hash whose version byte isn't 0x01" do
+      for {version, expected} <- [
+            {0x01, :ok},
+            {0x00, {:error, :invalid_versioned_hash}},
+            {0x02, {:error, :invalid_versioned_hash}}
+          ] do
+        hashes = [@blob_hash, Bitwise.bsl(version, 248) + 0x1234]
+        tx = blob_tx(hashes)
+
+        assert expected ==
+                 Validator.validate(tx, db_for_sender(balance: 10_000_000), valid_block())
+      end
+    end
+
+    # Cancun allows 6 blobs per block, Prague 9 (EIP-7691); Osaka caps one
+    # transaction at 6 blobs (EIP-7594) though a block still holds 9.
+    test "rejects more blobs than the fork allows in one transaction" do
+      for {fork, max} <- [cancun: 6, prague: 9, osaka: 6] do
+        config = HardforkConfig.new(fork)
+        db = db_for_sender(balance: 100_000_000)
+
+        assert :ok =
+                 Validator.validate(
+                   blob_tx(List.duplicate(@blob_hash, max)),
+                   db,
+                   valid_block(),
+                   config
+                 )
+
+        assert {:error, :too_many_blobs} =
+                 Validator.validate(
+                   blob_tx(List.duplicate(@blob_hash, max + 1)),
+                   db,
+                   valid_block(),
+                   config
+                 )
+      end
+    end
+
+    # From London a legacy or EIP-2930 gas price must cover the base fee
+    # (EEST stEIP1559/lowGasPriceOldTypes).
+    test "rejects a legacy or EIP-2930 gas price below the base fee from London" do
+      for type <- [:legacy, :eip2930] do
+        block = valid_block(base_fee: 10)
+
+        assert :ok =
+                 Validator.validate(
+                   valid_tx(type: type, gas_price: 10),
+                   db_for_sender(),
+                   block,
+                   HardforkConfig.new(:london)
+                 )
+
+        assert {:error, :max_fee_below_basefee} =
+                 Validator.validate(
+                   valid_tx(type: type, gas_price: 9),
+                   db_for_sender(),
+                   block,
+                   HardforkConfig.new(:london)
+                 )
+
+        assert :ok =
+                 Validator.validate(
+                   valid_tx(type: type, gas_price: 9),
+                   db_for_sender(),
+                   block,
+                   HardforkConfig.new(:berlin)
+                 )
+      end
     end
 
     test "returns initcode too large for creation transaction" do
@@ -281,6 +356,17 @@ defmodule EEVM.Transaction.ValidatorTest do
         max_fee_per_blob_gas: 0,
         type: :legacy
       ] ++ overrides
+    )
+  end
+
+  defp blob_tx(hashes) do
+    valid_tx(
+      type: :eip4844,
+      gas_price: 0,
+      max_fee_per_gas: 10,
+      max_priority_fee_per_gas: 1,
+      blob_hashes: hashes,
+      max_fee_per_blob_gas: 1
     )
   end
 

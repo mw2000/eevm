@@ -2,9 +2,6 @@
 # Each line is a directory (dir/), a fixture file, a test (file#name), or a case.
 # Regenerate after fixing failures with:
 #   mix eevm.state_tests 'test/fixtures/eest/fixtures/state_tests/**/*.json' --timeout 180000 --write-known-failures test/fixtures/eest/known_failures_state.txt
-state_tests/cancun/eip4844_blobs/test_invalid_blob_hash_versioning_single_tx.json
-state_tests/cancun/eip4844_blobs/test_invalid_tx_blob_count.json#tests/cancun/eip4844_blobs/test_blob_txs.py::test_invalid_tx_blob_count[fork_Cancun-too_many_blobs-state_test]
-state_tests/cancun/eip4844_blobs/test_invalid_tx_blob_count.json#tests/cancun/eip4844_blobs/test_blob_txs.py::test_invalid_tx_blob_count[fork_Prague-too_many_blobs-state_test]
 state_tests/frontier/create/test_create_deposit_oog.json#tests/frontier/create/test_create_deposit_oog.py::test_create_deposit_oog[fork_Frontier-create_opcode_CREATE-evm_code_type_LEGACY-state_test]
 state_tests/frontier/precompiles/test_precompiles.json#tests/frontier/precompiles/test_ecrecover.py::test_precompiles[fork_Frontier-state_test-13u1_eq_u2_R_eq_13G]
 state_tests/frontier/precompiles/test_precompiles.json#tests/frontier/precompiles/test_ecrecover.py::test_precompiles[fork_Frontier-state_test-13u1_eq_u2_R_eq_neg_13G]
@@ -117,7 +114,6 @@ state_tests/prague/eip2537_bls_12_381_precompiles/test_invalid.json#tests/prague
 state_tests/prague/eip2537_bls_12_381_precompiles/test_invalid.json#tests/prague/eip2537_bls_12_381_precompiles/test_bls12_g2add.py::test_invalid[fork_Prague-state_test--rand_not_on_curve_1_plus_point-]
 state_tests/prague/eip2537_bls_12_381_precompiles/test_invalid.json#tests/prague/eip2537_bls_12_381_precompiles/test_bls12_g2add.py::test_invalid[fork_Prague-state_test--rand_not_on_curve_2_plus_not_in_subgroup_0-]
 state_tests/prague/eip2537_bls_12_381_precompiles/test_invalid.json#tests/prague/eip2537_bls_12_381_precompiles/test_bls12_g2add.py::test_invalid[fork_Prague-state_test--rand_not_on_curve_3_plus_4-]
-state_tests/static/state_tests/Cancun/stEIP4844_blobtransactions/wrongBlobhashVersion.json
 state_tests/static/state_tests/stBadOpcode/invalidAddr.json#tests/static/state_tests/stBadOpcode/invalidAddrFiller.yml::invalidAddr[fork_Cancun-state_test-ok-10]
 state_tests/static/state_tests/stBadOpcode/invalidAddr.json#tests/static/state_tests/stBadOpcode/invalidAddrFiller.yml::invalidAddr[fork_Cancun-state_test-ok-13]
 state_tests/static/state_tests/stBadOpcode/invalidAddr.json#tests/static/state_tests/stBadOpcode/invalidAddrFiller.yml::invalidAddr[fork_Cancun-state_test-ok-14]
@@ -254,5 +250,4 @@ state_tests/static/state_tests/stBadOpcode/invalidAddr.json#tests/static/state_t
 state_tests/static/state_tests/stBadOpcode/invalidAddr.json#tests/static/state_tests/stBadOpcode/invalidAddrFiller.yml::invalidAddr[fork_Prague-state_test-ok-85]
 state_tests/static/state_tests/stBadOpcode/invalidAddr.json#tests/static/state_tests/stBadOpcode/invalidAddrFiller.yml::invalidAddr[fork_Prague-state_test-ok-8]
 state_tests/static/state_tests/stBadOpcode/invalidAddr.json#tests/static/state_tests/stBadOpcode/invalidAddrFiller.yml::invalidAddr[fork_Prague-state_test-ok-9]
-state_tests/static/state_tests/stEIP1559/lowGasPriceOldTypes.json
 state_tests/static/state_tests/stSystemOperationsTest/suicideCallerAddresTooBigLeft.json

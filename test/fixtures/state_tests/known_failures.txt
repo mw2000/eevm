@@ -2,13 +2,6 @@
 # Each line is a directory (dir/), a fixture file, a test (file#name), or a case.
 # Regenerate after fixing failures with:
 #   mix eevm.state_tests --timeout 180000 --write-known-failures test/fixtures/state_tests/known_failures.txt
-GeneralStateTests/Cancun/stEIP4844-blobtransactions/blobhashListBounds10.json
-GeneralStateTests/Cancun/stEIP4844-blobtransactions/blobhashListBounds7.json#blobhashListBounds7@cancun:d0g0v0
-GeneralStateTests/Cancun/stEIP4844-blobtransactions/blobhashListBounds8.json#blobhashListBounds8@cancun:d0g0v0
-GeneralStateTests/Cancun/stEIP4844-blobtransactions/blobhashListBounds9.json#blobhashListBounds9@cancun:d0g0v0
-GeneralStateTests/Cancun/stEIP4844-blobtransactions/wrongBlobhashVersion.json
-GeneralStateTests/Pyspecs/cancun/eip4844_blobs/invalid_blob_hash_versioning_single_tx.json
-GeneralStateTests/Pyspecs/cancun/eip4844_blobs/invalid_tx_blob_count.json#src/GeneralStateTestsFiller/Pyspecs/cancun/eip4844_blobs/test_blob_txs.py::test_invalid_tx_blob_count[fork_Cancun-too_many_blobs-state_test]
 GeneralStateTests/stBadOpcode/invalidAddr.json#invalidAddr@cancun:d12g0v0
 GeneralStateTests/stBadOpcode/invalidAddr.json#invalidAddr@cancun:d13g0v0
 GeneralStateTests/stBadOpcode/invalidAddr.json#invalidAddr@cancun:d14g0v0
@@ -147,7 +140,6 @@ GeneralStateTests/stBadOpcode/invalidAddr.json#invalidAddr@prague:d8g0v0
 GeneralStateTests/stBadOpcode/invalidAddr.json#invalidAddr@prague:d9g0v0
 GeneralStateTests/stBugs/randomStatetestDEFAULT-Tue_07_58_41-15153-575192.json
 GeneralStateTests/stBugs/randomStatetestDEFAULT-Tue_07_58_41-15153-575192_london.json
-GeneralStateTests/stEIP1559/lowGasPriceOldTypes.json
 GeneralStateTests/stSystemOperationsTest/CallToNameRegistratorAddressTooBigLeft.json
 GeneralStateTests/stSystemOperationsTest/callcodeToNameRegistratorAddresTooBigLeft.json
 GeneralStateTests/stSystemOperationsTest/suicideCallerAddresTooBigLeft.json

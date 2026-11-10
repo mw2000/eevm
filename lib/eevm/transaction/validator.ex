@@ -8,8 +8,11 @@ defmodule EEVM.Transaction.Validator do
 
   alias EEVM.{BlockEnv, Database, Delegation, TxEnv}
   alias EEVM.Error
+  alias EEVM.Gas.Blob
   alias EEVM.HardforkConfig
   alias EEVM.Transaction.IntrinsicGas
+
+  import Bitwise
 
   @blob_gas_per_blob 131_072
   @max_initcode_size 49_152
@@ -18,6 +21,10 @@ defmodule EEVM.Transaction.Validator do
   @max_uint8 0xFF
   @max_uint64 0xFFFFFFFFFFFFFFFF
   @max_uint256 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF
+  # EIP-4844: a blob versioned hash starts with VERSIONED_HASH_VERSION_KZG.
+  @versioned_hash_version_kzg 0x01
+  # EIP-7594: at most this many blobs per transaction.
+  @max_blobs_per_tx 6
 
   @doc "Validate under the default hardfork; see `validate/4`."
   @spec validate(TxEnv.t(), Database.t(), BlockEnv.t()) ::
@@ -44,10 +51,10 @@ defmodule EEVM.Transaction.Validator do
          :ok <- validate_gas_limit_cap(tx, hardfork),
          :ok <- validate_gas_limit_vs_block(tx, block),
          :ok <- validate_nonce(tx, db),
-         :ok <- validate_eip1559_fees(tx, block),
+         :ok <- validate_eip1559_fees(tx, block, hardfork),
          :ok <- validate_balance(tx, db),
          :ok <- validate_sender_is_eoa(tx, db),
-         :ok <- validate_blob_tx(tx, block) do
+         :ok <- validate_blob_tx(tx, block, hardfork) do
       validate_initcode_size(tx)
     end
   end
@@ -114,7 +121,7 @@ defmodule EEVM.Transaction.Validator do
     end
   end
 
-  defp validate_eip1559_fees(%TxEnv{type: type} = tx, %BlockEnv{} = block)
+  defp validate_eip1559_fees(%TxEnv{type: type} = tx, %BlockEnv{} = block, _hardfork)
        when type in [:eip1559, :eip4844, :eip7702] do
     cond do
       tx.max_fee_per_gas < tx.max_priority_fee_per_gas ->
@@ -128,7 +135,13 @@ defmodule EEVM.Transaction.Validator do
     end
   end
 
-  defp validate_eip1559_fees(%TxEnv{}, %BlockEnv{}), do: :ok
+  # From London, a legacy or EIP-2930 transaction's gas price must cover the
+  # base fee too (execution-specs London `check_transaction`).
+  defp validate_eip1559_fees(%TxEnv{} = tx, %BlockEnv{} = block, %HardforkConfig{} = hardfork) do
+    if HardforkConfig.enabled?(hardfork, :eip_1559) and tx.gas_price < block.base_fee,
+      do: {:error, :max_fee_below_basefee},
+      else: :ok
+  end
 
   defp validate_balance(%TxEnv{} = tx, %Database{} = db) do
     sender_balance = Database.get_balance(db, tx.origin)
@@ -148,13 +161,25 @@ defmodule EEVM.Transaction.Validator do
       else: {:error, :sender_not_eoa}
   end
 
-  defp validate_blob_tx(%TxEnv{type: :eip4844} = tx, %BlockEnv{} = block) do
+  # EIP-4844 and EIP-7594 rules from execution-specs `check_transaction`.
+  defp validate_blob_tx(%TxEnv{type: :eip4844} = tx, %BlockEnv{} = block, hardfork) do
+    blob_count = length(tx.blob_hashes)
+
     cond do
       tx.to == nil ->
         {:error, :blob_tx_no_creation}
 
-      tx.blob_hashes == [] ->
+      blob_count == 0 ->
         {:error, :no_blob_data}
+
+      blob_count * @blob_gas_per_blob > Blob.max_blob_gas_per_block(hardfork) ->
+        {:error, :too_many_blobs}
+
+      HardforkConfig.enabled?(hardfork, :eip_7594) and blob_count > @max_blobs_per_tx ->
+        {:error, :too_many_blobs}
+
+      not Enum.all?(tx.blob_hashes, &(&1 >>> 248 == @versioned_hash_version_kzg)) ->
+        {:error, :invalid_versioned_hash}
 
       tx.max_fee_per_blob_gas < block.blob_base_fee ->
         {:error, :blob_fee_too_low}
@@ -164,7 +189,7 @@ defmodule EEVM.Transaction.Validator do
     end
   end
 
-  defp validate_blob_tx(%TxEnv{}, %BlockEnv{}), do: :ok
+  defp validate_blob_tx(%TxEnv{}, %BlockEnv{}, _hardfork), do: :ok
 
   defp validate_initcode_size(%TxEnv{to: nil, data: data}) do
     if byte_size(data) <= @max_initcode_size,
