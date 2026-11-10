@@ -22,7 +22,8 @@ minor version) before removing anything (#150).
   matching in heads (see `execute/2` in each `Instructions.*` module and
   `Gas.Static.static_cost/1`), not `case` ladders on opcode bytes.
 - Keep functions small and pure. Every step takes a `MachineState` and returns a
-  new one. No processes, ETS, or process dictionary in execution code.
+  new one. `test/purity_test.exs` keeps `lib/` free of ETS, processes, the
+  process dictionary, files, OS calls, clocks, NIFs, and `:crypto`.
 - Public functions return `{:ok, value}` / `{:error, reason}`; opcode handlers
   return `{:ok, state}` or `{:error, reason, state}`. Chain fallible steps with
   `with`. Raise only for programmer errors. Catalogue new error atoms, with a
@@ -45,13 +46,9 @@ minor version) before removing anything (#150).
   (`MachineState.update_frame/2`).
 - Keep disabled features free: the tracer costs one pattern match when
   `tracer: nil`. Follow that model for anything optional.
-- `EEVM.Interpreter.Memory` currently stores bytes in a map, which is slow.
-  Don't copy that pattern.
 - Benchmark any change to the interpreter, stack, memory, gas, or opcode
-  handlers. The repo has no benchmark harness yet: time a representative workload
-  (for example a loop-heavy contract via `EEVM.run/2`) before and after with
-  `:timer.tc` or Benchee in a scratch script, on the same machine, and put the
-  numbers in the commit message.
+  handlers: run `MIX_ENV=prod mix run bench/interpreter_bench.exs` before and
+  after on the same machine and put the numbers in the commit message.
 
 ## Layout
 
