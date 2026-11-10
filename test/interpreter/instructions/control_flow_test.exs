@@ -68,7 +68,7 @@ defmodule EEVM.Interpreter.Instructions.ControlFlowTest do
       jumpi = <<0x60, 1, 0x60, 6, 0x57, 0x60, 0x5B, 0x00>>
 
       for code <- [jump, jumpi] do
-        result = EEVM.execute(code, gas: 1000)
+        result = run_code(code, gas: 1000)
         assert result.status == {:error, :invalid_jump_destination}
         assert result.frame.gas == 0
       end
@@ -77,9 +77,9 @@ defmodule EEVM.Interpreter.Instructions.ControlFlowTest do
     test "a JUMPDEST right after PUSH32 data is valid" do
       # PUSH1 36, JUMP, PUSH32 (0x5B x 32), JUMPDEST (pc 36), PUSH1 7, STOP
       code = <<0x60, 36, 0x56, 0x7F>> <> :binary.copy(<<0x5B>>, 32) <> <<0x5B, 0x60, 7, 0x00>>
-      result = EEVM.execute(code)
+      result = run_code(code)
       assert result.status == :stopped
-      assert EEVM.stack_values(result) == [7]
+      assert stack_values(result) == [7]
     end
 
     test "JUMPI not taken" do
