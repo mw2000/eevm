@@ -23,7 +23,9 @@ minor version) before removing anything (#150).
   `Gas.Static.static_cost/1`), not `case` ladders on opcode bytes.
 - Keep functions small and pure. Every step takes a `MachineState` and returns a
   new one. `test/purity_test.exs` keeps `lib/` free of ETS, processes, the
-  process dictionary, files, OS calls, clocks, NIFs, and `:crypto`.
+  process dictionary, files, OS calls, clocks, NIFs, and `:crypto`. Logger is
+  allowed only at the edges (Database adapters, Mix tasks, opt-in
+  diagnostics), never on hot paths.
 - Public functions return `{:ok, value}` / `{:error, reason}`; opcode handlers
   return `{:ok, state}` or `{:error, reason, state}`. Chain fallible steps with
   `with`. Raise only for programmer errors. Catalogue new error atoms, with a

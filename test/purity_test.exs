@@ -125,6 +125,12 @@ defmodule EEVM.PurityTest do
     assert stale == [], "Remove these @allowed entries; nothing needs them: #{inspect(stale)}"
   end
 
+  # :crypto leaves extra_applications together with its last caller (#207).
+  test ":crypto is in extra_applications exactly while lib/ calls it" do
+    calls_crypto? = Enum.any?(violations(), &match?({_caller, :crypto, _call}, &1))
+    assert :crypto in Application.spec(:eevm, :applications) == calls_crypto?
+  end
+
   defp violations do
     for module <- lib_modules(),
         {target, fun, arity} = call <- imports(module) ++ fun_refs(module),
