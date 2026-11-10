@@ -223,7 +223,8 @@ defmodule EEVM.Handler.Execution do
     deposit_cost = size * @code_deposit_gas_per_byte
 
     cond do
-      size > @max_code_size ->
+      # EIP-170 (Spurious Dragon) caps runtime code at 24,576 bytes.
+      size > @max_code_size and HardforkConfig.enabled?(state.env.config.hardfork, :eip_170) ->
         {:error, MachineState.halt(state, {:error, :code_size_limit_exceeded})}
 
       # Before EIP-2 (Homestead), a deposit the remaining gas can't cover

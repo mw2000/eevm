@@ -165,6 +165,30 @@ defmodule EEVM.HandlerTest do
       assert result.contract_address == nil
       assert result.gas_used == 62_000
     end
+
+    # Initcode PUSH2 24,577 PUSH1 0 RETURN returns one byte more than the
+    # EIP-170 limit of 24,576.
+    @oversized_initcode <<0x61, 0x60, 0x01, 0x60, 0x00, 0xF3>>
+
+    test "a creation tx can deploy code over 24,576 bytes until EIP-170" do
+      tx = pre_eip155_legacy(to: nil, data: @oversized_initcode, gas_limit: 5_000_000)
+
+      assert {:ok, %TransactionResult{status: :success} = result} =
+               run_fork(tx, db_with_sender(), :homestead)
+
+      assert byte_size(Database.get_code(result.db, result.contract_address)) == 24_577
+      # Intrinsic 21,000 + 32,000 (EIP-2) + 5 * 68 + 4 = 53,344; the initcode's
+      # 6 gas of opcodes and 3,462 of memory (769 words: 769 * 3 + 769² / 512);
+      # and the deposit, 24,577 * 200 = 4,915,400.
+      assert result.gas_used == 53_344 + 6 + 3_462 + 4_915_400
+
+      assert {:ok, %TransactionResult{} = result} =
+               run_fork(tx, db_with_sender(), :spurious_dragon)
+
+      assert result.status == {:halt, :code_size_limit_exceeded}
+      assert result.contract_address == nil
+      assert result.gas_used == 5_000_000
+    end
   end
 
   describe "execute/4 — chain id" do
