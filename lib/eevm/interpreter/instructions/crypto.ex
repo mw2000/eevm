@@ -1,5 +1,6 @@
 defmodule EEVM.Interpreter.Instructions.Crypto do
   @moduledoc "EVM cryptographic opcode: KECCAK256 (0x20)."
+  alias EEVM.Crypto.Keccak
   alias EEVM.Gas.Dynamic
   alias EEVM.Gas.Memory, as: GasMemory
   alias EEVM.Interpreter.{MachineState, Memory, Stack}
@@ -41,9 +42,9 @@ defmodule EEVM.Interpreter.Instructions.Crypto do
               {<<>>, state_after_gas.frame.memory}
             end
 
-          # ExKeccak.hash_256 returns a raw 32-byte binary. The pattern
+          # Keccak.hash_256 returns a raw 32-byte binary. The pattern
           # `<<hash_int::unsigned-big-256>>` decodes it to a uint256 integer.
-          hash = ExKeccak.hash_256(data)
+          hash = Keccak.hash_256(data)
           <<hash_int::unsigned-big-256>> = hash
           {:ok, new_stack} = Stack.push(s2, hash_int)
 

@@ -11,6 +11,7 @@ defmodule EEVM.MPT.Trie do
   specs, producing roots compatible with geth/revm for the same inputs.
   """
 
+  alias EEVM.Crypto.Keccak
   alias EEVM.MPT.HexPrefix
 
   @typedoc "Nibble values used for trie paths."
@@ -55,7 +56,7 @@ defmodule EEVM.MPT.Trie do
   @spec secure_root_hash([entry()]) :: binary()
   def secure_root_hash(entries) when is_list(entries) do
     secure_entries =
-      Enum.map(entries, fn {key, value} -> {ExKeccak.hash_256(key), value} end)
+      Enum.map(entries, fn {key, value} -> {Keccak.hash_256(key), value} end)
 
     root_hash(secure_entries)
   end
@@ -66,7 +67,7 @@ defmodule EEVM.MPT.Trie do
   defp root_from_node(node) do
     node
     |> encode_node_rlp()
-    |> ExKeccak.hash_256()
+    |> Keccak.hash_256()
   end
 
   @spec build_kv_map([entry()]) :: %{[nibble()] => binary()}
@@ -133,7 +134,7 @@ defmodule EEVM.MPT.Trie do
     if byte_size(encoded) < 32 do
       {:raw, encoded}
     else
-      ExKeccak.hash_256(encoded)
+      Keccak.hash_256(encoded)
     end
   end
 

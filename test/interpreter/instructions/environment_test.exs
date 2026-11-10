@@ -4,6 +4,7 @@ defmodule EEVM.Interpreter.Instructions.EnvironmentTest do
 
   alias EEVM.BlockEnv
   alias EEVM.Context.Contract
+  alias EEVM.Crypto.Keccak
   alias EEVM.Database.InMemory
   alias EEVM.Gas.{Dynamic, Memory, Static}
   alias EEVM.TxEnv
@@ -436,7 +437,7 @@ defmodule EEVM.Interpreter.Instructions.EnvironmentTest do
 
       result = EEVM.Interpreter.run(code, db: world_state)
 
-      <<expected::unsigned-big-256>> = ExKeccak.hash_256(<<>>)
+      <<expected::unsigned-big-256>> = Keccak.hash_256(<<>>)
       assert stack_values(result) == [expected]
     end
 
@@ -446,7 +447,7 @@ defmodule EEVM.Interpreter.Instructions.EnvironmentTest do
 
       result = EEVM.Interpreter.run(code, db: world_state)
 
-      <<expected::unsigned-big-256>> = ExKeccak.hash_256(<<0xAA, 0xBB, 0xCC>>)
+      <<expected::unsigned-big-256>> = Keccak.hash_256(<<0xAA, 0xBB, 0xCC>>)
       assert stack_values(result) == [expected]
     end
   end

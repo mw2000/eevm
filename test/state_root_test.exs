@@ -1,6 +1,7 @@
 defmodule EEVM.StateRootTest do
   use ExUnit.Case, async: true
 
+  alias EEVM.Crypto.Keccak
   alias EEVM.Database.InMemory
   alias EEVM.MPT.Trie
   alias EEVM.StateRoot
@@ -45,7 +46,7 @@ defmodule EEVM.StateRootTest do
       InMemory.new(accounts: %{address => %{balance: 7, nonce: 3, code: <<0x60, 0x00, 0x00>>}})
 
     storage_root = Trie.secure_root_hash([])
-    code_hash = ExKeccak.hash_256(<<0x60, 0x00, 0x00>>)
+    code_hash = Keccak.hash_256(<<0x60, 0x00, 0x00>>)
     account_value = ExRLP.encode([3, 7, storage_root, code_hash])
 
     expected = Trie.secure_root_hash([{encode_uint(address, 20), account_value}])
@@ -64,7 +65,7 @@ defmodule EEVM.StateRootTest do
       )
 
     storage_root = Trie.secure_root_hash([{encode_uint(9, 32), ExRLP.encode(1)}])
-    code_hash = ExKeccak.hash_256(<<>>)
+    code_hash = Keccak.hash_256(<<>>)
     account_value = ExRLP.encode([0, 0, storage_root, code_hash])
 
     expected = Trie.secure_root_hash([{encode_uint(address, 20), account_value}])

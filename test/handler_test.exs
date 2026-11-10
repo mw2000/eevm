@@ -3,6 +3,7 @@ defmodule EEVM.HandlerTest do
 
   alias EEVM.Block.{Bloom, Receipt}
   alias EEVM.{BlockEnv, Config, Database, Delegation, Handler, Tracer, TransactionResult}
+  alias EEVM.Crypto.Keccak
   alias EEVM.Database.InMemory
   alias EEVM.Transaction.{Authorization, Blob, Envelope, FeeMarket, Legacy, SetCode, Signer}
 
@@ -327,7 +328,7 @@ defmodule EEVM.HandlerTest do
     test "creating over an account with code fails and consumes all gas (EIP-684)" do
       # keccak256(rlp([sender, 0]))[12:]: 0xd6 = list of 22 bytes, 0x94 = 20-byte string.
       <<_::binary-size(12), target::unsigned-big-160>> =
-        ExKeccak.hash_256(<<0xD6, 0x94, sender_address()::unsigned-big-160, 0x80>>)
+        Keccak.hash_256(<<0xD6, 0x94, sender_address()::unsigned-big-160, 0x80>>)
 
       db = Database.put_code(db_with_sender(balance: 10_000_000), target, <<0xFE>>)
       # Initcode that would deploy a STOP byte if it ran.
@@ -666,7 +667,7 @@ defmodule EEVM.HandlerTest do
     message =
       ExRLP.encode([encode_uint(chain_id), <<address::unsigned-big-160>>, encode_uint(nonce)])
 
-    {y_parity, r, s} = sign(ExKeccak.hash_256(<<0x05>> <> message), @authority_key)
+    {y_parity, r, s} = sign(Keccak.hash_256(<<0x05>> <> message), @authority_key)
 
     %Authorization{
       chain_id: chain_id,
@@ -759,7 +760,7 @@ defmodule EEVM.HandlerTest do
 
   defp address_of(private_key) do
     {:ok, <<4, key::binary-size(64)>>} = ExSecp256k1.create_public_key(private_key)
-    <<_::binary-size(12), address::binary-size(20)>> = ExKeccak.hash_256(key)
+    <<_::binary-size(12), address::binary-size(20)>> = Keccak.hash_256(key)
     :binary.decode_unsigned(address)
   end
 

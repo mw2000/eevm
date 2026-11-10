@@ -2,6 +2,8 @@ defmodule EEVM.Interpreter.Instructions.CryptoTest do
   use ExUnit.Case, async: true
   import EEVM.TestSupport.MachineHelpers
 
+  alias EEVM.Crypto.Keccak
+
   describe "KECCAK256" do
     test "hashes empty data" do
       # PUSH1 0 (length), PUSH1 0 (offset), KECCAK256, STOP
@@ -9,7 +11,7 @@ defmodule EEVM.Interpreter.Instructions.CryptoTest do
       result = run_code(code)
       assert result.status == :stopped
       # Keccak-256 of empty data
-      expected = ExKeccak.hash_256(<<>>)
+      expected = Keccak.hash_256(<<>>)
       <<expected_int::unsigned-big-256>> = expected
       assert stack_values(result) == [expected_int]
     end
@@ -20,7 +22,7 @@ defmodule EEVM.Interpreter.Instructions.CryptoTest do
       code = <<0x60, 0xFF, 0x60, 0, 0x53, 0x60, 1, 0x60, 0, 0x20, 0x00>>
       result = run_code(code)
       assert result.status == :stopped
-      expected = ExKeccak.hash_256(<<0xFF>>)
+      expected = Keccak.hash_256(<<0xFF>>)
       <<expected_int::unsigned-big-256>> = expected
       assert stack_values(result) == [expected_int]
     end

@@ -16,6 +16,7 @@ defmodule EEVM.Transaction.Signer do
   """
 
   alias EEVM.{Config, Transaction}
+  alias EEVM.Crypto.Keccak
   alias EEVM.Transaction.{AccessList, Authorization, Blob, FeeMarket, Legacy, SetCode}
 
   @secp256k1n 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141
@@ -72,7 +73,7 @@ defmodule EEVM.Transaction.Signer do
       tx.data
     ]
     |> ExRLP.encode()
-    |> ExKeccak.hash_256()
+    |> Keccak.hash_256()
   end
 
   def signing_hash(%Legacy{} = tx, chain_id) do
@@ -88,7 +89,7 @@ defmodule EEVM.Transaction.Signer do
       <<>>
     ]
     |> ExRLP.encode()
-    |> ExKeccak.hash_256()
+    |> Keccak.hash_256()
   end
 
   def signing_hash(%AccessList{} = tx, _chain_id) do
@@ -103,7 +104,7 @@ defmodule EEVM.Transaction.Signer do
       Transaction.access_list_rlp(tx.access_list)
     ]
 
-    ExKeccak.hash_256(<<0x01>> <> ExRLP.encode(payload))
+    Keccak.hash_256(<<0x01>> <> ExRLP.encode(payload))
   end
 
   def signing_hash(%FeeMarket{} = tx, _chain_id) do
@@ -119,7 +120,7 @@ defmodule EEVM.Transaction.Signer do
       Transaction.access_list_rlp(tx.access_list)
     ]
 
-    ExKeccak.hash_256(<<0x02>> <> ExRLP.encode(payload))
+    Keccak.hash_256(<<0x02>> <> ExRLP.encode(payload))
   end
 
   def signing_hash(%Blob{} = tx, _chain_id) do
@@ -137,7 +138,7 @@ defmodule EEVM.Transaction.Signer do
       tx.blob_versioned_hashes
     ]
 
-    ExKeccak.hash_256(<<0x03>> <> ExRLP.encode(payload))
+    Keccak.hash_256(<<0x03>> <> ExRLP.encode(payload))
   end
 
   def signing_hash(%SetCode{} = tx, _chain_id) do
@@ -154,7 +155,7 @@ defmodule EEVM.Transaction.Signer do
       Enum.map(tx.authorization_list, &authorization_fields/1)
     ]
 
-    ExKeccak.hash_256(<<0x04>> <> ExRLP.encode(payload))
+    Keccak.hash_256(<<0x04>> <> ExRLP.encode(payload))
   end
 
   @doc "Recover the sender address, as an integer, from a signed transaction."
@@ -182,7 +183,7 @@ defmodule EEVM.Transaction.Signer do
         encode_integer(auth.nonce)
       ])
 
-    recover(ExKeccak.hash_256(<<0x05>> <> message), y_parity, auth.r, auth.s)
+    recover(Keccak.hash_256(<<0x05>> <> message), y_parity, auth.r, auth.s)
   end
 
   def recover_authority(%Authorization{}), do: {:error, :invalid_signature}
@@ -231,7 +232,7 @@ defmodule EEVM.Transaction.Signer do
   defp public_key_to_address(<<4, key::binary-size(64)>>), do: public_key_to_address(key)
 
   defp public_key_to_address(key) when is_binary(key) and byte_size(key) == 64 do
-    <<_::binary-size(12), address::unsigned-big-160>> = ExKeccak.hash_256(key)
+    <<_::binary-size(12), address::unsigned-big-160>> = Keccak.hash_256(key)
     {:ok, address}
   end
 

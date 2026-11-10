@@ -11,6 +11,7 @@ defmodule EEVM.Interpreter.Instructions.Environment.External do
   """
 
   alias EEVM.Context.Contract
+  alias EEVM.Crypto.Keccak
   alias EEVM.Database
   alias EEVM.Gas.Access
   alias EEVM.Gas.Dynamic
@@ -136,7 +137,7 @@ defmodule EEVM.Interpreter.Instructions.Environment.External do
           hash_value =
             if Database.account_exists?(state_after_gas.db, addr) do
               code = Database.get_code(state_after_gas.db, addr)
-              hash = ExKeccak.hash_256(code)
+              hash = Keccak.hash_256(code)
               <<hash_int::unsigned-big-256>> = hash
               hash_int
             else

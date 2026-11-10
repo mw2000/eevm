@@ -5,6 +5,7 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
   import EEVM.TestSupport.BytecodeHelpers
 
   alias EEVM.Context.Contract
+  alias EEVM.Crypto.Keccak
   alias EEVM.Database
   alias EEVM.Database.InMemory
   alias EEVM.Interpreter.Memory
@@ -211,7 +212,7 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
     # after the balance, nonce, and depth checks, before the collision check.
     test "CREATE warms the new address once past the balance check (EIP-2929)" do
       # CREATE(value, 0, 0) with empty initcode from address 0 at nonce 0.
-      <<_::96, created::160>> = ExKeccak.hash_256(ExRLP.encode([<<0::160>>, <<>>]))
+      <<_::96, created::160>> = Keccak.hash_256(ExRLP.encode([<<0::160>>, <<>>]))
       balance_of = fn address -> <<0x50, 0x73, address::160, 0x31, 0x00>> end
 
       # {value, balance, warm?}: the creation succeeds, or fails on its balance.
@@ -263,9 +264,9 @@ defmodule EEVM.Interpreter.Instructions.SystemTest do
   # EIP-1014: keccak256(0xff ++ sender ++ salt ++ keccak256(init_code))[12:]
   defp create2_address(sender, salt, init_code) do
     <<_::binary-size(12), address::unsigned-big-160>> =
-      ExKeccak.hash_256(
+      Keccak.hash_256(
         <<0xFF, sender::unsigned-big-160, salt::unsigned-big-256,
-          ExKeccak.hash_256(init_code)::binary>>
+          Keccak.hash_256(init_code)::binary>>
       )
 
     address

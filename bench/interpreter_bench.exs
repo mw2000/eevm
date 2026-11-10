@@ -277,10 +277,13 @@ erc20 =
 
 private_key = :crypto.hash(:sha256, "eevm benchmark sender")
 {:ok, <<4, public_key::binary-64>>} = ExSecp256k1.create_public_key(private_key)
-<<_::binary-12, sender::160>> = ExKeccak.hash_256(public_key)
+<<_::binary-12, sender::160>> = EEVM.Crypto.Keccak.hash_256(public_key)
 token = 0x70CE
 recipient = 0xB0B
-balance_slot = fn owner -> :binary.decode_unsigned(ExKeccak.hash_256(<<owner::256, 0::256>>)) end
+
+balance_slot = fn owner ->
+  :binary.decode_unsigned(EEVM.Crypto.Keccak.hash_256(<<owner::256, 0::256>>))
+end
 
 erc20_db =
   InMemory.new(

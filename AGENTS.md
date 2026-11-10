@@ -7,7 +7,7 @@ How to change eevm.
 eevm is a production-grade Ethereum Virtual Machine written entirely in Elixir.
 Never wrap or call out to revm, evmone, or any other EVM. The only native code is
 the Rustler NIF in `native/eevm_bls`, and it does BLS12-381 curve arithmetic
-only. New crypto that Erlang/OTP or existing deps (`ex_keccak`, `ex_secp256k1`)
+only. New crypto that Erlang/OTP or existing deps (`ex_secp256k1`)
 cannot provide needs a good reason before it becomes another NIF.
 
 Developers embed eevm as a library. In `docs/0` of `mix.exs`, the groups

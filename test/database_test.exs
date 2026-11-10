@@ -2,6 +2,7 @@ defmodule EEVM.DatabaseTest do
   use ExUnit.Case, async: true
 
   alias EEVM.{BlockEnv, Database, StateChanges}
+  alias EEVM.Crypto.Keccak
   alias EEVM.Database.InMemory
   alias EEVM.Transaction.{Legacy, Signer}
 
@@ -59,7 +60,7 @@ defmodule EEVM.DatabaseTest do
 
   defp sender do
     {:ok, <<4, key::binary-size(64)>>} = ExSecp256k1.create_public_key(@private_key)
-    <<_::binary-size(12), address::unsigned-big-160>> = ExKeccak.hash_256(key)
+    <<_::binary-size(12), address::unsigned-big-160>> = Keccak.hash_256(key)
     address
   end
 
@@ -332,7 +333,7 @@ defmodule EEVM.DatabaseTest do
 
     test "code is fetched by hash only when it isn't returned with the account" do
       code = <<0x60, 0x07, 0x00>>
-      hash = ExKeccak.hash_256(code)
+      hash = Keccak.hash_256(code)
 
       state = %{
         {:account, 0xC} => %{balance: 0, nonce: 1, code_hash: hash},

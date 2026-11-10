@@ -3,6 +3,7 @@ defmodule EEVM.BlockTest do
 
   alias EEVM.{Block, Database}
   alias EEVM.Block.{Header, Requests, Withdrawal}
+  alias EEVM.Crypto.Keccak
   alias EEVM.Database.InMemory
   alias EEVM.MPT.Trie
   alias EEVM.Transaction.{Envelope, FeeMarket, Legacy, Signer}
@@ -368,7 +369,7 @@ defmodule EEVM.BlockTest do
 
   defp sender do
     {:ok, <<4, public_key::binary-size(64)>>} = ExSecp256k1.create_public_key(@private_key)
-    <<_::binary-size(12), sender::unsigned-big-160>> = ExKeccak.hash_256(public_key)
+    <<_::binary-size(12), sender::unsigned-big-160>> = Keccak.hash_256(public_key)
     sender
   end
 

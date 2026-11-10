@@ -2,6 +2,7 @@ defmodule EEVM.TestSupport.StateTestRunner do
   @moduledoc "Executes a single StateTest case and validates the post-state root and logs hash."
 
   alias EEVM.{Config, StateRoot}
+  alias EEVM.Crypto.Keccak
   alias EEVM.Database.InMemory
   alias EEVM.TestSupport.{StateTestFixture, TxExecutor}
   alias EEVM.TestSupport.StateTestFixture.{Case, PostExpectation}
@@ -65,7 +66,7 @@ defmodule EEVM.TestSupport.StateTestRunner do
       [encode_uint(address, 20), Enum.map(topics, &encode_uint(&1, 32)), data]
     end)
     |> ExRLP.encode()
-    |> ExKeccak.hash_256()
+    |> Keccak.hash_256()
   end
 
   defp encode_uint(value, bytes) when is_integer(value) and value >= 0 do

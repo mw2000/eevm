@@ -8,6 +8,8 @@ defmodule EEVM.Block.Bloom do
 
   import Bitwise
 
+  alias EEVM.Crypto.Keccak
+
   @type log_entry :: %{address: non_neg_integer(), data: binary(), topics: [non_neg_integer()]}
   @type t :: <<_::2048>>
 
@@ -24,7 +26,7 @@ defmodule EEVM.Block.Bloom do
   """
   @spec add(t(), binary()) :: t()
   def add(bloom, item) when is_binary(bloom) and byte_size(bloom) == 256 and is_binary(item) do
-    <<b0, b1, b2, b3, b4, b5, _::binary>> = ExKeccak.hash_256(item)
+    <<b0, b1, b2, b3, b4, b5, _::binary>> = Keccak.hash_256(item)
 
     bloom
     |> set_bit(bit_position(b0, b1))
@@ -52,7 +54,7 @@ defmodule EEVM.Block.Bloom do
   @spec contains?(t(), binary()) :: boolean()
   def contains?(bloom, item)
       when is_binary(bloom) and byte_size(bloom) == 256 and is_binary(item) do
-    <<b0, b1, b2, b3, b4, b5, _::binary>> = ExKeccak.hash_256(item)
+    <<b0, b1, b2, b3, b4, b5, _::binary>> = Keccak.hash_256(item)
 
     bit_set?(bloom, bit_position(b0, b1)) and
       bit_set?(bloom, bit_position(b2, b3)) and

@@ -6,6 +6,7 @@ defmodule EEVM.StateRoot do
   `c:EEVM.Database.accounts/1` and `c:EEVM.Database.storage_slots/2`.
   """
 
+  alias EEVM.Crypto.Keccak
   alias EEVM.Database
   alias EEVM.MPT.Trie
 
@@ -45,7 +46,7 @@ defmodule EEVM.StateRoot do
     nonce = Database.get_nonce(db, address)
     balance = Database.get_balance(db, address)
     storage_root = compute_storage_root(db, address)
-    code_hash = Database.get_code_hash(db, address) || ExKeccak.hash_256(<<>>)
+    code_hash = Database.get_code_hash(db, address) || Keccak.hash_256(<<>>)
 
     ExRLP.encode([nonce, balance, storage_root, code_hash])
   end

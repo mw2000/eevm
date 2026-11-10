@@ -47,6 +47,7 @@ defmodule EEVM.Block do
 
   alias EEVM.Block.{Header, HeaderValidator, Processor, Requests, Result, Withdrawal}
   alias EEVM.{BlockEnv, Config, Database, HardforkConfig, StateRoot, TransactionResult}
+  alias EEVM.Crypto.Keccak
   alias EEVM.Gas.Blob, as: BlobGas
   alias EEVM.Handler
   alias EEVM.Handler.Validation
@@ -418,7 +419,7 @@ defmodule EEVM.Block do
   end
 
   defp check_ommers(%__MODULE__{ommers: ommers, header: header}) do
-    hash = ommers |> Enum.map(&Header.to_rlp/1) |> ExRLP.encode() |> ExKeccak.hash_256()
+    hash = ommers |> Enum.map(&Header.to_rlp/1) |> ExRLP.encode() |> Keccak.hash_256()
     if hash == header.ommers_hash, do: :ok, else: {:error, :invalid_ommers_hash}
   end
 

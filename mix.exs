@@ -52,7 +52,6 @@ defmodule EEVM.MixProject do
   defp deps do
     [
       {:ex_rlp, "~> 0.6.0"},
-      {:ex_keccak, "~> 0.7"},
       {:ex_secp256k1, "~> 0.7"},
       {:jason, "~> 1.4"},
       {:rustler, "~> 0.36", runtime: false},

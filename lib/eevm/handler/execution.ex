@@ -23,6 +23,7 @@ defmodule EEVM.Handler.Execution do
 
   alias EEVM.{BlockEnv, Config, Database, Delegation, HardforkConfig, Precompiles, TxEnv}
   alias EEVM.Context.Contract
+  alias EEVM.Crypto.Keccak
   alias EEVM.Handler.PreExecution
   alias EEVM.Interpreter
   alias EEVM.Interpreter.Instructions.System.Creation
@@ -254,7 +255,7 @@ defmodule EEVM.Handler.Execution do
   defp derive_create_address(sender, nonce) do
     sender_bytes = <<sender::unsigned-big-160>>
     payload = rlp_encode_list([rlp_encode_bytes(sender_bytes), rlp_encode_integer(nonce)])
-    <<_::binary-size(12), address::unsigned-big-160>> = ExKeccak.hash_256(payload)
+    <<_::binary-size(12), address::unsigned-big-160>> = Keccak.hash_256(payload)
     address
   end
 

@@ -27,6 +27,8 @@ defmodule EEVM.Precompiles.ECRecover do
 
   @behaviour EEVM.Precompile
 
+  alias EEVM.Crypto.Keccak
+
   @gas_cost 3000
   @curve_order 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141
 
@@ -97,7 +99,7 @@ defmodule EEVM.Precompiles.ECRecover do
   end
 
   defp derive_address(<<4, uncompressed_key::binary-size(64)>>) do
-    <<_::binary-size(12), address::binary-size(20)>> = ExKeccak.hash_256(uncompressed_key)
+    <<_::binary-size(12), address::binary-size(20)>> = Keccak.hash_256(uncompressed_key)
     {:ok, address}
   end
 

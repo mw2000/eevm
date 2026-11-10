@@ -2,6 +2,7 @@ defmodule EEVM.TestSupport.StateTestFixture do
   @moduledoc "Parses official StateTest JSON fixtures into typed structs for the test runner."
 
   alias EEVM.BlockEnv
+  alias EEVM.Crypto.Keccak
   alias EEVM.Gas.Blob
   alias EEVM.HardforkConfig
   alias EEVM.TxEnv
@@ -377,7 +378,7 @@ defmodule EEVM.TestSupport.StateTestFixture do
         key when byte_size(key) == 64 -> key
       end
 
-    <<_::binary-size(12), address::binary-size(20)>> = ExKeccak.hash_256(raw_public_key)
+    <<_::binary-size(12), address::binary-size(20)>> = Keccak.hash_256(raw_public_key)
     :binary.decode_unsigned(address)
   end
 end

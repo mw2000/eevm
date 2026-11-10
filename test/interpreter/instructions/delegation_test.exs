@@ -3,6 +3,7 @@ defmodule EEVM.Interpreter.Instructions.DelegationTest do
   import EEVM.TestSupport.MachineHelpers
 
   alias EEVM.Context.Contract
+  alias EEVM.Crypto.Keccak
   alias EEVM.{Database, Delegation}
   alias EEVM.Database.InMemory
   alias EEVM.Interpreter.Memory
@@ -76,7 +77,7 @@ defmodule EEVM.Interpreter.Instructions.DelegationTest do
         @authority, 0x3C, 0x00>>
 
     result = run(code)
-    <<hash::unsigned-big-256>> = ExKeccak.hash_256(designator)
+    <<hash::unsigned-big-256>> = Keccak.hash_256(designator)
 
     assert stack_values(result) == [hash, 23]
     assert Memory.read_bytes(result.frame.memory, 0, 23) |> elem(0) == designator

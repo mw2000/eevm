@@ -18,6 +18,7 @@ defmodule EEVM.Database.InMemory do
 
   @behaviour EEVM.Database
 
+  alias EEVM.Crypto.Keccak
   alias EEVM.{Database, StateChanges}
 
   @empty_code_hash <<0xC5D2460186F7233C927E7DB2DCC703C0E500B653CA82273B7BFAD8045D85A470::256>>
@@ -148,7 +149,7 @@ defmodule EEVM.Database.InMemory do
       balance: Map.get(account, :balance, 0),
       nonce: Map.get(account, :nonce, 0),
       code: code,
-      code_hash: if(code == <<>>, do: @empty_code_hash, else: ExKeccak.hash_256(code))
+      code_hash: if(code == <<>>, do: @empty_code_hash, else: Keccak.hash_256(code))
     }
   end
 

@@ -37,6 +37,7 @@ defmodule EEVM.Database do
   wraps it in `EEVM.Database.Legacy`.
   """
 
+  alias EEVM.Crypto.Keccak
   alias EEVM.StateChanges
 
   defmodule ReadError do
@@ -464,7 +465,7 @@ defmodule EEVM.Database do
   defp new_account, do: %{balance: 0, nonce: 0, code_hash: @empty_code_hash, code: <<>>}
 
   defp hash_code(<<>>), do: @empty_code_hash
-  defp hash_code(code), do: ExKeccak.hash_256(code)
+  defp hash_code(code), do: Keccak.hash_256(code)
 
   defp read!({:ok, value}), do: value
   defp read!({:error, reason}), do: raise(ReadError, reason: reason)

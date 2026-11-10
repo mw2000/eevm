@@ -30,6 +30,7 @@ defmodule EEVM.Interpreter.Instructions.System.Creation do
   @initcode_word_cost 2
 
   alias EEVM.Context.Contract
+  alias EEVM.Crypto.Keccak
   alias EEVM.Database
   alias EEVM.Gas.{Access, Dynamic}
   alias EEVM.Gas.Memory, as: GasMemory
@@ -314,16 +315,16 @@ defmodule EEVM.Interpreter.Instructions.System.Creation do
   defp derive_create_address(sender, nonce) do
     sender_bytes = <<sender::unsigned-big-160>>
     payload = rlp_encode_list([rlp_encode_bytes(sender_bytes), rlp_encode_integer(nonce)])
-    <<_::binary-size(12), address::unsigned-big-160>> = ExKeccak.hash_256(payload)
+    <<_::binary-size(12), address::unsigned-big-160>> = Keccak.hash_256(payload)
     address
   end
 
   defp derive_create2_address(sender, salt, init_code) do
     sender_bytes = <<sender::unsigned-big-160>>
     salt_bytes = <<salt::unsigned-big-256>>
-    init_hash = ExKeccak.hash_256(init_code)
+    init_hash = Keccak.hash_256(init_code)
     data = <<0xFF, sender_bytes::binary, salt_bytes::binary, init_hash::binary>>
-    <<_::binary-size(12), address::unsigned-big-160>> = ExKeccak.hash_256(data)
+    <<_::binary-size(12), address::unsigned-big-160>> = Keccak.hash_256(data)
     address
   end
 

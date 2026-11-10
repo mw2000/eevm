@@ -1,6 +1,7 @@
 defmodule EEVM.Precompiles.ECRecoverTest do
   use ExUnit.Case, async: true
 
+  alias EEVM.Crypto.Keccak
   alias EEVM.Precompiles.ECRecover
 
   @curve_order 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141
@@ -49,7 +50,7 @@ defmodule EEVM.Precompiles.ECRecoverTest do
       <<_::binary-size(12), expected_address::binary-size(20)>> =
         public_key
         |> binary_part(1, 64)
-        |> ExKeccak.hash_256()
+        |> Keccak.hash_256()
 
       input = build_input(hash, recovery_id + 27, signature)
 

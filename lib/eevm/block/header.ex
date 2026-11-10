@@ -37,6 +37,8 @@ defmodule EEVM.Block.Header do
   `encode/1` reproduces the input bytes.
   """
 
+  alias EEVM.Crypto.Keccak
+
   # keccak256(rlp([]))
   @empty_ommers_hash Base.decode16!(
                        "1DCC4DE8DEC75D7AAB85B567B6CCD41AD312451B948A7413F0A142FD40D49347"
@@ -202,7 +204,7 @@ defmodule EEVM.Block.Header do
     with {:ok, fields} <- safe_rlp_decode(bytes),
          {:ok, header} <- from_rlp(fields) do
       if encode(header) == bytes,
-        do: {:ok, %{header | hash: ExKeccak.hash_256(bytes)}},
+        do: {:ok, %{header | hash: Keccak.hash_256(bytes)}},
         else: {:error, :invalid_block_encoding}
     end
   end
@@ -217,7 +219,7 @@ defmodule EEVM.Block.Header do
 
     with {:ok, header} <- decode_base(base),
          {:ok, header} <- decode_fork_fields(header, fork_values) do
-      {:ok, %{header | hash: ExKeccak.hash_256(ExRLP.encode(fields))}}
+      {:ok, %{header | hash: Keccak.hash_256(ExRLP.encode(fields))}}
     end
   end
 
@@ -228,7 +230,7 @@ defmodule EEVM.Block.Header do
   `parent_hash`.
   """
   @spec compute_hash(t()) :: binary()
-  def compute_hash(%__MODULE__{} = header), do: header |> encode() |> ExKeccak.hash_256()
+  def compute_hash(%__MODULE__{} = header), do: header |> encode() |> Keccak.hash_256()
 
   @doc """
   Returns the `base_fee_per_gas` a child of `parent` must carry (EIP-1559):
