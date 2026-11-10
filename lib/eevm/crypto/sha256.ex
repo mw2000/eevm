@@ -18,6 +18,15 @@ defmodule EEVM.Crypto.SHA256 do
   # Rotations mask before shifting left so no intermediate exceeds 32 bits.
   @mask 0xFFFFFFFF
 
+  @compile {:inline,
+            choose: 3,
+            majority: 3,
+            big_sigma0: 1,
+            big_sigma1: 1,
+            small_sigma0: 1,
+            small_sigma1: 1,
+            spread: 1}
+
   # §5.3.3: the first 32 bits of the fractional parts of the square roots of
   # the first eight primes.
   @initial_state {0x6A09E667, 0xBB67AE85, 0x3C6EF372, 0xA54FF53A, 0x510E527F, 0x9B05688C,
@@ -25,7 +34,7 @@ defmodule EEVM.Crypto.SHA256 do
 
   # §4.2.2: the first 32 bits of the fractional parts of the cube roots of the
   # first 64 primes.
-  @round_constants [
+  @round_constants {
     0x428A2F98,
     0x71374491,
     0xB5C0FBCF,
@@ -90,7 +99,7 @@ defmodule EEVM.Crypto.SHA256 do
     0xA4506CEB,
     0xBEF9A3F7,
     0xC67178F2
-  ]
+  }
 
   @doc """
   Returns the 32-byte SHA-256 digest of `message`.
@@ -120,45 +129,137 @@ defmodule EEVM.Crypto.SHA256 do
   defp blocks(<<block::binary-size(64), rest::binary>>), do: [block | blocks(rest)]
   defp blocks(<<>>), do: []
 
-  # §6.2.2: expand the block into the 64-word schedule, run 64 rounds, and add
-  # the result into the state.
-  defp compress({h0, h1, h2, h3, h4, h5, h6, h7}, block) do
+  # §6.2.2: 64 rounds over the working variables a..h, then add them into the
+  # state. The message schedule is a sliding window w0..w15 of
+  # W[t]..W[t+15], so a round needs no list or tuple: it consumes w0 and
+  # appends W[t+16] = σ1(W[t+14]) + W[t+9] + σ0(W[t+1]) + W[t].
+  defp compress(
+         {h0, h1, h2, h3, h4, h5, h6, h7},
+         <<w0::32, w1::32, w2::32, w3::32, w4::32, w5::32, w6::32, w7::32, w8::32, w9::32,
+           w10::32, w11::32, w12::32, w13::32, w14::32, w15::32>>
+       ) do
     {a, b, c, d, e, f, g, h} =
-      rounds(@round_constants, schedule(block), h0, h1, h2, h3, h4, h5, h6, h7)
+      rounds(
+        0,
+        h0,
+        h1,
+        h2,
+        h3,
+        h4,
+        h5,
+        h6,
+        h7,
+        w0,
+        w1,
+        w2,
+        w3,
+        w4,
+        w5,
+        w6,
+        w7,
+        w8,
+        w9,
+        w10,
+        w11,
+        w12,
+        w13,
+        w14,
+        w15
+      )
 
     {h0 + a &&& @mask, h1 + b &&& @mask, h2 + c &&& @mask, h3 + d &&& @mask, h4 + e &&& @mask,
      h5 + f &&& @mask, h6 + g &&& @mask, h7 + h &&& @mask}
   end
 
-  defp rounds([k | ks], [w | ws], a, b, c, d, e, f, g, h) do
-    t1 = h + big_sigma1(e) + choose(e, f, g) + k + w
+  defp rounds(64, a, b, c, d, e, f, g, h, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _),
+    do: {a, b, c, d, e, f, g, h}
+
+  defp rounds(
+         t,
+         a,
+         b,
+         c,
+         d,
+         e,
+         f,
+         g,
+         h,
+         w0,
+         w1,
+         w2,
+         w3,
+         w4,
+         w5,
+         w6,
+         w7,
+         w8,
+         w9,
+         w10,
+         w11,
+         w12,
+         w13,
+         w14,
+         w15
+       ) do
+    t1 = h + big_sigma1(e) + choose(e, f, g) + elem(@round_constants, t) + w0
     t2 = big_sigma0(a) + majority(a, b, c)
-    rounds(ks, ws, t1 + t2 &&& @mask, a, b, c, d + t1 &&& @mask, e, f, g)
+    # The last 16 rounds read no new schedule words.
+    w16 = if t < 48, do: small_sigma1(w14) + w9 + small_sigma0(w1) + w0 &&& @mask, else: 0
+
+    rounds(
+      t + 1,
+      t1 + t2 &&& @mask,
+      a,
+      b,
+      c,
+      d + t1 &&& @mask,
+      e,
+      f,
+      g,
+      w1,
+      w2,
+      w3,
+      w4,
+      w5,
+      w6,
+      w7,
+      w8,
+      w9,
+      w10,
+      w11,
+      w12,
+      w13,
+      w14,
+      w15,
+      w16
+    )
   end
 
-  defp rounds([], [], a, b, c, d, e, f, g, h), do: {a, b, c, d, e, f, g, h}
-
-  # W[t] = σ1(W[t-2]) + W[t-7] + σ0(W[t-15]) + W[t-16] for t in 16..63. The
-  # schedule is built newest first, so W[t-2] is the second element.
-  defp schedule(block) do
-    words = for <<word::32 <- block>>, do: word
-    words |> Enum.reverse() |> extend(48) |> Enum.reverse()
-  end
-
-  defp extend(newest_first, 0), do: newest_first
-
-  defp extend([_, w2, _, _, _, _, w7, _, _, _, _, _, _, _, w15, w16 | _] = newest_first, count) do
-    word = small_sigma1(w2) + w7 + small_sigma0(w15) + w16 &&& @mask
-    extend([word | newest_first], count - 1)
-  end
-
-  # §4.1.2 functions.
+  # §4.1.2 functions. Every rotation here is by at most 25 bits, so copying
+  # the word's low 26 bits above bit 32 (`spread/1`, still a small integer)
+  # turns ROTR^n(x) into the single shift `spread(x) >>> n`, masked to 32 bits.
   defp choose(x, y, z), do: bxor(x &&& y, bnot(x) &&& z)
   defp majority(x, y, z), do: bxor(bxor(x &&& y, x &&& z), y &&& z)
-  defp big_sigma0(x), do: bxor(bxor(rotr(x, 2), rotr(x, 13)), rotr(x, 22))
-  defp big_sigma1(x), do: bxor(bxor(rotr(x, 6), rotr(x, 11)), rotr(x, 25))
-  defp small_sigma0(x), do: bxor(bxor(rotr(x, 7), rotr(x, 18)), x >>> 3)
-  defp small_sigma1(x), do: bxor(bxor(rotr(x, 17), rotr(x, 19)), x >>> 10)
 
-  defp rotr(x, n), do: x >>> n ||| (x &&& (1 <<< n) - 1) <<< (32 - n)
+  defp big_sigma0(x) do
+    s = spread(x)
+    bxor(bxor(s >>> 2, s >>> 13), s >>> 22) &&& @mask
+  end
+
+  defp big_sigma1(x) do
+    s = spread(x)
+    bxor(bxor(s >>> 6, s >>> 11), s >>> 25) &&& @mask
+  end
+
+  defp small_sigma0(x) do
+    s = spread(x)
+    bxor(bxor(s >>> 7, s >>> 18), x >>> 3) &&& @mask
+  end
+
+  defp small_sigma1(x) do
+    s = spread(x)
+    bxor(bxor(s >>> 17, s >>> 19), x >>> 10) &&& @mask
+  end
+
+  defp spread(x), do: x ||| (x &&& 0x3FFFFFF) <<< 32
 end
