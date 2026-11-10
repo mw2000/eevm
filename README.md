@@ -12,9 +12,10 @@
 
 eevm executes EVM bytecode and Ethereum transactions in pure Elixir. It is its own
 implementation, not a wrapper around revm, evmone, or another EVM, and its
-cryptography is Elixir too: the BN254 and BLS12-381 curves, KZG, ModExp, BLAKE2F,
-SHA-256, RIPEMD-160, and Keccak-256 have no native code. The last native
-dependencies (`ex_secp256k1`, and OTP `:crypto` for P-256) are being replaced.
+cryptography is Elixir too: Keccak-256, SHA-256, RIPEMD-160, BLAKE2F, ModExp,
+ECDSA over secp256k1 and P-256, the BN254 and BLS12-381 curves, and KZG. eevm
+has no native code of any kind, no NIFs and no OTP `:crypto`, so it could in
+theory run on bare metal.
 
 It aims to be a production-grade EVM for the BEAM: easy to embed, easy to read,
 and built from small, pure functions over immutable state. It includes the

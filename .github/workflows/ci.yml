@@ -35,12 +35,12 @@ jobs:
     - name: Restore build cache
       uses: actions/cache@v4
       with:
-        path: |
-          _build
-          priv/native
-          native/eevm_bls/target
-        key: ${{ runner.os }}-build-${{ hashFiles('**/mix.lock', 'native/**/Cargo.lock', 'native/**/Cargo.toml', 'native/**/src/**') }}
+        path: _build
+        key: ${{ runner.os }}-build-${{ hashFiles('**/mix.lock') }}
         restore-keys: ${{ runner.os }}-build-
+    - name: Check for native code
+      # eevm is pure Elixir: no NIFs, no Rustler, no OTP :crypto or :public_key.
+      run: "! grep -rnE ':crypto|:public_key|Rustler|NIF' lib mix.exs"
     - name: Install dependencies
       run: mix deps.get
     - name: Check formatting
@@ -86,11 +86,8 @@ jobs:
     - name: Restore build cache
       uses: actions/cache@v4
       with:
-        path: |
-          _build
-          priv/native
-          native/eevm_bls/target
-        key: ${{ runner.os }}-${{ matrix.cache-prefix }}build-${{ hashFiles('**/mix.lock', 'native/**/Cargo.lock', 'native/**/Cargo.toml', 'native/**/src/**') }}
+        path: _build
+        key: ${{ runner.os }}-${{ matrix.cache-prefix }}build-${{ hashFiles('**/mix.lock') }}
         restore-keys: ${{ runner.os }}-${{ matrix.cache-prefix }}build-
     - name: Install dependencies
       run: mix deps.get
@@ -120,11 +117,8 @@ jobs:
     - name: Restore build cache
       uses: actions/cache@v4
       with:
-        path: |
-          _build
-          priv/native
-          native/eevm_bls/target
-        key: ${{ runner.os }}-build-${{ hashFiles('**/mix.lock', 'native/**/Cargo.lock', 'native/**/Cargo.toml', 'native/**/src/**') }}
+        path: _build
+        key: ${{ runner.os }}-build-${{ hashFiles('**/mix.lock') }}
         restore-keys: ${{ runner.os }}-build-
     - name: Install dependencies
       run: mix deps.get
@@ -209,11 +203,8 @@ jobs:
     - name: Restore build cache
       uses: actions/cache@v4
       with:
-        path: |
-          _build
-          priv/native
-          native/eevm_bls/target
-        key: ${{ runner.os }}-build-${{ hashFiles('**/mix.lock', 'native/**/Cargo.lock', 'native/**/Cargo.toml', 'native/**/src/**') }}
+        path: _build
+        key: ${{ runner.os }}-build-${{ hashFiles('**/mix.lock') }}
         restore-keys: ${{ runner.os }}-build-
     # Release tarballs (257 MB stable, 423 MB develop) are cached by asset and
     # pinned version, so only a version bump in fetch.sh downloads them again.
@@ -264,11 +255,8 @@ jobs:
     - name: Restore build cache
       uses: actions/cache@v4
       with:
-        path: |
-          _build
-          priv/native
-          native/eevm_bls/target
-        key: ${{ runner.os }}-build-${{ hashFiles('**/mix.lock', 'native/**/Cargo.lock', 'native/**/Cargo.toml', 'native/**/src/**') }}
+        path: _build
+        key: ${{ runner.os }}-build-${{ hashFiles('**/mix.lock') }}
         restore-keys: ${{ runner.os }}-build-
     - name: Install dependencies
       run: mix deps.get

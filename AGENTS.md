@@ -6,11 +6,9 @@ How to change eevm.
 
 eevm is a production-grade Ethereum Virtual Machine written entirely in Elixir.
 Never wrap or call out to revm, evmone, or any other EVM. eevm is pure
-functional code with no native code of any kind, so it could in theory run on
-bare metal: no NIFs and no OTP `:crypto` (OpenSSL). Write crypto in Elixir, as
-the BN254 and BLS12-381 curves, KZG, BLAKE2F, ModExp, SHA-256, RIPEMD-160, and
-Keccak-256 are. The remaining native dependencies (`ex_secp256k1`, and `:crypto`
-for P-256) are being replaced (#197); don't add new ones.
+functional Elixir with no native code, so it could in theory run on bare metal:
+no NIFs and no OTP `:crypto`. Write crypto in Elixir, in `lib/eevm/crypto/` or
+the precompile that owns it.
 
 Developers embed eevm as a library. In `docs/0` of `mix.exs`, the groups
 "Getting started", "Transactions", "Blocks", and "State" are the public API,

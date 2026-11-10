@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
 # Prepares an Amp orb (Debian 12) for eevm: Erlang/OTP and Elixir matching CI
-# (.github/workflows/ci.yml), Rust for the Rustler NIF in native/eevm_bls,
-# then checks out the ethereum/tests fixture submodule, fetches the pinned
-# execution-spec-tests fixtures (stable: 257 MB download, 2.2 GB extracted;
-# develop, for Osaka: 423 MB download, 4.1 GB extracted), and
-# fetches and compiles Mix dependencies. Idempotent; safe to rerun.
+# (.github/workflows/ci.yml), then checks out the ethereum/tests fixture
+# submodule, fetches the pinned execution-spec-tests fixtures (stable: 257 MB
+# download, 2.2 GB extracted; develop, for Osaka: 423 MB download, 4.1 GB
+# extracted), and fetches and compiles Mix dependencies. Idempotent; safe to rerun.
 set -euo pipefail
 
 OTP_VERSION="27.0"
@@ -79,18 +78,6 @@ install_elixir() {
   done
 }
 
-install_rust() {
-  # Rustler compiles native/eevm_bls from source during `mix compile`.
-  if [[ ! -x "${HOME}/.cargo/bin/rustup" ]]; then
-    curl -fsSL https://sh.rustup.rs | sh -s -- -y --no-modify-path --profile minimal --default-toolchain stable
-  else
-    echo "rustup already installed"
-  fi
-  for bin in rustup cargo rustc; do
-    sudo ln -sfn "${HOME}/.cargo/bin/${bin}" "${BIN_DIR}/${bin}"
-  done
-}
-
 install_hex_rebar() {
   mix local.hex --force --if-missing
   mix local.rebar --force --if-missing
@@ -119,7 +106,6 @@ build_plt() {
 step "apt packages" install_apt_packages
 step "Erlang/OTP ${OTP_VERSION}" install_otp
 step "Elixir ${ELIXIR_VERSION}" install_elixir
-step "Rust" install_rust
 step "Hex and rebar" install_hex_rebar
 step "ethereum/tests fixtures" checkout_fixtures
 step "execution-spec-tests fixtures" test/fixtures/eest/fetch.sh
