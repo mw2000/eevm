@@ -9,6 +9,11 @@ defmodule EEVM.Interpreter.Instructions.Registry do
   - `:inputs` / `:outputs` — stack arity, used by the disassembler and stack-depth checks
   - `:module` — the `EEVM.Interpreter.Instructions.*` module that implements
     the opcode; `EEVM.Interpreter` dispatches on this field
+  - `:kind` — how the interpreter runs it. `:stack` opcodes are pure functions
+    of the stack, implemented as `module.stack_op(opcode, stack)` on a list;
+    this is the default for the Arithmetic, Comparison, Bitwise, and StackOps
+    modules. `:state` opcodes read or write the machine state through
+    `module.execute(opcode, state)`.
   - `:state_mutating` (when present) — opcode mutates persistent state and is an
     exceptional halt (`{:error, :static_state_modification}`) inside a STATICCALL frame
   - `:eip` (when present) — the `EEVM.HardforkConfig` flag of the EIP that
@@ -149,7 +154,8 @@ defmodule EEVM.Interpreter.Instructions.Registry do
     @smod => %{name: "SMOD", inputs: 2, outputs: 1, module: Arithmetic},
     @addmod => %{name: "ADDMOD", inputs: 3, outputs: 1, module: Arithmetic},
     @mulmod => %{name: "MULMOD", inputs: 3, outputs: 1, module: Arithmetic},
-    @exp => %{name: "EXP", inputs: 2, outputs: 1, module: Arithmetic},
+    # EXP's gas depends on its exponent (EIP-160), so it needs the machine state.
+    @exp => %{name: "EXP", inputs: 2, outputs: 1, module: Arithmetic, kind: :state},
     @signextend => %{name: "SIGNEXTEND", inputs: 2, outputs: 1, module: Arithmetic},
     @keccak256 => %{name: "KECCAK256", inputs: 2, outputs: 1, module: Crypto},
     @lt => %{name: "LT", inputs: 2, outputs: 1, module: Comparison},
@@ -271,20 +277,47 @@ defmodule EEVM.Interpreter.Instructions.Registry do
     }
   }
 
+  # Entries of the pure-stack modules default to `kind: :stack`; EXP overrides it.
+  @stack_modules [Arithmetic, Bitwise, Comparison, StackOps]
+  @opcodes (for {op, info} <- @opcodes, into: %{} do
+              default_kind = if info.module in @stack_modules, do: :stack, else: :state
+              {op, Map.put_new(info, :kind, default_kind)}
+            end)
+
   @spec info(non_neg_integer()) :: {:ok, map()} | {:error, :unknown_opcode}
   def info(op) when op >= @push1 and op <= @push32 do
     n = op - @push1 + 1
-    {:ok, %{name: "PUSH#{n}", inputs: 0, outputs: 1, push_bytes: n, module: ControlFlow}}
+
+    {:ok,
+     %{name: "PUSH#{n}", inputs: 0, outputs: 1, push_bytes: n, module: ControlFlow, kind: :state}}
   end
 
   def info(op) when op >= @dup1 and op <= @dup16 do
     n = op - @dup1 + 1
-    {:ok, %{name: "DUP#{n}", inputs: n, outputs: n + 1, dup_depth: n - 1, module: ControlFlow}}
+
+    {:ok,
+     %{
+       name: "DUP#{n}",
+       inputs: n,
+       outputs: n + 1,
+       dup_depth: n - 1,
+       module: ControlFlow,
+       kind: :state
+     }}
   end
 
   def info(op) when op >= @swap1 and op <= @swap16 do
     n = op - @swap1 + 1
-    {:ok, %{name: "SWAP#{n}", inputs: n + 1, outputs: n + 1, swap_depth: n, module: ControlFlow}}
+
+    {:ok,
+     %{
+       name: "SWAP#{n}",
+       inputs: n + 1,
+       outputs: n + 1,
+       swap_depth: n,
+       module: ControlFlow,
+       kind: :state
+     }}
   end
 
   def info(op) do

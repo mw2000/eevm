@@ -1,5 +1,6 @@
 defmodule EEVM.Interpreter.Instructions.ComparisonTest do
   use ExUnit.Case, async: true
+  doctest EEVM.Interpreter.Instructions.Comparison
   import EEVM.TestSupport.MachineHelpers
 
   describe "Executor - Comparison & Bitwise" do

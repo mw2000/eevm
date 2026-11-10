@@ -1,5 +1,6 @@
 defmodule EEVM.Interpreter.Instructions.ArithmeticTest do
   use ExUnit.Case, async: true
+  doctest EEVM.Interpreter.Instructions.Arithmetic
   import EEVM.TestSupport.MachineHelpers
   import Bitwise
 

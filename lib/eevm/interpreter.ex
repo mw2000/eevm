@@ -20,6 +20,7 @@ defmodule EEVM.Interpreter do
 
   alias EEVM.Database
   alias EEVM.HardforkConfig
+  alias EEVM.Interpreter.Instructions.Registry
   alias EEVM.Interpreter.{MachineState, Memory, Stack}
   alias EEVM.Tracer
   alias EEVM.Tracer.TraceStep
@@ -206,14 +207,31 @@ defmodule EEVM.Interpreter do
   # exceptional halt (EIP-214). Bytes the active fork does not define
   # dispatch as INVALID.
 
-  defp execute_opcode({_gas, module, opcode, min_depth, max_depth, state_mutating?}, state) do
+  defp execute_opcode({_gas, kind, module, opcode, min_depth, max_depth, state_mutating?}, state) do
     depth = Stack.depth(state.frame.stack)
 
     cond do
       depth < min_depth -> {:error, :stack_underflow, state}
       depth > max_depth -> {:error, :stack_overflow, state}
+      kind == :stack -> {:ok, run_stack_op(opcode, state)}
       state_mutating? and state.frame.is_static -> {:error, :static_state_modification, state}
       true -> module.execute(opcode, state)
+    end
+  end
+
+  defp run_stack_op(opcode, %MachineState{frame: frame} = state) do
+    %{state | frame: %{frame | stack: stack_op(opcode, frame.stack), pc: frame.pc + 1}}
+  end
+
+  # One clause per `:stack` opcode, generated from the Registry, so the call to
+  # the opcode's `stack_op/2` and the change in stack size are compile-time
+  # constants.
+  for opcode <- 0..255, {:ok, %{kind: :stack} = info} <- [Registry.info(opcode)] do
+    defp stack_op(unquote(opcode), %Stack{elements: elements, size: size}) do
+      %Stack{
+        elements: unquote(info.module).stack_op(unquote(opcode), elements),
+        size: size + unquote(info.outputs - info.inputs)
+      }
     end
   end
 

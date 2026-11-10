@@ -1,27 +1,15 @@
 defmodule EEVM.Interpreter.Instructions.StackMemoryStorage.StackOps do
   @moduledoc """
-  Stack manipulation opcode: POP (0x50).
-
-  Removes the top element from the stack and discards it. Fails with
-  `:stack_underflow` if the stack is empty.
+  Stack manipulation opcode: POP (0x50), which discards the top element.
   """
 
-  alias EEVM.Interpreter.{MachineState, Stack}
+  @doc """
+  Applies POP to the stack (a list, top first). The interpreter has already
+  checked that the stack is not empty.
 
-  @spec execute(non_neg_integer(), MachineState.t()) ::
-          {:ok, MachineState.t()} | {:error, atom(), MachineState.t()}
-  def execute(0x50, state) do
-    case Stack.pop(state.frame.stack) do
-      {:ok, _value, new_stack} ->
-        {:ok,
-         state
-         |> MachineState.update_frame(&%{&1 | stack: new_stack})
-         |> MachineState.advance_pc()}
-
-      {:error, reason} ->
-        {:error, reason, state}
-    end
-  end
-
-  def execute(_opcode, state), do: {:ok, MachineState.halt(state, :invalid)}
+      iex> EEVM.Interpreter.Instructions.StackMemoryStorage.StackOps.stack_op(0x50, [1, 2])
+      [2]
+  """
+  @spec stack_op(non_neg_integer(), [non_neg_integer()]) :: [non_neg_integer()]
+  def stack_op(0x50, [_top | rest]), do: rest
 end

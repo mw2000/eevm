@@ -1,5 +1,6 @@
 defmodule EEVM.Interpreter.Instructions.StackMemoryTest do
   use ExUnit.Case, async: true
+  doctest EEVM.Interpreter.Instructions.StackMemoryStorage.StackOps
   import EEVM.TestSupport.MachineHelpers
 
   alias EEVM.Gas.{Dynamic, Memory, Static}
