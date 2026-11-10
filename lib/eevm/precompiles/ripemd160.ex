@@ -23,6 +23,8 @@ defmodule EEVM.Precompiles.RIPEMD160 do
 
   @behaviour EEVM.Precompile
 
+  alias EEVM.Crypto.RIPEMD160, as: Hash
+
   @base_cost 600
   @word_cost 120
 
@@ -54,7 +56,7 @@ defmodule EEVM.Precompiles.RIPEMD160 do
     if cost > gas_limit do
       {:error, :out_of_gas}
     else
-      hash = :crypto.hash(:ripemd160, input)
+      hash = Hash.hash(input)
       # Left-pad the 20-byte digest with 12 zero bytes to fill a 32-byte word.
       {:ok, <<0::96, hash::binary>>, cost}
     end

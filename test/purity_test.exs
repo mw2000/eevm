@@ -85,8 +85,6 @@ defmodule EEVM.PurityTest do
   # Known uses, each with the issue that removes it. The test also fails on
   # an entry nothing needs any more, so this list only shrinks.
   @allowed %{
-    # RIPEMD-160 (#196)
-    {EEVM.Precompiles.RIPEMD160, :crypto} => 196,
     # secp256k1 and P-256 ECDSA (#197)
     {EEVM.Precompiles.ECRecover, ExSecp256k1} => 197,
     {EEVM.Transaction.Signer, ExSecp256k1} => 197,
