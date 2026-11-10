@@ -120,12 +120,11 @@ defmodule EEVM.Precompiles.ModExpTest do
     end
   end
 
-  describe "even moduli" do
-    # An even modulus m = q·2^k (k at most half of m's bits) is computed mod q
-    # and mod 2^k and recombined by CRT. Integer.pow/2 and OpenSSL's own
-    # even-modulus path serve as independent references.
+  describe "modular exponentiation" do
+    # Integer.pow/2 and, in tests only, OpenSSL's :crypto.mod_pow/3 serve as
+    # independent references, for odd and even moduli.
     test "match Integer.pow/2 for small operands" do
-      for m <- [2, 6, 12_345 <<< 1, 255 <<< 4, 1001 <<< 8],
+      for m <- [2, 3, 6, 97, 12_345 <<< 1, 255 <<< 4, 1001 <<< 8, 65_537],
           base <- [0, 1, 2, 7, 64, 1_000_003, m + 5],
           exp <- [0, 1, 2, 3, 8, 9, 300] do
         assert {:ok, out, _gas} = ModExp.execute(encode_modexp(base, exp, m), 10_000_000)
@@ -136,7 +135,7 @@ defmodule EEVM.Precompiles.ModExpTest do
     end
 
     test "match :crypto.mod_pow/3 for 2048-bit operands" do
-      for k <- [1, 64, 1024] do
+      for k <- [0, 1, 64, 1024] do
         q = :rand.uniform(1 <<< (2048 - k)) - 1
         modulus = (q ||| 1 ||| 1 <<< (2047 - k)) <<< k
         base = :rand.bytes(256)
