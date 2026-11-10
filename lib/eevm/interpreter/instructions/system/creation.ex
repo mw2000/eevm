@@ -253,7 +253,11 @@ defmodule EEVM.Interpreter.Instructions.System.Creation do
                          reject_eip_3541_runtime_code?(runtime_code) do
                       create_failed(post_child_fail_state, stack)
                     else
-                      deposit_cost = Dynamic.code_deposit_cost(byte_size(runtime_code))
+                      # Before EIP-2 (Homestead), a deposit the remaining gas
+                      # can't cover leaves the contract with empty code and the
+                      # gas unspent.
+                      {runtime_code, deposit_cost} =
+                        deposit(runtime_code, child_result.frame.gas, config.hardfork)
 
                       if child_result.frame.gas >= deposit_cost do
                         # If the initcode SELFDESTRUCTed, the account is still
@@ -298,6 +302,14 @@ defmodule EEVM.Interpreter.Instructions.System.Creation do
       {:error, :out_of_gas, halted_state} ->
         {:error, :out_of_gas, halted_state}
     end
+  end
+
+  defp deposit(runtime_code, gas, hardfork) do
+    cost = Dynamic.code_deposit_cost(byte_size(runtime_code))
+
+    if gas < cost and not HardforkConfig.enabled?(hardfork, :eip_2),
+      do: {<<>>, 0},
+      else: {runtime_code, cost}
   end
 
   @doc """

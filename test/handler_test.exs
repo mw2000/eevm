@@ -136,6 +136,35 @@ defmodule EEVM.HandlerTest do
       refute Database.account_exists?(spurious, @recipient)
       refute Database.account_exists?(spurious, @coinbase)
     end
+
+    # Initcode PUSH1 100 PUSH1 0 RETURN returns 100 bytes, a 20,000-gas deposit
+    # (EEST frontier/create/test_create_deposit_oog).
+    @initcode <<0x60, 0x64, 0x60, 0x00, 0xF3>>
+
+    test "a creation tx that can't pay the code deposit deploys empty code until EIP-2" do
+      # Frontier intrinsic gas: 21,000 + 4 * 68 + 4 = 21,276, which leaves
+      # 8,724 for the initcode and too little for the deposit.
+      tx = pre_eip155_legacy(to: nil, data: @initcode, gas_limit: 30_000)
+
+      assert {:ok, %TransactionResult{status: :success} = result} =
+               run_fork(tx, db_with_sender(), :frontier)
+
+      assert result.contract_address != nil
+      assert Database.account_exists?(result.db, result.contract_address)
+      assert Database.get_code(result.db, result.contract_address) == <<>>
+      # Only the initcode is paid for: 6 gas of opcodes and 12 of memory
+      # (4 words). The deposit isn't charged.
+      assert result.gas_used == 21_276 + 18
+
+      # Homestead adds 32,000 intrinsic gas, so the initcode again gets 8,724.
+      tx = pre_eip155_legacy(to: nil, data: @initcode, gas_limit: 62_000)
+
+      assert {:ok, %TransactionResult{status: {:halt, :out_of_gas}} = result} =
+               run_fork(tx, db_with_sender(), :homestead)
+
+      assert result.contract_address == nil
+      assert result.gas_used == 62_000
+    end
   end
 
   describe "execute/4 — chain id" do

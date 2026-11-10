@@ -226,6 +226,12 @@ defmodule EEVM.Handler.Execution do
       size > @max_code_size ->
         {:error, MachineState.halt(state, {:error, :code_size_limit_exceeded})}
 
+      # Before EIP-2 (Homestead), a deposit the remaining gas can't cover
+      # leaves the contract with empty code and the gas unspent.
+      state.frame.gas < deposit_cost and
+          not HardforkConfig.enabled?(state.env.config.hardfork, :eip_2) ->
+        {:ok, state}
+
       state.frame.gas < deposit_cost ->
         {:error, MachineState.halt(state, :out_of_gas)}
 
