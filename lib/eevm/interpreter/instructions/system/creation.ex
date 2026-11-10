@@ -211,7 +211,8 @@ defmodule EEVM.Interpreter.Instructions.System.Creation do
                     original_storage: state_after_touch.substate.original_storage,
                     is_static: state_after_touch.frame.is_static,
                     depth: state_after_touch.frame.depth + 1,
-                    tracer: state_after_touch.tracer
+                    tracer: state_after_touch.tracer,
+                    jumpdest_cache: state_after_touch.substate.jumpdest_cache
                   )
 
                 child_result = Interpreter.run_loop(child_state)
@@ -224,7 +225,15 @@ defmodule EEVM.Interpreter.Instructions.System.Creation do
                   if child_result.status == :reverted, do: child_result.frame.gas, else: 0
 
                 post_child_fail_state =
-                  %{state_after_touch | db: db_after_nonce, tracer: child_result.tracer}
+                  %{
+                    state_after_touch
+                    | db: db_after_nonce,
+                      tracer: child_result.tracer,
+                      substate: %{
+                        state_after_touch.substate
+                        | jumpdest_cache: child_result.substate.jumpdest_cache
+                      }
+                  }
                   |> MachineState.update_frame(&%{&1 | gas: reserve_gas + returned_gas})
 
                 if deployment_success do

@@ -2,6 +2,8 @@ defmodule EEVM.Interpreter.Instructions.ControlFlowTest do
   use ExUnit.Case, async: true
   import EEVM.TestSupport.MachineHelpers
 
+  doctest EEVM.Interpreter.Instructions.Helpers
+
   describe "Executor - Stack Operations" do
     test "POP" do
       # PUSH1 1, PUSH1 2, POP, STOP  → [1]
@@ -55,6 +57,29 @@ defmodule EEVM.Interpreter.Instructions.ControlFlowTest do
       result = run_code(code)
       assert result.status == :stopped
       assert stack_values(result) == [99]
+    end
+
+    # Yellow Paper §9.4.3: a 0x5B byte inside PUSH data is not a JUMPDEST
+    # (ethereum/tests vmIOandFlowOperations/jumpToPush).
+    test "JUMP and JUMPI into PUSH data halt with an invalid jump destination" do
+      # PUSH1 4, JUMP, PUSH1 0x5B, STOP: byte 4 is 0x5B but PUSH1's immediate
+      jump = <<0x60, 4, 0x56, 0x60, 0x5B, 0x00>>
+      # PUSH1 1, PUSH1 6, JUMPI, PUSH1 0x5B, STOP
+      jumpi = <<0x60, 1, 0x60, 6, 0x57, 0x60, 0x5B, 0x00>>
+
+      for code <- [jump, jumpi] do
+        result = EEVM.execute(code, gas: 1000)
+        assert result.status == {:error, :invalid_jump_destination}
+        assert result.frame.gas == 0
+      end
+    end
+
+    test "a JUMPDEST right after PUSH32 data is valid" do
+      # PUSH1 36, JUMP, PUSH32 (0x5B x 32), JUMPDEST (pc 36), PUSH1 7, STOP
+      code = <<0x60, 36, 0x56, 0x7F>> <> :binary.copy(<<0x5B>>, 32) <> <<0x5B, 0x60, 7, 0x00>>
+      result = EEVM.execute(code)
+      assert result.status == :stopped
+      assert EEVM.stack_values(result) == [7]
     end
 
     test "JUMPI not taken" do

@@ -95,7 +95,8 @@ defmodule EEVM.Interpreter.MachineState do
         selfdestructed_addresses: Keyword.get(opts, :selfdestructed_addresses, MapSet.new()),
         original_storage: Keyword.get(opts, :original_storage, %{}),
         transient_storage: Keyword.get(opts, :transient_storage, %{}),
-        logs: Keyword.get(opts, :logs, [])
+        logs: Keyword.get(opts, :logs, []),
+        jumpdest_cache: Keyword.get(opts, :jumpdest_cache, %{})
       )
 
     frame = %Frame{

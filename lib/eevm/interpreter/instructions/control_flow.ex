@@ -4,8 +4,8 @@ defmodule EEVM.Interpreter.Instructions.ControlFlow do
 
   Covers:
 
-  - **Branching**: JUMP (0x56), JUMPI (0x57) — destination must land on a
-    JUMPDEST (0x5B) byte.
+  - **Branching**: JUMP (0x56), JUMPI (0x57) — destination must be a
+    JUMPDEST (0x5B) opcode, not PUSH data (`Helpers.check_jumpdest/2`).
   - **PUSH**: PUSH0 (0x5F, EIP-3855), PUSH1-PUSH32 (0x60-0x7F).
   - **DUP**: DUP1-DUP16 (0x80-0x8F).
   - **SWAP**: SWAP1-SWAP16 (0x90-0x9F).
@@ -27,16 +27,11 @@ defmodule EEVM.Interpreter.Instructions.ControlFlow do
           {:ok, MachineState.t()} | {:error, atom(), MachineState.t()}
 
   # JUMP — unconditional jump. Pops the destination and validates it is a
-  # JUMPDEST byte in the bytecode. Any other destination is an error.
+  # JUMPDEST opcode in the bytecode. Any other destination is an error.
 
   def execute(0x56, state) do
-    with {:ok, dest, s1} <- Stack.pop(state.frame.stack) do
-      if Helpers.valid_jumpdest?(state.frame.code, dest) do
-        {:ok, MachineState.update_frame(state, &%{&1 | stack: s1, pc: dest})}
-      else
-        {:error, :invalid_jump_destination, state}
-      end
-    else
+    case Stack.pop(state.frame.stack) do
+      {:ok, dest, s1} -> jump(state, s1, dest)
       {:error, reason} -> {:error, reason, state}
     end
   end
@@ -48,11 +43,7 @@ defmodule EEVM.Interpreter.Instructions.ControlFlow do
     with {:ok, dest, s1} <- Stack.pop(state.frame.stack),
          {:ok, condition, s2} <- Stack.pop(s1) do
       if condition != 0 do
-        if Helpers.valid_jumpdest?(state.frame.code, dest) do
-          {:ok, MachineState.update_frame(state, &%{&1 | stack: s2, pc: dest})}
-        else
-          {:error, :invalid_jump_destination, state}
-        end
+        jump(state, s2, dest)
       else
         {:ok, state |> MachineState.update_frame(&%{&1 | stack: s2}) |> MachineState.advance_pc()}
       end
@@ -125,4 +116,10 @@ defmodule EEVM.Interpreter.Instructions.ControlFlow do
   end
 
   def execute(_opcode, state), do: {:ok, MachineState.halt(state, :invalid)}
+
+  defp jump(state, stack, dest) do
+    with {:ok, state} <- Helpers.check_jumpdest(state, dest) do
+      {:ok, MachineState.update_frame(state, &%{&1 | stack: stack, pc: dest})}
+    end
+  end
 end

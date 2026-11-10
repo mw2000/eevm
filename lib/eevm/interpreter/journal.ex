@@ -20,9 +20,9 @@ defmodule EEVM.Interpreter.Journal do
     success its (possibly negative) counter is added to the parent's; on
     failure it is dropped.
 
-  The `tracer` field is *not* revertible — trace events accumulate
-  monotonically and are always preserved across child boundaries regardless
-  of the child's outcome.
+  The `tracer` and `substate.jumpdest_cache` are *not* revertible — trace
+  events and JUMPDEST analyses accumulate monotonically and are always
+  preserved across child boundaries regardless of the child's outcome.
 
   ## What this module does NOT cover
 
@@ -59,6 +59,7 @@ defmodule EEVM.Interpreter.Journal do
   end
 
   def merge_child_result(%MachineState{} = parent, %MachineState{} = child) do
-    %{parent | tracer: child.tracer}
+    substate = %{parent.substate | jumpdest_cache: child.substate.jumpdest_cache}
+    %{parent | substate: substate, tracer: child.tracer}
   end
 end

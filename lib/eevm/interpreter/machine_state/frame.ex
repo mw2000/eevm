@@ -7,6 +7,8 @@ defmodule EEVM.Interpreter.MachineState.Frame do
 
   - `pc`, `stack`, `memory`, `gas`, `refund` — execution registers
   - `code` — the currently-executing bytecode
+  - `jumpdests` — `code`'s JUMPDEST map, filled in by the frame's first
+    JUMP/JUMPI (see `EEVM.Interpreter.Instructions.Helpers.check_jumpdest/2`)
   - `return_data` — buffer holding the most recent child frame's output
   - `contract` — the per-call message context (`msg.sender`, `msg.value`,
     `address`, `calldata`, `balances`)
@@ -28,6 +30,7 @@ defmodule EEVM.Interpreter.MachineState.Frame do
           gas: non_neg_integer(),
           refund: integer(),
           code: binary(),
+          jumpdests: binary() | nil,
           return_data: binary(),
           contract: Contract.t(),
           depth: non_neg_integer(),
@@ -40,6 +43,7 @@ defmodule EEVM.Interpreter.MachineState.Frame do
             gas: 0,
             refund: 0,
             code: <<>>,
+            jumpdests: nil,
             return_data: <<>>,
             contract: nil,
             depth: 0,
