@@ -9,11 +9,15 @@ defmodule EEVM.Interpreter.Instructions.Registry do
   - `:inputs` / `:outputs` — stack arity, used by the disassembler and stack-depth checks
   - `:module` — the `EEVM.Interpreter.Instructions.*` module that implements
     the opcode; `EEVM.Interpreter` dispatches on this field
-  - `:kind` — how the interpreter runs it. `:stack` opcodes are pure functions
-    of the stack, implemented as `module.stack_op(opcode, stack)` on a list;
-    this is the default for the Arithmetic, Comparison, Bitwise, and StackOps
-    modules. `:state` opcodes read or write the machine state through
-    `module.execute(opcode, state)`.
+  - `:kind` — how the interpreter runs it:
+    - `:stack` opcodes are pure functions of the stack, implemented as
+      `module.stack_op(opcode, stack)` on a list; this is the default for the
+      Arithmetic, Comparison, Bitwise, and StackOps modules.
+    - `:control` opcodes (PUSH0–PUSH32, JUMP, JUMPI, JUMPDEST, PC, GAS) read or
+      move the interpreter loop's own registers, so `EEVM.Interpreter`
+      implements them.
+    - `:state` opcodes read or write the machine state through
+      `module.execute(opcode, state)`.
   - `:state_mutating` (when present) — opcode mutates persistent state and is an
     exceptional halt (`{:error, :static_state_modification}`) inside a STATICCALL frame
   - `:eip` (when present) — the `EEVM.HardforkConfig` flag of the EIP that
@@ -25,11 +29,12 @@ defmodule EEVM.Interpreter.Instructions.Registry do
   opcode ranges rather than stored in the static map.
   """
 
+  alias EEVM.Interpreter
+
   alias EEVM.Interpreter.Instructions.{
     Arithmetic,
     Bitwise,
     Comparison,
-    ControlFlow,
     Crypto,
     Environment.Data,
     Environment.External,
@@ -224,8 +229,15 @@ defmodule EEVM.Interpreter.Instructions.Registry do
     @basefee => %{name: "BASEFEE", inputs: 0, outputs: 1, module: Simple, eip: :eip_3198},
     @blobhash => %{name: "BLOBHASH", inputs: 1, outputs: 1, module: Simple, eip: :eip_4844},
     @blobbasefee => %{name: "BLOBBASEFEE", inputs: 0, outputs: 1, module: Simple, eip: :eip_7516},
-    @gas_ => %{name: "GAS", inputs: 0, outputs: 1, module: Simple},
-    @push0 => %{name: "PUSH0", inputs: 0, outputs: 1, module: ControlFlow, eip: :eip_3855},
+    @gas_ => %{name: "GAS", inputs: 0, outputs: 1, module: Interpreter, kind: :control},
+    @push0 => %{
+      name: "PUSH0",
+      inputs: 0,
+      outputs: 1,
+      module: Interpreter,
+      kind: :control,
+      eip: :eip_3855
+    },
     @pop => %{name: "POP", inputs: 1, outputs: 0, module: StackOps},
     @mload => %{name: "MLOAD", inputs: 1, outputs: 1, module: MemoryOps},
     @mstore => %{name: "MSTORE", inputs: 2, outputs: 0, module: MemoryOps},
@@ -243,10 +255,10 @@ defmodule EEVM.Interpreter.Instructions.Registry do
     },
     @msize => %{name: "MSIZE", inputs: 0, outputs: 1, module: MemoryOps},
     @mcopy => %{name: "MCOPY", inputs: 3, outputs: 0, module: MemoryOps, eip: :eip_5656},
-    @jump => %{name: "JUMP", inputs: 1, outputs: 0, module: ControlFlow},
-    @jumpi => %{name: "JUMPI", inputs: 2, outputs: 0, module: ControlFlow},
-    @pc => %{name: "PC", inputs: 0, outputs: 1, module: ControlFlow},
-    @jumpdest => %{name: "JUMPDEST", inputs: 0, outputs: 0, module: ControlFlow},
+    @jump => %{name: "JUMP", inputs: 1, outputs: 0, module: Interpreter, kind: :control},
+    @jumpi => %{name: "JUMPI", inputs: 2, outputs: 0, module: Interpreter, kind: :control},
+    @pc => %{name: "PC", inputs: 0, outputs: 1, module: Interpreter, kind: :control},
+    @jumpdest => %{name: "JUMPDEST", inputs: 0, outputs: 0, module: Interpreter, kind: :control},
     @log0 => %{name: "LOG0", inputs: 2, outputs: 0, module: Logging, state_mutating: true},
     @log1 => %{name: "LOG1", inputs: 3, outputs: 0, module: Logging, state_mutating: true},
     @log2 => %{name: "LOG2", inputs: 4, outputs: 0, module: Logging, state_mutating: true},
@@ -289,7 +301,14 @@ defmodule EEVM.Interpreter.Instructions.Registry do
     n = op - @push1 + 1
 
     {:ok,
-     %{name: "PUSH#{n}", inputs: 0, outputs: 1, push_bytes: n, module: ControlFlow, kind: :state}}
+     %{
+       name: "PUSH#{n}",
+       inputs: 0,
+       outputs: 1,
+       push_bytes: n,
+       module: Interpreter,
+       kind: :control
+     }}
   end
 
   def info(op) when op >= @dup1 and op <= @dup16 do
@@ -301,8 +320,8 @@ defmodule EEVM.Interpreter.Instructions.Registry do
        inputs: n,
        outputs: n + 1,
        dup_depth: n - 1,
-       module: ControlFlow,
-       kind: :state
+       module: StackOps,
+       kind: :stack
      }}
   end
 
@@ -315,8 +334,8 @@ defmodule EEVM.Interpreter.Instructions.Registry do
        inputs: n + 1,
        outputs: n + 1,
        swap_depth: n,
-       module: ControlFlow,
-       kind: :state
+       module: StackOps,
+       kind: :stack
      }}
   end
 

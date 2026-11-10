@@ -138,35 +138,6 @@ defmodule EEVM.Interpreter.MachineState do
       else: addresses
   end
 
-  @doc "Returns the opcode byte at the current program counter, or nil if past end."
-  @spec current_opcode(t()) :: non_neg_integer() | nil
-  def current_opcode(%__MODULE__{frame: %Frame{pc: pc, code: code}}) when pc < byte_size(code) do
-    :binary.at(code, pc)
-  end
-
-  def current_opcode(_state), do: nil
-
-  @doc """
-  Reads `n` bytes from the code starting at `offset`.
-
-  Used by PUSH instructions to read their immediate data.
-  """
-  @spec read_code(t(), non_neg_integer(), non_neg_integer()) :: binary()
-  def read_code(%__MODULE__{frame: %Frame{code: code}}, offset, n) do
-    code_size = byte_size(code)
-
-    if offset >= code_size do
-      # Past end of code — return zeros (EVM spec: treat as 0x00)
-      <<0::size(n * 8)>>
-    else
-      available = min(n, code_size - offset)
-      chunk = binary_part(code, offset, available)
-      # Pad with zeros if we read past the end
-      padding_size = (n - available) * 8
-      <<chunk::binary, 0::size(padding_size)>>
-    end
-  end
-
   @doc "Advances the program counter by `n` positions."
   @spec advance_pc(t(), non_neg_integer()) :: t()
   def advance_pc(%__MODULE__{frame: frame} = state, n \\ 1) do

@@ -18,9 +18,11 @@ defmodule EEVM.Interpreter do
   semantics, and the interpreter only orchestrates.
   """
 
+  import Bitwise, only: [<<<: 2]
+
   alias EEVM.Database
   alias EEVM.HardforkConfig
-  alias EEVM.Interpreter.Instructions.Registry
+  alias EEVM.Interpreter.Instructions.{Helpers, Registry}
   alias EEVM.Interpreter.{MachineState, Memory, Stack}
   alias EEVM.Tracer
   alias EEVM.Tracer.TraceStep
@@ -77,52 +79,18 @@ defmodule EEVM.Interpreter do
   end
 
   @doc """
-  The main execution loop. Runs until execution terminates.
+  The main execution loop. Runs the active frame until it halts.
 
-  While `status: :running`, it fetches the current opcode, deducts static
-  gas, delegates to `execute_opcode/2`, and recurses. Any other status
-  (`:stopped`, `:reverted`, `:invalid`, `:out_of_gas`, `{:error, reason}`)
-  means the frame has halted, and the state is returned as-is.
-
-  It runs one frame. CALL and CREATE run each child frame in a nested call
-  and merge the result into the parent (`EEVM.Interpreter.Journal`). It is
-  public for those callers and the transaction handler; it is not part of
-  the public API — use `run/2`.
+  Any status but `:running` means the frame has already halted, and the state
+  is returned as-is. It runs one frame: CALL and CREATE run each child frame in
+  a nested call and merge the result into the parent
+  (`EEVM.Interpreter.Journal`). It is public for those callers and the
+  transaction handler; it is not part of the public API — use `run/2`.
   """
-
   @spec run_loop(MachineState.t()) :: MachineState.t()
-  def run_loop(%MachineState{status: :running} = state) do
-    case MachineState.current_opcode(state) do
-      nil ->
-        # Running off the end of the code is an implicit STOP: empty output.
-        state
-        |> MachineState.update_frame(&%{&1 | return_data: <<>>})
-        |> MachineState.halt(:stopped)
-
-      opcode ->
-        instruction = elem(state.env.instruction_table, opcode)
-        static_cost = if opcode == 0xFE, do: state.frame.gas, else: elem(instruction, 0)
-        traced_state = trace_opcode(state, opcode, static_cost)
-
-        case MachineState.consume_gas(traced_state, static_cost) do
-          {:ok, state_after_gas} ->
-            case execute_opcode(instruction, state_after_gas) do
-              {:ok, new_state} ->
-                run_loop(new_state)
-
-              {:error, :out_of_gas, halted_state} ->
-                annotate_last_error(halted_state, :out_of_gas)
-
-              {:error, reason, error_state} ->
-                error_state
-                |> MachineState.halt({:error, reason})
-                |> annotate_last_error(reason)
-            end
-
-          {:error, :out_of_gas, halted_state} ->
-            annotate_last_error(halted_state, :out_of_gas)
-        end
-    end
+  def run_loop(%MachineState{status: :running, frame: frame} = state) do
+    %Stack{elements: stack, size: depth} = frame.stack
+    loop(state, frame.code, state.env.instruction_table, frame.pc, frame.gas, stack, depth)
   end
 
   def run_loop(state), do: state
@@ -196,58 +164,176 @@ defmodule EEVM.Interpreter do
     %{state | db: cleaned_db}
   end
 
-  # Dispatch an opcode to the module its instruction-table entry names (see
-  # `EEVM.Interpreter.InstructionTable`). Before the module runs, the stack
-  # bounds are checked once here: fewer than the entry's minimum depth is a
-  # stack underflow, and above its maximum depth the opcode would end with
-  # more than 1024 items, a stack overflow (Yellow Paper §9.4.2). Opcode
-  # modules can therefore push without handling `{:error, :stack_overflow}`.
-  # Inside a STATICCALL frame (`frame.is_static`), state-mutating opcodes
-  # (SSTORE, TSTORE, LOG0..4, CREATE, CREATE2, SELFDESTRUCT) are an
-  # exceptional halt (EIP-214). Bytes the active fork does not define
-  # dispatch as INVALID.
+  # ## The register loop
+  #
+  # `loop/7` keeps what changes on almost every opcode in its own arguments
+  # instead of in the `MachineState`: `pc`, `gas`, and `stack` (a list, top
+  # first) with its `depth`, plus the frame's `code` and the fork's instruction
+  # `table`, so the hot path never reads them out of a struct.
+  #
+  # While it runs, `state.frame`'s pc, gas, and stack are stale; every other
+  # field (memory, refund, return data, contract, ...) is current. `:stack` and
+  # `:control` opcodes run on the registers alone. A `:state` opcode, a halt, or
+  # the end of the frame first writes the registers back (`sync/5`), so opcode
+  # modules and callers only ever see a complete `MachineState`. This keeps the
+  # frame and machine-state structs from being rebuilt on every opcode (#193).
+  #
+  # Each opcode is checked once, from its instruction-table entry (see
+  # `EEVM.Interpreter.InstructionTable`), before it runs: static gas, then the
+  # stack bounds. Fewer items than the entry's minimum depth is a stack
+  # underflow; above its maximum depth the opcode would end with more than 1024
+  # items, a stack overflow (Yellow Paper §9.4.2). Opcodes can therefore assume
+  # their inputs are there and push freely. Bytes the active fork does not
+  # define have the INVALID entry.
 
-  defp execute_opcode({_gas, kind, module, opcode, min_depth, max_depth, state_mutating?}, state) do
-    depth = Stack.depth(state.frame.stack)
+  defp loop(state, code, table, pc, gas, stack, depth) do
+    case code do
+      <<_::binary-size(pc), opcode, _::binary>> ->
+        {cost, kind, _module, op, min_depth, max_depth, _mutating?} = entry = elem(table, opcode)
+        state = trace_opcode(state, opcode, cost, pc, gas, stack)
 
-    cond do
-      depth < min_depth -> {:error, :stack_underflow, state}
-      depth > max_depth -> {:error, :stack_overflow, state}
-      kind == :stack -> {:ok, run_stack_op(opcode, state)}
-      state_mutating? and state.frame.is_static -> {:error, :static_state_modification, state}
-      true -> module.execute(opcode, state)
+        cond do
+          cost > gas -> halt(state, :out_of_gas, pc, gas, stack, depth)
+          depth < min_depth -> halt(state, :stack_underflow, pc, gas, stack, depth)
+          depth > max_depth -> halt(state, :stack_overflow, pc, gas, stack, depth)
+          kind == :state -> run_state_op(entry, sync(state, pc, gas - cost, stack, depth))
+          true -> step(op, state, code, table, pc, gas - cost, stack, depth)
+        end
+
+      _ ->
+        # Running off the end of the code is an implicit STOP: empty output.
+        state
+        |> sync(pc, gas, stack, depth)
+        |> MachineState.update_frame(&%{&1 | return_data: <<>>})
+        |> MachineState.halt(:stopped)
     end
   end
 
-  defp run_stack_op(opcode, %MachineState{frame: frame} = state) do
-    %{state | frame: %{frame | stack: stack_op(opcode, frame.stack), pc: frame.pc + 1}}
+  # A `:state` opcode runs on the whole machine state; the loop then resumes
+  # from the frame it returns. Inside a STATICCALL frame, state-mutating
+  # opcodes (SSTORE, TSTORE, LOG0..4, CREATE, CREATE2, SELFDESTRUCT) are an
+  # exceptional halt (EIP-214).
+  defp run_state_op({_cost, _kind, module, op, _min, _max, state_mutating?}, state) do
+    result =
+      if state_mutating? and state.frame.is_static,
+        do: {:error, :static_state_modification, state},
+        else: module.execute(op, state)
+
+    case result do
+      {:ok, state} ->
+        run_loop(state)
+
+      {:error, :out_of_gas, state} ->
+        annotate_last_error(state, :out_of_gas)
+
+      {:error, reason, state} ->
+        state |> MachineState.halt({:error, reason}) |> annotate_last_error(reason)
+    end
   end
 
-  # One clause per `:stack` opcode, generated from the Registry, so the call to
-  # the opcode's `stack_op/2` and the change in stack size are compile-time
+  # `:stack` opcodes: one clause per opcode, generated from the Registry, so the
+  # call to its `stack_op/2` and the change in stack depth are compile-time
   # constants.
   for opcode <- 0..255, {:ok, %{kind: :stack} = info} <- [Registry.info(opcode)] do
-    defp stack_op(unquote(opcode), %Stack{elements: elements, size: size}) do
-      %Stack{
-        elements: unquote(info.module).stack_op(unquote(opcode), elements),
-        size: size + unquote(info.outputs - info.inputs)
-      }
+    defp step(unquote(opcode), state, code, table, pc, gas, stack, depth) do
+      stack = unquote(info.module).stack_op(unquote(opcode), stack)
+      loop(state, code, table, pc + 1, gas, stack, depth + unquote(info.outputs - info.inputs))
     end
   end
+
+  # `:control` opcodes read or move the loop's own registers.
+
+  # PUSH0 (EIP-3855) pushes 0 without reading any code.
+  defp step(0x5F, state, code, table, pc, gas, stack, depth),
+    do: loop(state, code, table, pc + 1, gas, [0 | stack], depth + 1)
+
+  # PUSH1–PUSH32 push the n code bytes after the opcode as a big-endian integer.
+  for n <- 1..32 do
+    defp step(unquote(0x5F + n), state, code, table, pc, gas, stack, depth) do
+      value = push_data(code, pc + 1, unquote(n))
+      loop(state, code, table, pc + unquote(n + 1), gas, [value | stack], depth + 1)
+    end
+  end
+
+  defp step(0x56, state, code, table, pc, gas, [dest | stack], depth),
+    do: jump(state, code, table, pc, gas, stack, depth - 1, dest)
+
+  defp step(0x57, state, code, table, pc, gas, [_dest, 0 | stack], depth),
+    do: loop(state, code, table, pc + 1, gas, stack, depth - 2)
+
+  defp step(0x57, state, code, table, pc, gas, [dest, _condition | stack], depth),
+    do: jump(state, code, table, pc, gas, stack, depth - 2, dest)
+
+  defp step(0x58, state, code, table, pc, gas, stack, depth),
+    do: loop(state, code, table, pc + 1, gas, [pc | stack], depth + 1)
+
+  # GAS pushes the gas left after its own cost.
+  defp step(0x5A, state, code, table, pc, gas, stack, depth),
+    do: loop(state, code, table, pc + 1, gas, [gas | stack], depth + 1)
+
+  defp step(0x5B, state, code, table, pc, gas, stack, depth),
+    do: loop(state, code, table, pc + 1, gas, stack, depth)
+
+  # Code reads as zeros past its end, so a PUSH cut short by the end of the
+  # code fills its missing low-order bytes with zeros.
+  defp push_data(code, offset, n) do
+    case code do
+      <<_::binary-size(offset), value::unsigned-size(n)-unit(8), _::binary>> ->
+        value
+
+      <<_::binary-size(offset), available::binary>> ->
+        :binary.decode_unsigned(available) <<< (8 * (n - byte_size(available)))
+    end
+  end
+
+  # JUMP and JUMPI may only land on a JUMPDEST opcode (Yellow Paper §9.4.3).
+  # `Helpers.check_jumpdest/2` keeps the code's JUMPDEST map in `frame.jumpdests`,
+  # which the registers do not shadow, so it survives into child frames and halts.
+  defp jump(state, code, table, pc, gas, stack, depth, dest) do
+    case Helpers.check_jumpdest(state, dest) do
+      {:ok, state} -> loop(state, code, table, dest, gas, stack, depth)
+      {:error, reason, state} -> halt(state, reason, pc, gas, stack, depth)
+    end
+  end
+
+  # Writes the registers back into the frame.
+  defp sync(%MachineState{frame: frame} = state, pc, gas, stack, depth) do
+    %{state | frame: %{frame | pc: pc, gas: gas, stack: %Stack{elements: stack, size: depth}}}
+  end
+
+  # An exceptional halt: `MachineState.halt/2` burns the frame's remaining gas.
+  defp halt(state, reason, pc, gas, stack, depth) do
+    state
+    |> sync(pc, gas, stack, depth)
+    |> MachineState.halt(halt_status(reason))
+    |> annotate_last_error(reason)
+  end
+
+  defp halt_status(:out_of_gas), do: :out_of_gas
+  defp halt_status(reason), do: {:error, reason}
 
   # Trace bookkeeping is a no-op when no tracer is attached — one pattern match,
   # one return. All helpers below keep this fast path.
 
-  defp trace_opcode(%MachineState{tracer: nil} = state, _opcode, _static_cost), do: state
+  defp trace_opcode(%MachineState{tracer: nil} = state, _opcode, _cost, _pc, _gas, _stack),
+    do: state
 
-  defp trace_opcode(%MachineState{tracer: tracer, frame: frame} = state, opcode, static_cost) do
+  defp trace_opcode(
+         %MachineState{tracer: tracer, frame: frame} = state,
+         opcode,
+         cost,
+         pc,
+         gas,
+         stack
+       ) do
     step = %TraceStep{
-      pc: frame.pc,
+      pc: pc,
       op: Tracer.op_name(opcode),
       op_byte: opcode,
-      gas_remaining: frame.gas,
-      gas_cost: static_cost,
-      stack: Stack.to_list(frame.stack),
+      gas_remaining: gas,
+      # INVALID consumes all remaining gas.
+      gas_cost: if(opcode == 0xFE, do: gas, else: cost),
+      stack: stack,
       memory_size: Memory.size(frame.memory),
       depth: frame.depth,
       refund: frame.refund,

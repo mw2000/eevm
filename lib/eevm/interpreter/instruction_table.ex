@@ -7,9 +7,9 @@ defmodule EEVM.Interpreter.InstructionTable do
 
   - `static_gas` — the cost `EEVM.Interpreter` charges before dispatch,
     from `EEVM.Gas.Static` for that hardfork
-  - `kind`, `module`, and `dispatch_opcode` — the interpreter runs a `:stack`
-    opcode as `module.stack_op(dispatch_opcode, stack)` and a `:state` opcode
-    as `module.execute(dispatch_opcode, state)` (the Registry's `:kind`)
+  - `kind`, `module`, and `dispatch_opcode` — the Registry's `:kind` says how
+    the interpreter runs `dispatch_opcode`: a `:state` opcode as
+    `module.execute(dispatch_opcode, state)`, the others on its own registers
   - `min_depth` / `max_depth` — the stack depths the opcode can run at: it
     pops the Registry's `:inputs`, and must not leave more than 1024 items
   - `state_mutating?` — whether the opcode must halt inside a STATICCALL frame
@@ -30,8 +30,8 @@ defmodule EEVM.Interpreter.InstructionTable do
   alias EEVM.Interpreter.Stack
 
   @type entry ::
-          {non_neg_integer(), :stack | :state, module(), non_neg_integer(), non_neg_integer(),
-           non_neg_integer(), boolean()}
+          {non_neg_integer(), :stack | :control | :state, module(), non_neg_integer(),
+           non_neg_integer(), non_neg_integer(), boolean()}
   @type t :: tuple()
 
   @invalid 0xFE

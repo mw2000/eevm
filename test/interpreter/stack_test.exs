@@ -36,25 +36,5 @@ defmodule EEVM.StackTest do
       # 2^256 wraps to 0
       assert value == 0
     end
-
-    test "peek at depth" do
-      {:ok, s} = Stack.push(Stack.new(), 10)
-      {:ok, s} = Stack.push(s, 20)
-      {:ok, s} = Stack.push(s, 30)
-
-      assert {:ok, 30} = Stack.peek(s, 0)
-      assert {:ok, 20} = Stack.peek(s, 1)
-      assert {:ok, 10} = Stack.peek(s, 2)
-      assert {:error, :stack_underflow} = Stack.peek(s, 3)
-    end
-
-    test "swap" do
-      {:ok, s} = Stack.push(Stack.new(), 10)
-      {:ok, s} = Stack.push(s, 20)
-      {:ok, s} = Stack.push(s, 30)
-
-      {:ok, swapped} = Stack.swap(s, 2)
-      assert Stack.to_list(swapped) == [10, 20, 30]
-    end
   end
 end

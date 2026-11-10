@@ -7,7 +7,8 @@ defmodule EEVM.Interpreter.Instructions.Environment.Simple do
 
   Includes: ADDRESS, ORIGIN, CALLER, CALLVALUE, CALLDATASIZE, CODESIZE,
   GASPRICE, RETURNDATASIZE, COINBASE, TIMESTAMP, NUMBER, PREVRANDAO,
-  GASLIMIT, CHAINID, BASEFEE, BLOBBASEFEE, GAS, BLOCKHASH, and BLOBHASH.
+  GASLIMIT, CHAINID, BASEFEE, BLOBBASEFEE, BLOCKHASH, and BLOBHASH. (GAS reads the
+  interpreter loop's gas register, so `EEVM.Interpreter` implements it.)
   """
 
   alias EEVM.{BlockEnv, Database}
@@ -35,7 +36,6 @@ defmodule EEVM.Interpreter.Instructions.Environment.Simple do
   def execute(0x46, state), do: Helpers.push_value(state, state.env.config.chain_id)
   def execute(0x48, state), do: Helpers.push_value(state, state.env.block.base_fee)
   def execute(0x4A, state), do: Helpers.push_value(state, state.env.block.blob_base_fee)
-  def execute(0x5A, state), do: Helpers.push_value(state, state.frame.gas)
 
   def execute(0x40, state) do
     with {:ok, block_num, s1} <- Stack.pop(state.frame.stack),

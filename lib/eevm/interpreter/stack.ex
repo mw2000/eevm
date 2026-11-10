@@ -44,33 +44,6 @@ defmodule EEVM.Interpreter.Stack do
     {:ok, top, %__MODULE__{elements: rest, size: size - 1}}
   end
 
-  @doc """
-  Peeks at the element at the given depth (0 = top of stack).
-
-  Used by DUP and SWAP instructions.
-  """
-  @spec peek(t(), non_neg_integer()) :: {:ok, non_neg_integer()} | {:error, :stack_underflow}
-  def peek(%__MODULE__{elements: elements, size: size}, depth) when depth < size do
-    {:ok, :lists.nth(depth + 1, elements)}
-  end
-
-  def peek(_stack, _depth), do: {:error, :stack_underflow}
-
-  @doc """
-  Swaps the top element with the element at the given depth.
-
-  SWAP1 swaps positions 0 and 1, SWAP2 swaps 0 and 2, etc.
-  """
-  @spec swap(t(), pos_integer()) :: {:ok, t()} | {:error, :stack_underflow}
-  def swap(%__MODULE__{size: size}, depth) when depth >= size do
-    {:error, :stack_underflow}
-  end
-
-  def swap(%__MODULE__{elements: [top | rest]} = stack, depth) do
-    {between, [target | below]} = :lists.split(depth - 1, rest)
-    {:ok, %{stack | elements: [target | between ++ [top | below]]}}
-  end
-
   @doc "Returns the maximum stack depth (1024)."
   @spec max_depth() :: pos_integer()
   def max_depth, do: @max_depth
