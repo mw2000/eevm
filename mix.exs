@@ -70,7 +70,7 @@ defmodule EEVM.MixProject do
         "compile --warnings-as-errors",
         "credo --strict",
         "dialyzer",
-        "cmd mix test"
+        "cmd mix test --warnings-as-errors"
       ]
     ]
   end

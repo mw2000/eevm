@@ -91,8 +91,10 @@ jobs:
         restore-keys: ${{ runner.os }}-${{ matrix.cache-prefix }}build-
     - name: Install dependencies
       run: mix deps.get
-    - name: Run tests
-      run: mix test
+    # Fails on any compile warning in the test run, such as a test calling a
+    # deprecated API.
+    - name: Run tests (warnings as errors)
+      run: mix test --warnings-as-errors
 
   conformance:
     name: Conformance (ethereum/tests)

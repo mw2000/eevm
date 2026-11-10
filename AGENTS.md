@@ -88,7 +88,7 @@ mix format --check-formatted
 mix compile --warnings-as-errors
 mix credo --strict
 mix dialyzer
-mix test
+mix test --warnings-as-errors   # test a deprecated function via apply/3, which skips the warning
 mix docs   # must emit no ExDoc warnings
 ```
 
