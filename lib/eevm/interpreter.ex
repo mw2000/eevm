@@ -28,6 +28,15 @@ defmodule EEVM.Interpreter do
   alias EEVM.Tracer.TraceStep
   alias EEVM.Transaction.IntrinsicGas
 
+  # The `gas` register holds at most `@gas_window`, the largest integer the BEAM
+  # keeps unboxed on 64-bit machines; any gas above it waits in `frame.gas`. A
+  # larger integer lives on the heap, so subtracting each opcode's cost from it
+  # would allocate on every opcode, and state tests routinely give a
+  # transaction 2^63 - 1 gas (loopMul ran 1.65x slower). The register is
+  # refilled from `frame.gas` when it runs out (`out_of_gas/5`), so opcodes
+  # never see the window.
+  @gas_window (1 <<< 59) - 1
+
   @doc """
   Creates a `MachineState` from bytecode and options, then runs the execution loop.
 
@@ -90,7 +99,9 @@ defmodule EEVM.Interpreter do
   @spec run_loop(MachineState.t()) :: MachineState.t()
   def run_loop(%MachineState{status: :running, frame: frame} = state) do
     %Stack{elements: stack, size: depth} = frame.stack
-    loop(state, frame.code, state.env.instruction_table, frame.pc, frame.gas, stack, depth)
+    gas = min(frame.gas, @gas_window)
+    state = %{state | frame: %{frame | gas: frame.gas - gas}}
+    loop(state, frame.code, state.env.instruction_table, frame.pc, gas, stack, depth)
   end
 
   def run_loop(state), do: state
@@ -171,7 +182,8 @@ defmodule EEVM.Interpreter do
   # first) with its `depth`, plus the frame's `code` and the fork's instruction
   # `table`, so the hot path never reads them out of a struct.
   #
-  # While it runs, `state.frame`'s pc, gas, and stack are stale; every other
+  # While it runs, `state.frame`'s pc and stack are stale and `frame.gas` holds
+  # only the gas above `@gas_window` (see the top of the module); every other
   # field (memory, refund, return data, contract, ...) is current. `:stack` and
   # `:control` opcodes run on the registers alone. A `:state` opcode, a halt, or
   # the end of the frame first writes the registers back (`sync/5`), so opcode
@@ -193,7 +205,7 @@ defmodule EEVM.Interpreter do
         state = trace_opcode(state, opcode, cost, pc, gas, stack)
 
         cond do
-          cost > gas -> halt(state, :out_of_gas, pc, gas, stack, depth)
+          cost > gas -> out_of_gas(state, pc, gas, stack, depth)
           depth < min_depth -> halt(state, :stack_underflow, pc, gas, stack, depth)
           depth > max_depth -> halt(state, :stack_overflow, pc, gas, stack, depth)
           kind == :state -> run_state_op(entry, sync(state, pc, gas - cost, stack, depth))
@@ -269,7 +281,7 @@ defmodule EEVM.Interpreter do
 
   # GAS pushes the gas left after its own cost.
   defp step(0x5A, state, code, table, pc, gas, stack, depth),
-    do: loop(state, code, table, pc + 1, gas, [gas | stack], depth + 1)
+    do: loop(state, code, table, pc + 1, gas, [state.frame.gas + gas | stack], depth + 1)
 
   defp step(0x5B, state, code, table, pc, gas, stack, depth),
     do: loop(state, code, table, pc + 1, gas, stack, depth)
@@ -298,8 +310,17 @@ defmodule EEVM.Interpreter do
 
   # Writes the registers back into the frame.
   defp sync(%MachineState{frame: frame} = state, pc, gas, stack, depth) do
-    %{state | frame: %{frame | pc: pc, gas: gas, stack: %Stack{elements: stack, size: depth}}}
+    stack = %Stack{elements: stack, size: depth}
+    %{state | frame: %{frame | pc: pc, gas: frame.gas + gas, stack: stack}}
   end
+
+  # The register cannot pay for the opcode: refill it from the gas held back
+  # above `@gas_window` and retry, or halt when there is none.
+  defp out_of_gas(%MachineState{frame: %{gas: 0}} = state, pc, gas, stack, depth),
+    do: halt(state, :out_of_gas, pc, gas, stack, depth)
+
+  defp out_of_gas(state, pc, gas, stack, depth),
+    do: state |> sync(pc, gas, stack, depth) |> run_loop()
 
   # An exceptional halt: `MachineState.halt/2` burns the frame's remaining gas.
   defp halt(state, reason, pc, gas, stack, depth) do
@@ -330,9 +351,9 @@ defmodule EEVM.Interpreter do
       pc: pc,
       op: Tracer.op_name(opcode),
       op_byte: opcode,
-      gas_remaining: gas,
+      gas_remaining: frame.gas + gas,
       # INVALID consumes all remaining gas.
-      gas_cost: if(opcode == 0xFE, do: gas, else: cost),
+      gas_cost: if(opcode == 0xFE, do: frame.gas + gas, else: cost),
       stack: stack,
       memory_size: Memory.size(frame.memory),
       depth: frame.depth,

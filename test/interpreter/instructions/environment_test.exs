@@ -229,6 +229,19 @@ defmodule EEVM.Interpreter.Instructions.EnvironmentTest do
       assert result.frame.gas == 998
     end
 
+    # State tests give transactions up to 2^63 - 1 gas, beyond the BEAM's
+    # unboxed integers, which the interpreter loop keeps its gas counter in.
+    test "GAS and the gas left are exact with more than 2^59 gas" do
+      gas = 0x7FFF_FFFF_FFFF_FFFF
+      # GAS (2), PUSH1 0 (3), MSTORE (3 + 3 for one memory word), GAS (2), STOP
+      code = <<0x5A, 0x60, 0x00, 0x52, 0x5A, 0x00>>
+      result = EEVM.Interpreter.run(code, gas: gas)
+      assert stack_values(result) == [gas - 13]
+      assert result.frame.gas == gas - 13
+      {<<first_gas::256>>, _} = EEVM.Interpreter.Memory.read_bytes(result.frame.memory, 0, 32)
+      assert first_gas == gas - 2
+    end
+
     test "env opcodes have correct gas costs" do
       # ADDRESS costs 2 (base)
       code = <<0x30, 0x00>>
