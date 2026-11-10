@@ -14,9 +14,9 @@ config = Config.new(:prague)
 gas = 10_000_000
 
 # ecrecover (0x01): a real signature over a 32-byte hash.
-private_key = :crypto.hash(:sha256, "eevm benchmark signer")
-hash = :crypto.hash(:sha256, "eevm benchmark message")
-{:ok, {<<r::256, s::256>>, recovery_id}} = ExSecp256k1.sign_compact(hash, private_key)
+private_key = EEVM.Crypto.SHA256.hash("eevm benchmark signer")
+hash = EEVM.Crypto.SHA256.hash("eevm benchmark message")
+{:ok, {r, s, recovery_id}} = EEVM.Crypto.ECDSA.sign(:secp256k1, hash, private_key)
 ecrecover_input = <<hash::binary, 27 + recovery_id::256, r::256, s::256>>
 
 # ModExp (0x05): a 2048-bit modular exponentiation, as in RSA signature checks.

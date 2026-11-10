@@ -3,7 +3,7 @@ defmodule EEVM.BlockTest do
 
   alias EEVM.{Block, Database}
   alias EEVM.Block.{Header, Requests, Withdrawal}
-  alias EEVM.Crypto.Keccak
+  alias EEVM.Crypto.{ECDSA, Keccak, SHA256}
   alias EEVM.Database.InMemory
   alias EEVM.MPT.Trie
   alias EEVM.Transaction.{Envelope, FeeMarket, Legacy, Signer}
@@ -201,7 +201,7 @@ defmodule EEVM.BlockTest do
 
       # EIP-7685: sha256 over the concatenated sha256 of each request.
       assert block.header.requests_hash ==
-               :crypto.hash(:sha256, Enum.map_join(expected, &:crypto.hash(:sha256, &1)))
+               SHA256.hash(Enum.map_join(expected, &SHA256.hash/1))
 
       {:ok, decoded} = block |> Block.encode() |> Block.decode()
 
@@ -224,7 +224,7 @@ defmodule EEVM.BlockTest do
       assert built.requests == [<<0x02, 0xDD>>]
 
       {:ok, empty, _} = Block.build(parent(), [], requests_db(), timestamp: 12, hardfork: :prague)
-      assert empty.header.requests_hash == :crypto.hash(:sha256, <<>>)
+      assert empty.header.requests_hash == SHA256.hash(<<>>)
       assert block.header.requests_hash != empty.header.requests_hash
     end
 
@@ -368,8 +368,8 @@ defmodule EEVM.BlockTest do
   end
 
   defp sender do
-    {:ok, <<4, public_key::binary-size(64)>>} = ExSecp256k1.create_public_key(@private_key)
-    <<_::binary-size(12), sender::unsigned-big-160>> = Keccak.hash_256(public_key)
+    {:ok, {x, y}} = ECDSA.public_key(:secp256k1, @private_key)
+    <<_::binary-size(12), sender::unsigned-big-160>> = Keccak.hash_256(<<x::256, y::256>>)
     sender
   end
 
@@ -390,8 +390,7 @@ defmodule EEVM.BlockTest do
         overrides
       )
 
-    {:ok, {<<r::256, s::256>>, y_parity}} =
-      ExSecp256k1.sign_compact(Signer.signing_hash(tx, 1), @private_key)
+    {:ok, {r, s, y_parity}} = ECDSA.sign(:secp256k1, Signer.signing_hash(tx, 1), @private_key)
 
     %{tx | y_parity: y_parity, r: r, s: s}
   end

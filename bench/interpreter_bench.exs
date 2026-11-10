@@ -275,9 +275,9 @@ erc20 =
     :revert
   ])
 
-private_key = :crypto.hash(:sha256, "eevm benchmark sender")
-{:ok, <<4, public_key::binary-64>>} = ExSecp256k1.create_public_key(private_key)
-<<_::binary-12, sender::160>> = EEVM.Crypto.Keccak.hash_256(public_key)
+private_key = EEVM.Crypto.SHA256.hash("eevm benchmark sender")
+{:ok, {x, y}} = EEVM.Crypto.ECDSA.public_key(:secp256k1, private_key)
+<<_::binary-12, sender::160>> = EEVM.Crypto.Keccak.hash_256(<<x::256, y::256>>)
 token = 0x70CE
 recipient = 0xB0B
 
@@ -306,8 +306,8 @@ unsigned_transfer = %Legacy{
   s: 0
 }
 
-{:ok, {<<r::256, s::256>>, recovery_id}} =
-  unsigned_transfer |> Signer.signing_hash(1) |> ExSecp256k1.sign_compact(private_key)
+{:ok, {r, s, recovery_id}} =
+  EEVM.Crypto.ECDSA.sign(:secp256k1, Signer.signing_hash(unsigned_transfer, 1), private_key)
 
 transfer_tx = %{unsigned_transfer | v: 37 + recovery_id, r: r, s: s}
 block = BlockEnv.new(gas_limit: 30_000_000, base_fee: 0, coinbase: 0xC0F0)

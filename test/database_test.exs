@@ -2,7 +2,7 @@ defmodule EEVM.DatabaseTest do
   use ExUnit.Case, async: true
 
   alias EEVM.{BlockEnv, Database, StateChanges}
-  alias EEVM.Crypto.Keccak
+  alias EEVM.Crypto.{ECDSA, Keccak}
   alias EEVM.Database.InMemory
   alias EEVM.Transaction.{Legacy, Signer}
 
@@ -77,8 +77,8 @@ defmodule EEVM.DatabaseTest do
   @recipient 0xB0B
 
   defp sender do
-    {:ok, <<4, key::binary-size(64)>>} = ExSecp256k1.create_public_key(@private_key)
-    <<_::binary-size(12), address::unsigned-big-160>> = Keccak.hash_256(key)
+    {:ok, {x, y}} = ECDSA.public_key(:secp256k1, @private_key)
+    <<_::binary-size(12), address::unsigned-big-160>> = Keccak.hash_256(<<x::256, y::256>>)
     address
   end
 

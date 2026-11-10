@@ -1,7 +1,7 @@
 defmodule EEVM.Precompiles.ECRecoverTest do
   use ExUnit.Case, async: true
 
-  alias EEVM.Crypto.Keccak
+  alias EEVM.Crypto.{ECDSA, Keccak, SHA256}
   alias EEVM.Precompiles.ECRecover
 
   @curve_order 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141
@@ -43,14 +43,12 @@ defmodule EEVM.Precompiles.ECRecoverTest do
 
   describe "execute/2" do
     test "valid signature recovers 32-byte left-padded address" do
-      hash = :crypto.hash(:sha256, "test message")
-      {:ok, {signature, recovery_id}} = ExSecp256k1.sign_compact(hash, @private_key)
-      {:ok, public_key} = ExSecp256k1.create_public_key(@private_key)
+      hash = SHA256.hash("test message")
+      {signature, recovery_id} = sign(hash)
+      {:ok, {x, y}} = ECDSA.public_key(:secp256k1, @private_key)
 
       <<_::binary-size(12), expected_address::binary-size(20)>> =
-        public_key
-        |> binary_part(1, 64)
-        |> Keccak.hash_256()
+        Keccak.hash_256(<<x::256, y::256>>)
 
       input = build_input(hash, recovery_id + 27, signature)
 
@@ -75,8 +73,8 @@ defmodule EEVM.Precompiles.ECRecoverTest do
     end
 
     test "invalid v (not 27/28) returns empty output" do
-      hash = :crypto.hash(:sha256, "test message")
-      {:ok, {signature, _recovery_id}} = ExSecp256k1.sign_compact(hash, @private_key)
+      hash = SHA256.hash("test message")
+      {signature, _recovery_id} = sign(hash)
 
       input = build_input(hash, 29, signature)
 
@@ -84,7 +82,7 @@ defmodule EEVM.Precompiles.ECRecoverTest do
     end
 
     test "invalid r value (zero) returns empty output" do
-      hash = :crypto.hash(:sha256, "test message")
+      hash = SHA256.hash("test message")
       signature = <<0::256, 1::256>>
       input = build_input(hash, 27, signature)
 
@@ -92,7 +90,7 @@ defmodule EEVM.Precompiles.ECRecoverTest do
     end
 
     test "invalid s value (>= curve order) returns empty output" do
-      hash = :crypto.hash(:sha256, "test message")
+      hash = SHA256.hash("test message")
       r = 1
       s = @curve_order
       signature = <<r::unsigned-big-256, s::unsigned-big-256>>
@@ -107,8 +105,8 @@ defmodule EEVM.Precompiles.ECRecoverTest do
     end
 
     test "always charges flat 3000 gas" do
-      hash = :crypto.hash(:sha256, "test message")
-      {:ok, {signature, recovery_id}} = ExSecp256k1.sign_compact(hash, @private_key)
+      hash = SHA256.hash("test message")
+      {signature, recovery_id} = sign(hash)
       input = build_input(hash, recovery_id + 27, signature)
 
       assert {:ok, _, @gas_cost} = ECRecover.execute(input, 10_000)
@@ -128,6 +126,11 @@ defmodule EEVM.Precompiles.ECRecoverTest do
     test "routes address 0x01 to ECRecover" do
       assert EEVM.Precompiles.execute(0x01, <<>>, 10_000) == ECRecover.execute(<<>>, 10_000)
     end
+  end
+
+  defp sign(hash) do
+    {:ok, {r, s, recovery_id}} = ECDSA.sign(:secp256k1, hash, @private_key)
+    {<<r::256, s::256>>, recovery_id}
   end
 
   defp build_input(hash, v, <<r::binary-size(32), s::binary-size(32)>>) do

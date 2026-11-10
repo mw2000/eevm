@@ -16,7 +16,7 @@ defmodule EEVM.Transaction.Signer do
   """
 
   alias EEVM.{Config, Transaction}
-  alias EEVM.Crypto.Keccak
+  alias EEVM.Crypto.{ECDSA, Keccak}
   alias EEVM.Transaction.{AccessList, Authorization, Blob, FeeMarket, Legacy, SetCode}
 
   @secp256k1n 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141
@@ -39,12 +39,9 @@ defmodule EEVM.Transaction.Signer do
   def sign(tx, <<_::256>> = private_key, %Config{chain_id: chain_id}) do
     tx = put_chain_id(tx, chain_id)
 
-    case ExSecp256k1.sign_compact(signing_hash(unsigned(tx), chain_id), private_key) do
-      {:ok, {<<r::unsigned-big-256, s::unsigned-big-256>>, y_parity}} ->
-        {:ok, put_signature(tx, chain_id, y_parity, r, s)}
-
-      {:error, _} ->
-        {:error, :invalid_private_key}
+    with {:ok, {r, s, y_parity}} <-
+           ECDSA.sign(:secp256k1, signing_hash(unsigned(tx), chain_id), private_key) do
+      {:ok, put_signature(tx, chain_id, y_parity, r, s)}
     end
   end
 
@@ -188,13 +185,15 @@ defmodule EEVM.Transaction.Signer do
 
   def recover_authority(%Authorization{}), do: {:error, :invalid_signature}
 
-  defp recover(hash, y_parity, r, s) do
+  defp recover(hash, y_parity, r, s) when y_parity in [0, 1] do
     with :ok <- validate_signature_scalars(r, s),
-         signature = <<r::unsigned-big-256, s::unsigned-big-256>>,
-         {:ok, public_key} <- ExSecp256k1.recover_compact(hash, signature, y_parity) do
-      public_key_to_address(public_key)
+         {:ok, {x, y}} <- ECDSA.recover(:secp256k1, hash, r, s, y_parity) do
+      <<_::binary-size(12), address::unsigned-big-160>> = Keccak.hash_256(<<x::256, y::256>>)
+      {:ok, address}
     end
   end
+
+  defp recover(_hash, _y_parity, _r, _s), do: {:error, :invalid_signature}
 
   defp extract_signature(%Legacy{} = tx, chain_id) do
     with {:ok, y_parity} <- legacy_y_parity(tx.v, chain_id) do
@@ -228,15 +227,6 @@ defmodule EEVM.Transaction.Signer do
        do: :ok
 
   defp validate_signature_scalars(_, _), do: {:error, :invalid_signature}
-
-  defp public_key_to_address(<<4, key::binary-size(64)>>), do: public_key_to_address(key)
-
-  defp public_key_to_address(key) when is_binary(key) and byte_size(key) == 64 do
-    <<_::binary-size(12), address::unsigned-big-160>> = Keccak.hash_256(key)
-    {:ok, address}
-  end
-
-  defp public_key_to_address(_), do: {:error, :invalid_signature}
 
   defp authorization_fields(%Authorization{} = auth) do
     [

@@ -27,7 +27,7 @@ defmodule EEVM.Precompiles.ECRecover do
 
   @behaviour EEVM.Precompile
 
-  alias EEVM.Crypto.Keccak
+  alias EEVM.Crypto.{ECDSA, Keccak}
 
   @gas_cost 3000
   @curve_order 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141
@@ -82,26 +82,16 @@ defmodule EEVM.Precompiles.ECRecover do
   defp valid_scalar?(value), do: value > 0 and value < @curve_order
 
   # Unlike transaction signatures (EIP-2), the precompile accepts any s in
-  # [1, n). libsecp256k1 recovery only takes low-s signatures, so a high s is
-  # replaced by its equivalent n - s with the recovery id flipped; both
-  # recover the same public key.
-  defp recover_public_key(hash, r, s, recovery_id) when s > div(@curve_order, 2) do
-    recover_public_key(hash, r, @curve_order - s, Bitwise.bxor(recovery_id, 1))
-  end
-
+  # [1, n); `ECDSA.recover/5` does too.
   defp recover_public_key(hash, r, s, recovery_id) do
-    signature = <<r::unsigned-big-256, s::unsigned-big-256>>
-
-    case ExSecp256k1.recover_compact(hash, signature, recovery_id) do
-      {:ok, public_key} when byte_size(public_key) == 65 -> {:ok, public_key}
-      _ -> :error
+    case ECDSA.recover(:secp256k1, hash, r, s, recovery_id) do
+      {:ok, point} -> {:ok, point}
+      {:error, :invalid_signature} -> :error
     end
   end
 
-  defp derive_address(<<4, uncompressed_key::binary-size(64)>>) do
-    <<_::binary-size(12), address::binary-size(20)>> = Keccak.hash_256(uncompressed_key)
+  defp derive_address({x, y}) do
+    <<_::binary-size(12), address::binary-size(20)>> = Keccak.hash_256(<<x::256, y::256>>)
     {:ok, address}
   end
-
-  defp derive_address(_), do: :error
 end

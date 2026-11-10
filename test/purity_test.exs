@@ -44,7 +44,6 @@ defmodule EEVM.PurityTest do
     # Native code and OpenSSL
     :crypto,
     :public_key,
-    ExSecp256k1,
     EEVM.Precompiles.Bls12381.Nif
   ]
 
@@ -85,10 +84,6 @@ defmodule EEVM.PurityTest do
   # Known uses, each with the issue that removes it. The test also fails on
   # an entry nothing needs any more, so this list only shrinks.
   @allowed %{
-    # secp256k1 and P-256 ECDSA (#197)
-    {EEVM.Precompiles.ECRecover, ExSecp256k1} => 197,
-    {EEVM.Transaction.Signer, ExSecp256k1} => 197,
-    {EEVM.Precompiles.P256Verify, :crypto} => 197,
     # The deprecated pre-1.0 backend shim recognises old modules (#204)
     {EEVM.Database.Legacy, Code} => 204,
     {EEVM.Database.Legacy, :erlang} => 204

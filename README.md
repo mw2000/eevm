@@ -88,8 +88,8 @@ alias EEVM.Database.InMemory
 alias EEVM.Transaction.{FeeMarket, Signer}
 
 private_key = <<0x46::256>>
-{:ok, <<4, public_key::binary-size(64)>>} = ExSecp256k1.create_public_key(private_key)
-<<_::binary-size(12), sender::unsigned-big-160>> = EEVM.Crypto.Keccak.hash_256(public_key)
+{:ok, {x, y}} = EEVM.Crypto.ECDSA.public_key(:secp256k1, private_key)
+<<_::binary-size(12), sender::unsigned-big-160>> = EEVM.Crypto.Keccak.hash_256(<<x::256, y::256>>)
 recipient = 0xB0B
 
 db = InMemory.new(accounts: %{sender => %{balance: 10 ** 18, nonce: 0, code: <<>>}})
@@ -133,8 +133,8 @@ Both take the same `:config` (or `:hardfork` shorthand) option as
 iex> alias EEVM.Block
 iex> alias EEVM.Transaction.{FeeMarket, Signer}
 iex> private_key = <<0x46::256>>
-iex> {:ok, <<4, public_key::binary-size(64)>>} = ExSecp256k1.create_public_key(private_key)
-iex> <<_::binary-size(12), sender::unsigned-big-160>> = EEVM.Crypto.Keccak.hash_256(public_key)
+iex> {:ok, {x, y}} = EEVM.Crypto.ECDSA.public_key(:secp256k1, private_key)
+iex> <<_::binary-size(12), sender::unsigned-big-160>> = EEVM.Crypto.Keccak.hash_256(<<x::256, y::256>>)
 iex> db = EEVM.Database.InMemory.new(accounts: %{sender => %{balance: 10 ** 18, nonce: 0, code: <<>>}})
 iex> config = EEVM.Config.new(:cancun, chain_id: 1)
 iex> tx = %FeeMarket{max_priority_fee_per_gas: 1, max_fee_per_gas: 10, gas_limit: 21_000,

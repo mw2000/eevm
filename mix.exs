@@ -42,7 +42,7 @@ defmodule EEVM.MixProject do
 
   def application do
     [
-      extra_applications: [:logger, :crypto]
+      extra_applications: [:logger]
     ]
   end
 
@@ -52,7 +52,6 @@ defmodule EEVM.MixProject do
   defp deps do
     [
       {:ex_rlp, "~> 0.6.0"},
-      {:ex_secp256k1, "~> 0.7"},
       {:jason, "~> 1.4"},
       # Optional so projects that depend on eevm never fetch it; :prod so `mix bench`
       # measures the build users run.

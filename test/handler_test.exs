@@ -3,7 +3,7 @@ defmodule EEVM.HandlerTest do
 
   alias EEVM.Block.{Bloom, Receipt}
   alias EEVM.{BlockEnv, Config, Database, Delegation, Handler, Tracer, TransactionResult}
-  alias EEVM.Crypto.Keccak
+  alias EEVM.Crypto.{ECDSA, Keccak}
   alias EEVM.Database.InMemory
   alias EEVM.Transaction.{Authorization, Blob, Envelope, FeeMarket, Legacy, SetCode, Signer}
 
@@ -761,8 +761,7 @@ defmodule EEVM.HandlerTest do
   defp encode_uint(value), do: :binary.encode_unsigned(value)
 
   defp sign(hash, key) do
-    {:ok, {<<r::unsigned-big-256, s::unsigned-big-256>>, recovery_id}} =
-      ExSecp256k1.sign_compact(hash, key)
+    {:ok, {r, s, recovery_id}} = ECDSA.sign(:secp256k1, hash, key)
 
     {recovery_id, r, s}
   end
@@ -793,8 +792,7 @@ defmodule EEVM.HandlerTest do
   defp sign_legacy(%Legacy{} = tx, chain_id) do
     hash = Signer.signing_hash(tx, chain_id)
 
-    {:ok, {<<r::unsigned-big-256, s::unsigned-big-256>>, recovery_id}} =
-      ExSecp256k1.sign_compact(hash, @priv_key)
+    {:ok, {r, s, recovery_id}} = ECDSA.sign(:secp256k1, hash, @priv_key)
 
     %{tx | v: 35 + 2 * chain_id + recovery_id, r: r, s: s}
   end
@@ -804,8 +802,7 @@ defmodule EEVM.HandlerTest do
     tx = struct!(%Legacy{nonce: 0, gas_price: 1, value: 0, data: <<>>, v: 27, r: 0, s: 0}, fields)
     hash = Signer.signing_hash(tx, nil)
 
-    {:ok, {<<r::unsigned-big-256, s::unsigned-big-256>>, recovery_id}} =
-      ExSecp256k1.sign_compact(hash, @priv_key)
+    {:ok, {r, s, recovery_id}} = ECDSA.sign(:secp256k1, hash, @priv_key)
 
     %{tx | v: 27 + recovery_id, r: r, s: s}
   end
@@ -813,8 +810,7 @@ defmodule EEVM.HandlerTest do
   defp sign_eip1559(%FeeMarket{} = tx) do
     hash = Signer.signing_hash(tx, tx.chain_id)
 
-    {:ok, {<<r::unsigned-big-256, s::unsigned-big-256>>, recovery_id}} =
-      ExSecp256k1.sign_compact(hash, @priv_key)
+    {:ok, {r, s, recovery_id}} = ECDSA.sign(:secp256k1, hash, @priv_key)
 
     %{tx | y_parity: recovery_id, r: r, s: s}
   end
@@ -839,8 +835,7 @@ defmodule EEVM.HandlerTest do
 
     hash = Signer.signing_hash(tx, tx.chain_id)
 
-    {:ok, {<<r::unsigned-big-256, s::unsigned-big-256>>, recovery_id}} =
-      ExSecp256k1.sign_compact(hash, @priv_key)
+    {:ok, {r, s, recovery_id}} = ECDSA.sign(:secp256k1, hash, @priv_key)
 
     %{tx | y_parity: recovery_id, r: r, s: s}
   end
@@ -848,8 +843,8 @@ defmodule EEVM.HandlerTest do
   defp sender_address, do: address_of(@priv_key)
 
   defp address_of(private_key) do
-    {:ok, <<4, key::binary-size(64)>>} = ExSecp256k1.create_public_key(private_key)
-    <<_::binary-size(12), address::binary-size(20)>> = Keccak.hash_256(key)
+    {:ok, {x, y}} = ECDSA.public_key(:secp256k1, private_key)
+    <<_::binary-size(12), address::binary-size(20)>> = Keccak.hash_256(<<x::256, y::256>>)
     :binary.decode_unsigned(address)
   end
 
