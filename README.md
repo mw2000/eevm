@@ -30,6 +30,7 @@ interpreter, gas accounting, all precompiles through `0x11` plus P256VERIFY
 
 eevm is not published on Hex yet. Add it from GitHub:
 
+<!-- docs-check: skip -->
 ```elixir
 def deps do
   [

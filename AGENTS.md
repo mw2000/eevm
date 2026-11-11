@@ -108,7 +108,12 @@ commit's CI run passes.
   submodule is the legacy suite. CI's Conformance jobs fail on any failure a
   `known_failures*.txt` list doesn't cover; commit regenerated lists with the
   fix that changes them.
-- `README.md` is doctested from `test/eevm_test.exs`; keep its examples running.
+- `test/docs/` runs the docs a user copies from: every `iex>` example in the
+  README, guides, and public modules, and every other ```` ```elixir ```` block
+  in the README and guides, in order, where a `#=> value` line asserts a match.
+  Mark a block that can't run alone with `<!-- docs-check: skip -->`. It also
+  lints that public pages never call Internals functions or use deprecated API,
+  and that public structs document every field.
 - Don't claim conformance the suites don't show.
 
 ## Workflow

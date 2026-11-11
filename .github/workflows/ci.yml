@@ -274,3 +274,6 @@ jobs:
           echo "::error::ExDoc emitted warnings — see log above"
           exit 1
         fi
+    # Also part of `mix test`; run here so a docs regression fails the Docs job.
+    - name: Run the README and guide snippets and lint the public docs
+      run: mix test --only docs --warnings-as-errors
