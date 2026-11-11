@@ -48,9 +48,9 @@ minor version) before removing anything (#150).
   (`MachineState.update_frame/2`).
 - Keep disabled features free: the tracer costs one pattern match when
   `tracer: nil`. Follow that model for anything optional.
-- Benchmark any change to the interpreter, stack, memory, gas, or opcode
-  handlers: run `MIX_ENV=prod mix run bench/interpreter_bench.exs` before and
-  after on the same machine and put the numbers in the commit message.
+- Benchmark any change to the interpreter, stack, memory, gas, opcode
+  handlers, crypto, or precompiles with `mix bench` before and after on the
+  same machine, and put the numbers in the commit message.
 
 ## Layout
 
@@ -71,13 +71,11 @@ minor version) before removing anything (#150).
 | System contracts (EIP-4788, EIP-2935) | `lib/eevm/system_contracts/` |
 | State and tries | `lib/eevm/database.ex` (read-only behaviour, write overlay), `database/in_memory.ex`, `mpt/`, `state_root.ex` |
 
-Adding an opcode: add it to the Registry `@opcodes` map with its `module`, add
-its static cost to `Gas.Static`, implement an `execute/2` clause in that module,
-and add tests under `test/interpreter/instructions/`.
-
-Adding a fork-dependent rule: add an `:eip_NNNN` flag to `@eip_activation` and
-branch on `HardforkConfig.enabled?(state.env.config.hardfork, :eip_NNNN)`. Never
-compare fork names directly.
+Gate every fork-dependent rule on an `:eip_NNNN` flag in `@eip_activation`;
+never compare fork names directly. The `developing-eevm` skill
+(`.agents/skills/developing-eevm/`) has the steps for adding an opcode,
+precompile, or EIP, running and regenerating the conformance lists, and
+benchmarking.
 
 ## Checks
 
@@ -104,26 +102,12 @@ commit's CI run passes.
   every boundary and fork transition.
 - Tests mirror `lib/` under `test/`, with shared builders in `test/support/`.
   Use `async: true` unless a test needs global state.
-- Official fixtures run through Mix tasks, not `mix test`. The pinned
-  execution-spec-tests release (`test/fixtures/eest/fetch.sh`) is the
-  authoritative suite for current forks; the `ethereum/tests` submodule is the
-  legacy suite:
-
-  ```bash
-  test/fixtures/eest/fetch.sh
-  mix eevm.state_tests 'test/fixtures/eest/fixtures/state_tests/prague/**/*.json'
-  test/fixtures/eest/fetch.sh develop   # Osaka: run with --fork osaka
-  mix eevm.state_tests 'test/fixtures/eest/fixtures_develop/state_tests/osaka/**/*.json' --fork osaka
-  git submodule update --init --depth 1 test/fixtures/state_tests/ethereum-tests
-  mix eevm.state_tests 'test/fixtures/state_tests/ethereum-tests/GeneralStateTests/stExample/*.json'
-  mix eevm.blockchain_tests 'test/fixtures/state_tests/ethereum-tests/BlockchainTests/ValidBlocks/**/*.json'
-  ```
-
-  CI's Conformance jobs run every suite against its `known_failures*.txt` list
-  and fail on any failure a list doesn't cover. When you fix failures, regenerate the lists with the commands in their
-  headers and commit them with the fix. `stale_fixtures.txt` lists fixtures
-  older than a rule eevm implements. `test/fixtures/*/skip.txt` is only for
-  fixtures that abort the VM or cannot finish within the per-case timeout.
+- Official fixtures run through `mix eevm.state_tests` and
+  `mix eevm.blockchain_tests`, not `mix test`. The pinned execution-spec-tests
+  release is the authoritative suite for current forks; the `ethereum/tests`
+  submodule is the legacy suite. CI's Conformance jobs fail on any failure a
+  `known_failures*.txt` list doesn't cover; commit regenerated lists with the
+  fix that changes them.
 - `README.md` is doctested from `test/eevm_test.exs`; keep its examples running.
 - Don't claim conformance the suites don't show.
 
