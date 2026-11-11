@@ -215,7 +215,8 @@ defmodule EEVM.Block do
   for the forks that define them.
 
   Options are those of `execute/4` plus header attributes: `:timestamp`
-  (required), `:coinbase`, `:gas_limit` (default: the parent's),
+  (default: 12 seconds, one mainnet slot, after the parent's), `:coinbase`,
+  `:gas_limit` (default: the parent's),
   `:prev_randao`, `:extra_data`, `:parent_beacon_block_root`, and
   `:withdrawals` (from Shanghai).
 
@@ -233,7 +234,7 @@ defmodule EEVM.Block do
       Header.new(
         parent_hash: parent.hash,
         number: parent.number + 1,
-        timestamp: Keyword.fetch!(opts, :timestamp),
+        timestamp: Keyword.get(opts, :timestamp, parent.timestamp + 12),
         coinbase: Keyword.get(opts, :coinbase, 0),
         gas_limit: Keyword.get(opts, :gas_limit, parent.gas_limit),
         prev_randao: Keyword.get(opts, :prev_randao, 0),

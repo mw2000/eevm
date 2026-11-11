@@ -71,6 +71,14 @@ defmodule EEVM.BlockTest do
   end
 
   describe "build/4 and execute/4" do
+    test "build/4 defaults the timestamp to one 12-second slot after the parent's" do
+      parent = %{parent() | timestamp: 1_000}
+      {:ok, block, _} = Block.build(parent, [], db(), hardfork: :shanghai)
+
+      assert block.header.timestamp == 1_012
+      assert {:ok, _} = Block.execute(block, parent, db(), hardfork: :shanghai)
+    end
+
     test "a built block executes to the same commitments" do
       {:ok, block, built} = build([signed_transfer()])
 
