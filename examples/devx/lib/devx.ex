@@ -10,7 +10,7 @@ defmodule Devx do
   alias EEVM.Transaction.Signer
 
   @external_resource token_path = Path.expand("../priv/Token.bin", __DIR__)
-  @token_initcode token_path |> File.read!() |> String.trim() |> Base.decode16!(case: :mixed)
+  @token_initcode token_path |> File.read!() |> String.trim() |> EEVM.bytes()
 
   @gwei 1_000_000_000
 

@@ -59,4 +59,27 @@ defmodule Devx.ErrorsTest do
 
     assert {:error, :invalid_fields, _} = Errors.transact_raw(db, <<0x02, 0xC0>>)
   end
+
+  test "with details: true, a rejection carries the values it compared", %{
+    token: t,
+    db: db,
+    me: me
+  } do
+    transfer = "transfer(address,uint256)"
+
+    assert {:error, :nonce_too_high, %{sender: ^me, tx_nonce: 5, state_nonce: 1}, message} =
+             Errors.transact_with_details(db, t, transfer, [0xB0B, 1], nonce: 5)
+
+    assert message =~ "nonce too high"
+    assert message =~ "tx_nonce 5"
+
+    # EIP-2028 intrinsic gas: 21,000 plus 16 per non-zero and 4 per zero
+    # calldata byte. transfer(0xB0B, 1) is a 4-byte selector, all non-zero,
+    # and two words with 2 and 1 non-zero bytes: 21,000 + 7·16 + 61·4 = 21,356.
+    assert {:error, :intrinsic_gas_too_low, %{gas_limit: 21_000, intrinsic_gas: 21_356}, _} =
+             Errors.transact_with_details(db, t, transfer, [0xB0B, 1],
+               nonce: 1,
+               gas_limit: 21_000
+             )
+  end
 end

@@ -16,7 +16,7 @@ defmodule Devx.Errors do
   end
 
   @doc "Sends `signature(args)` to `to` as a signed EIP-1559 transaction from `Devx.sender/0`."
-  def transact(db, to, signature, args, overrides \\ []) do
+  def transact(db, to, signature, args, overrides \\ [], opts \\ []) do
     tx =
       struct!(
         %FeeMarket{
@@ -31,9 +31,24 @@ defmodule Devx.Errors do
 
     {:ok, signed} = Signer.sign(tx, Devx.private_key(), Devx.config())
 
-    case Devx.Transactions.execute(signed, db) do
+    case EEVM.transact(signed, Devx.block_env(), db, [config: Devx.config()] ++ opts) do
       {:ok, result} -> {:ok, result.status, EEVM.revert_reason(result), result.receipt.status}
       {:error, reason} -> {:error, reason, EEVM.Error.message(reason)}
+    end
+  end
+
+  @doc """
+  Like `transact/5`, with `details: true`: a rejection comes back as an
+  `EEVM.TransactionError` carrying the values the rule compared, returned
+  here as `{:error, reason, details, message}`.
+  """
+  def transact_with_details(db, to, signature, args, overrides) do
+    case transact(db, to, signature, args, overrides, details: true) do
+      {:error, %EEVM.TransactionError{} = error, _message} ->
+        {:error, error.reason, error.details, Exception.message(error)}
+
+      other ->
+        other
     end
   end
 

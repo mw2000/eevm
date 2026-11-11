@@ -18,6 +18,12 @@ defmodule Devx.RunBytecodeTest do
     assert Devx.RunBytecode.stack("0x600a601401600100") == {:success, [1, 30]}
   end
 
+  test "a hex string passed as bytecode is refused, not run as ASCII bytes" do
+    assert_raise ArgumentError, ~r/EEVM.bytes/, fn ->
+      Devx.RunBytecode.run_hex_string("0x600260030100")
+    end
+  end
+
   test "disassembles hex bytecode" do
     assert Devx.RunBytecode.disassemble("0x6001600201") ==
              [{0, "PUSH1", "0x01"}, {2, "PUSH1", "0x02"}, {4, "ADD", nil}]

@@ -19,11 +19,14 @@ defmodule Devx.RunBytecode do
   end
 
   @doc "Runs hex bytecode, as copied from solc or a block explorer, and returns the final stack."
-  def stack("0x" <> hex) do
-    {:ok, result} = EEVM.run(Base.decode16!(hex, case: :mixed), debug: true)
+  def stack(hex) do
+    {:ok, result} = EEVM.run(EEVM.bytes(hex), debug: true)
     {result.status, result.stack}
   end
 
   @doc "Disassembles hex bytecode."
-  def disassemble("0x" <> hex), do: hex |> Base.decode16!(case: :mixed) |> EEVM.disassemble()
+  def disassemble(hex), do: hex |> EEVM.bytes() |> EEVM.disassemble()
+
+  @doc "Passes a hex string straight to `EEVM.run/2`, a common mistake."
+  def run_hex_string(hex), do: EEVM.run(hex)
 end
