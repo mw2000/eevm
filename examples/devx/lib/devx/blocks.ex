@@ -33,21 +33,28 @@ defmodule Devx.Blocks do
     [deploy, transfer]
   end
 
-  @doc "Builds the child of `parent/0` holding `transactions/1` on `Devx.funded_db/0`."
+  @doc """
+  The state the chain starts from: `Devx.funded_db/0` plus the system
+  contracts `config`'s fork calls (from Prague, blocks are invalid without
+  the EIP-7002 and EIP-7251 request contracts).
+  """
+  def genesis_db(config), do: EEVM.SystemContracts.install(Devx.funded_db(), config)
+
+  @doc "Builds the child of `parent/0` holding `transactions/1` on `genesis_db/1`."
   def build(config) do
-    Block.build(parent(), transactions(config), Devx.funded_db(),
+    Block.build(parent(), transactions(config), genesis_db(config),
       config: config,
       timestamp: 1_012,
       coinbase: 0xC0FFEE
     )
   end
 
-  @doc "Round-trips `block` through RLP, then validates and executes it on `Devx.funded_db/0`."
+  @doc "Round-trips `block` through RLP, then validates and executes it on `genesis_db/1`."
   def reexecute(block, config) do
     {:ok, decoded} = block |> Block.encode() |> Block.decode()
 
     with :ok <- Block.validate(decoded, parent(), config: config) do
-      Block.execute(decoded, parent(), Devx.funded_db(), config: config)
+      Block.execute(decoded, parent(), genesis_db(config), config: config)
     end
   end
 end

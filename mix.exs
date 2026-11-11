@@ -140,6 +140,7 @@ defmodule EEVM.MixProject do
           EEVM.Block.Processor,
           EEVM.Block.Requests,
           EEVM.Block.Bloom,
+          EEVM.SystemContracts,
           ~r/^EEVM\.SystemContracts\./
         ],
         Deprecated: [EEVM.Context.Block, EEVM.Context.Transaction, EEVM.Database.Legacy],

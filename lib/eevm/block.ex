@@ -221,6 +221,10 @@ defmodule EEVM.Block do
   `:withdrawals` (from Shanghai).
 
   Returns `{:ok, block, result}` or the first error `execute/4` would report.
+
+  From Prague the state must hold the EIP-7002 and EIP-7251 request contracts,
+  as on mainnet; give a new chain its system contracts with
+  `EEVM.SystemContracts.genesis_accounts/1`.
   """
   @spec build(Header.t(), [transaction()], Database.t(), build_opts()) ::
           {:ok, t(), Result.t()} | {:error, EEVM.Error.block_error()}

@@ -137,7 +137,7 @@ defmodule EEVM.Error do
   | `:invalid_receipts_root` | `receipts_root` differs from the receipts' root |
   | `:invalid_state_root` | `state_root` differs from the post-block state |
   | `:invalid_deposit_event_layout` | A deposit contract `DepositEvent` log isn't the 576-byte EIP-6110 layout (from Prague) |
-  | `:system_contract_empty` | The EIP-7002 or EIP-7251 request contract has no code (from Prague) |
+  | `:system_contract_empty` | The EIP-7002 or EIP-7251 request contract has no code (from Prague); a new chain gets it from `EEVM.SystemContracts` |
   | `:system_contract_call_failed` | The end-of-block call to the EIP-7002 or EIP-7251 request contract failed (from Prague) |
   | `:invalid_requests_hash` | `requests_hash` differs from the EIP-7685 hash of the block's requests (from Prague) |
 
@@ -346,7 +346,8 @@ defmodule EEVM.Error do
     invalid_receipts_root: "wrong receipts root",
     invalid_state_root: "wrong state root",
     invalid_deposit_event_layout: "malformed deposit event",
-    system_contract_empty: "request system contract has no code",
+    system_contract_empty:
+      "request system contract has no code; install it with EEVM.SystemContracts.install/2",
     system_contract_call_failed: "request system contract call failed",
     invalid_requests_hash: "wrong requests hash",
     commit_not_supported: "the database backend does not support commit",

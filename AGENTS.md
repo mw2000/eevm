@@ -68,7 +68,7 @@ minor version) before removing anything (#150).
 | Transaction pipeline | `lib/eevm/handler.ex` plus `handler/validation.ex`, `pre_execution.ex`, `execution.ex`, `post_execution.ex` |
 | Transactions (structs, envelopes, signing, validation) | `lib/eevm/transaction.ex`, `lib/eevm/transaction/` |
 | Blocks, receipts, bloom, withdrawals | `lib/eevm/block/` |
-| System contracts (EIP-4788, EIP-2935) | `lib/eevm/system_contracts/` |
+| System contracts (EIP-4788, EIP-2935, EIP-7002, EIP-7251) and their genesis accounts | `lib/eevm/system_contracts.ex`, `lib/eevm/system_contracts/` |
 | Usage examples (a path-dependent Mix app, public API only) | `examples/devx/` |
 | State and tries | `lib/eevm/database.ex` (read-only behaviour, write overlay), `database/in_memory.ex`, `mpt/`, `state_root.ex` |
 

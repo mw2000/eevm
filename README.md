@@ -183,17 +183,26 @@ and from Prague the EIP-7685 requests, and checks the header's commitments.
 Both take the same `:config` (or `:hardfork` shorthand) option as
 `EEVM.transact/4`, and errors are listed in `EEVM.Error`.
 
+From Cancun, blocks call system contracts, and from Prague a block whose state
+lacks the EIP-7002 and EIP-7251 request contracts is invalid, as on mainnet.
+A chain started from scratch gets them from
+`EEVM.SystemContracts.genesis_accounts/1` (or `install/2` for an existing
+database):
+
 ```elixir
 iex> alias EEVM.Block
 iex> alias EEVM.Transaction.{FeeMarket, Signer}
 iex> private_key = <<0x46::256>>
 iex> {:ok, sender} = Signer.address(private_key)
-iex> db = EEVM.Database.InMemory.new(accounts: %{sender => %{balance: 10 ** 18, nonce: 0, code: <<>>}})
-iex> config = EEVM.Config.new(:cancun, chain_id: 1)
+iex> config = EEVM.Config.new(:prague, chain_id: 1)
+iex> accounts = %{sender => %{balance: 10 ** 18}}
+iex> db = EEVM.Database.InMemory.new(accounts: Map.merge(accounts, EEVM.SystemContracts.genesis_accounts(config)))
 iex> tx = %FeeMarket{max_priority_fee_per_gas: 1, max_fee_per_gas: 10, gas_limit: 21_000,
 ...>   to: 0xB0B, value: 1_000}
 iex> {:ok, tx} = Signer.sign(tx, private_key, config)
 iex> parent = EEVM.Block.Header.new(gas_limit: 30_000_000, base_fee_per_gas: 7, hash: <<1::256>>)
+iex> Block.build(parent, [tx], EEVM.Database.InMemory.new(accounts: accounts), config: config, timestamp: 12)
+{:error, :system_contract_empty}
 iex> {:ok, block, _result} = Block.build(parent, [tx], db, config: config, timestamp: 12)
 iex> {:ok, decoded} = block |> Block.encode() |> Block.decode()
 iex> {:ok, result} = Block.execute(decoded, parent, db, config: config)

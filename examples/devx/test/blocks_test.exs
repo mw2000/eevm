@@ -32,8 +32,24 @@ defmodule Devx.BlocksTest do
              {:error, :invalid_transactions_root}
   end
 
-  @tag skip: "fresh state has no EIP-7002/7251 request contracts until #215"
-  test "builds a Prague block on fresh state" do
-    assert {:ok, _block, _result} = Blocks.build(EEVM.Config.new(:prague, chain_id: 1))
+  test "builds a Prague block on a new chain's genesis state" do
+    config = EEVM.Config.new(:prague, chain_id: 1)
+    assert {:ok, block, built} = Blocks.build(config)
+    assert Enum.map(built.receipts, & &1.status) == [1, 1]
+
+    # No deposits, withdrawal or consolidation requests: EIP-7685's hash of
+    # an empty request list is sha256 of nothing.
+    assert built.requests == []
+    assert block.header.requests_hash == :crypto.hash(:sha256, "")
+
+    assert {:ok, result} = Blocks.reexecute(block, config)
+    assert result.state_root == block.header.state_root
+
+    # Without the request contracts, Prague blocks are invalid, as on mainnet.
+    assert EEVM.Block.build(Blocks.parent(), [], Devx.funded_db(),
+             config: config,
+             timestamp: 1_012
+           ) ==
+             {:error, :system_contract_empty}
   end
 end
