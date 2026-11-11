@@ -234,6 +234,43 @@ defmodule EEVMTest do
     end
   end
 
+  describe "hex strings" do
+    alias EEVM.Database.InMemory
+
+    test "bytes/1 decodes hex with or without 0x and rejects anything else" do
+      assert EEVM.bytes("0X0a0B") == <<0x0A, 0x0B>>
+      assert EEVM.bytes(EEVM.hex(<<0, 1, 0xFF>>)) == <<0, 1, 0xFF>>
+
+      for bad <- ["0x123", "0xzz", "0x0x00"] do
+        assert_raise ArgumentError, ~r/not a hex string/, fn -> EEVM.bytes(bad) end
+      end
+    end
+
+    test "the entry points refuse 0x-prefixed hex code, calldata, and initcode" do
+      hex = "0x600260030160005260206000f3"
+
+      assert_raise ArgumentError, ~r/code is a hex string.*EEVM.bytes/, fn -> EEVM.run(hex) end
+
+      assert_raise ArgumentError, ~r/calldata is a hex string/, fn ->
+        EEVM.run(<<0x00>>, calldata: "0xa9059cbb")
+      end
+
+      assert_raise ArgumentError, ~r/calldata/, fn -> EEVM.call(InMemory.new(), 1, "0x") end
+      assert_raise ArgumentError, ~r/initcode/, fn -> EEVM.create(InMemory.new(), hex) end
+
+      # The decoded bytes run: 2 + 3 returned as a word.
+      assert {:ok, result} = EEVM.run(EEVM.bytes(hex))
+      assert :binary.decode_unsigned(result.return_data) == 5
+    end
+
+    test "bytecode that merely starts with 0x30 0x78 still runs" do
+      # ADDRESS, PUSH25 with a non-hex-digit immediate, then the end of code.
+      assert {:ok, %{status: :success}} = EEVM.run("0x" <> "g" <> :binary.copy(<<0>>, 24))
+      # ADDRESS STOP
+      assert {:ok, %{status: :success}} = EEVM.run(<<0x30, 0x00>>)
+    end
+  end
+
   describe "address/1 and hex/1" do
     test "convert between hex, 20-byte binaries, and integer addresses" do
       address = 0x9D8A62F656A8D1615C1294FD71E9CFB3E4855A4F

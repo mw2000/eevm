@@ -155,7 +155,10 @@ iex> {result.status, EEVM.revert_reason(result)}
 
 Addresses are integers everywhere, transaction `to` included (`nil` creates a
 contract), and hashes and roots are 32-byte binaries. `EEVM.address/1` and
-`EEVM.hex/1` convert hex strings and binaries at the edges. `EEVM.transact/4`
+`EEVM.hex/1` convert hex strings and binaries at the edges, and
+`EEVM.bytes/1` decodes hex bytecode, calldata, or a raw transaction; the entry
+points take bytes and raise (or, for a raw transaction, return
+`{:error, :hex_string}`) when given a `0x` hex string. `EEVM.transact/4`
 also accepts raw signed transaction bytes.
 `EEVM.Transaction.Signer.address/1` turns a private key into its address, and
 `EEVM.keccak256/1`, `EEVM.selector/1`, and `EEVM.event_topic/1` build calldata

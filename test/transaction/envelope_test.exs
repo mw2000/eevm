@@ -1,6 +1,8 @@
 defmodule EEVM.Transaction.EnvelopeTest do
   use ExUnit.Case, async: true
 
+  alias EEVM.BlockEnv
+  alias EEVM.Database.InMemory
   alias EEVM.Transaction
   alias EEVM.Transaction.{AccessList, Authorization, Blob, Envelope, FeeMarket, Legacy, SetCode}
   alias EEVM.Transaction.Signer
@@ -92,6 +94,50 @@ defmodule EEVM.Transaction.EnvelopeTest do
       }
 
       assert {:ok, ^tx} = tx |> Envelope.encode() |> Envelope.decode()
+    end
+  end
+
+  describe "wrong field types and hex input" do
+    @unsigned %FeeMarket{
+      chain_id: 1,
+      max_priority_fee_per_gas: 1,
+      max_fee_per_gas: 10,
+      gas_limit: 21_000
+    }
+
+    test "sign/3 and encode/1 name a field of the wrong type instead of failing in RLP" do
+      config = EEVM.Config.new(:cancun, chain_id: 1)
+
+      assert_raise ArgumentError, ~r/field :to must be an integer address.*"0xb0b"/, fn ->
+        Signer.sign(%{@unsigned | to: "0xb0b"}, <<0x46::256>>, config)
+      end
+
+      assert_raise ArgumentError, ~r/field :value must be a non-negative integer/, fn ->
+        Signer.sign(%{@unsigned | to: 0xB0B, value: "1000"}, <<0x46::256>>, config)
+      end
+
+      assert_raise ArgumentError, ~r/field :access_list/, fn ->
+        Signer.sign(%{@unsigned | to: 0xB0B, access_list: [{"0xb0b", []}]}, <<0x46::256>>, config)
+      end
+
+      # Unsigned: encoding needs the signature, signing doesn't.
+      assert_raise ArgumentError, ~r/field :(y_parity|r|s) must be a non-negative integer/, fn ->
+        Envelope.encode(%{@unsigned | to: 0xB0B})
+      end
+
+      # The deprecated 20-byte binary address is still accepted.
+      assert {:ok, signed} = Signer.sign(%{@unsigned | to: <<0xB0B::160>>}, <<0x46::256>>, config)
+      assert {:ok, %FeeMarket{to: 0xB0B}} = signed |> Envelope.encode() |> Envelope.decode()
+    end
+
+    test "decode/1 and transact/4 report a hex string, not an unknown type" do
+      assert Envelope.decode("0x02f86c8205390184") == {:error, :hex_string}
+
+      assert EEVM.transact("0x02f86c", BlockEnv.new(), InMemory.new()) ==
+               {:error, :hex_string}
+
+      # 0x30 0x78 followed by a non-hex byte is just an unknown type.
+      assert Envelope.decode(<<"0x", 0xFF>>) == {:error, :invalid_type}
     end
   end
 

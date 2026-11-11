@@ -14,9 +14,16 @@ defmodule EEVM.Transaction.Envelope do
   @type_blob 0x03
   @type_set_code 0x04
 
-  @doc "Encode a transaction to its wire format (binary)."
+  @doc """
+  Encode a transaction to its wire format (binary).
+
+  Raises `ArgumentError` naming the field when a field has the wrong type,
+  such as a hex string for `to` or a missing signature.
+  """
   @spec encode(Transaction.t()) :: binary()
-  def encode(%Legacy{} = tx) do
+  def encode(tx), do: tx |> Transaction.check_fields!(true) |> encode_checked()
+
+  defp encode_checked(%Legacy{} = tx) do
     [
       encode_integer(tx.nonce),
       encode_integer(tx.gas_price),
@@ -31,7 +38,7 @@ defmodule EEVM.Transaction.Envelope do
     |> ExRLP.encode()
   end
 
-  def encode(%AccessList{} = tx) do
+  defp encode_checked(%AccessList{} = tx) do
     payload = [
       encode_integer(tx.chain_id),
       encode_integer(tx.nonce),
@@ -49,7 +56,7 @@ defmodule EEVM.Transaction.Envelope do
     <<@type_access_list>> <> ExRLP.encode(payload)
   end
 
-  def encode(%FeeMarket{} = tx) do
+  defp encode_checked(%FeeMarket{} = tx) do
     payload = [
       encode_integer(tx.chain_id),
       encode_integer(tx.nonce),
@@ -68,7 +75,7 @@ defmodule EEVM.Transaction.Envelope do
     <<@type_fee_market>> <> ExRLP.encode(payload)
   end
 
-  def encode(%Blob{} = tx) do
+  defp encode_checked(%Blob{} = tx) do
     payload = [
       encode_integer(tx.chain_id),
       encode_integer(tx.nonce),
@@ -89,7 +96,7 @@ defmodule EEVM.Transaction.Envelope do
     <<@type_blob>> <> ExRLP.encode(payload)
   end
 
-  def encode(%SetCode{} = tx) do
+  defp encode_checked(%SetCode{} = tx) do
     payload = [
       encode_integer(tx.chain_id),
       encode_integer(tx.nonce),
@@ -109,7 +116,12 @@ defmodule EEVM.Transaction.Envelope do
     <<@type_set_code>> <> ExRLP.encode(payload)
   end
 
-  @doc "Decode a transaction from wire format."
+  @doc """
+  Decode a transaction from wire format.
+
+  A `0x`-prefixed hex string returns `{:error, :hex_string}`; decode it with
+  `EEVM.bytes/1` first.
+  """
   @spec decode(binary()) :: {:ok, Transaction.t()} | {:error, atom()}
   def decode(<<>>), do: {:error, :empty_input}
 
@@ -143,7 +155,9 @@ defmodule EEVM.Transaction.Envelope do
     end
   end
 
-  def decode(<<_type, _::binary>>), do: {:error, :invalid_type}
+  def decode(<<_type, _::binary>> = encoded) do
+    if EEVM.hex_string?(encoded), do: {:error, :hex_string}, else: {:error, :invalid_type}
+  end
 
   defp decode_rlp(binary) do
     {:ok, ExRLP.decode(binary)}

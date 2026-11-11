@@ -56,6 +56,7 @@ defmodule EEVM.Error do
   | `:invalid_transaction_input` | The transaction is neither a transaction struct nor a binary |
   | `:empty_input` | The encoded transaction is empty |
   | `:invalid_type` | The EIP-2718 type byte isn't a known transaction type |
+  | `:hex_string` | The bytes are a `0x`-prefixed hex string; decode them with `EEVM.bytes/1` |
   | `:invalid_rlp` | The payload isn't valid RLP |
   | `:invalid_rlp_integer` | An integer field has leading zero bytes (non-canonical RLP) |
   | `:invalid_fields` | The RLP list has the wrong number or shape of fields for its type |
@@ -195,6 +196,7 @@ defmodule EEVM.Error do
           :invalid_transaction_input
           | :empty_input
           | :invalid_type
+          | :hex_string
           | :invalid_rlp
           | :invalid_rlp_integer
           | :invalid_fields
@@ -295,6 +297,7 @@ defmodule EEVM.Error do
     invalid_transaction_input: "not a transaction struct or binary",
     empty_input: "empty transaction encoding",
     invalid_type: "unknown transaction type",
+    hex_string: "transaction bytes are a hex string; decode them with EEVM.bytes/1",
     invalid_rlp: "invalid RLP",
     invalid_rlp_integer: "non-canonical RLP integer",
     invalid_fields: "wrong transaction fields for its type",

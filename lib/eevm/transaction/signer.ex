@@ -55,7 +55,8 @@ defmodule EEVM.Transaction.Signer do
   (EIP-2).
 
   Returns `{:ok, signed_tx}`, or `{:error, :invalid_private_key}` when the
-  key is zero or not below the curve order.
+  key is zero or not below the curve order. Raises `ArgumentError` naming
+  the field when a field has the wrong type, such as a hex string for `to`.
   """
   @spec sign(Transaction.t(), <<_::256>>, Config.t()) ::
           {:ok, Transaction.t()} | {:error, :invalid_private_key}
@@ -81,9 +82,17 @@ defmodule EEVM.Transaction.Signer do
 
   defp put_signature(tx, _chain_id, y_parity, r, s), do: %{tx | y_parity: y_parity, r: r, s: s}
 
-  @doc "Compute the signing hash for a transaction."
+  @doc """
+  Compute the signing hash for a transaction.
+
+  Raises `ArgumentError` naming the field when a field has the wrong type,
+  such as a hex string for `to`.
+  """
   @spec signing_hash(Transaction.t(), non_neg_integer()) :: binary()
-  def signing_hash(%Legacy{v: v} = tx, _chain_id) when v in [27, 28] do
+  def signing_hash(tx, chain_id),
+    do: tx |> Transaction.check_fields!(false) |> hash_for_signing(chain_id)
+
+  defp hash_for_signing(%Legacy{v: v} = tx, _chain_id) when v in [27, 28] do
     [
       encode_integer(tx.nonce),
       encode_integer(tx.gas_price),
@@ -96,7 +105,7 @@ defmodule EEVM.Transaction.Signer do
     |> Keccak.hash_256()
   end
 
-  def signing_hash(%Legacy{} = tx, chain_id) do
+  defp hash_for_signing(%Legacy{} = tx, chain_id) do
     [
       encode_integer(tx.nonce),
       encode_integer(tx.gas_price),
@@ -112,7 +121,7 @@ defmodule EEVM.Transaction.Signer do
     |> Keccak.hash_256()
   end
 
-  def signing_hash(%AccessList{} = tx, _chain_id) do
+  defp hash_for_signing(%AccessList{} = tx, _chain_id) do
     payload = [
       encode_integer(tx.chain_id),
       encode_integer(tx.nonce),
@@ -127,7 +136,7 @@ defmodule EEVM.Transaction.Signer do
     Keccak.hash_256(<<0x01>> <> ExRLP.encode(payload))
   end
 
-  def signing_hash(%FeeMarket{} = tx, _chain_id) do
+  defp hash_for_signing(%FeeMarket{} = tx, _chain_id) do
     payload = [
       encode_integer(tx.chain_id),
       encode_integer(tx.nonce),
@@ -143,7 +152,7 @@ defmodule EEVM.Transaction.Signer do
     Keccak.hash_256(<<0x02>> <> ExRLP.encode(payload))
   end
 
-  def signing_hash(%Blob{} = tx, _chain_id) do
+  defp hash_for_signing(%Blob{} = tx, _chain_id) do
     payload = [
       encode_integer(tx.chain_id),
       encode_integer(tx.nonce),
@@ -161,7 +170,7 @@ defmodule EEVM.Transaction.Signer do
     Keccak.hash_256(<<0x03>> <> ExRLP.encode(payload))
   end
 
-  def signing_hash(%SetCode{} = tx, _chain_id) do
+  defp hash_for_signing(%SetCode{} = tx, _chain_id) do
     payload = [
       encode_integer(tx.chain_id),
       encode_integer(tx.nonce),

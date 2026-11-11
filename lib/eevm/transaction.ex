@@ -54,6 +54,77 @@ defmodule EEVM.Transaction do
 
   @type authorization_tuple :: EEVM.Transaction.Authorization.t()
 
+  @signature_fields [:v, :y_parity, :r, :s]
+
+  @doc false
+  # Raises ArgumentError naming the first field that can't be encoded, so a
+  # hex string or another wrong type fails here instead of deep in RLP
+  # encoding (#216). `signed?: false` lets the signature fields be nil.
+  @spec check_fields!(t(), boolean()) :: t()
+  def check_fields!(%type{} = tx, signed?) do
+    for {field, value} <- Map.from_struct(tx),
+        signed? or field not in @signature_fields,
+        problem = field_problem(field, value) do
+      raise ArgumentError,
+            "#{inspect(type)} field :#{field} #{problem}, got: #{inspect(value, printable_limit: 80)}"
+    end
+
+    tx
+  end
+
+  defp field_problem(:to, to) do
+    if to == nil or to == <<>> or address?(to),
+      do: nil,
+      else: "must be an integer address or nil (convert a hex address with EEVM.address/1)"
+  end
+
+  defp field_problem(:data, data) when is_binary(data), do: nil
+  defp field_problem(:data, _data), do: "must be a binary (decode hex with EEVM.bytes/1)"
+
+  defp field_problem(:access_list, list) do
+    valid? =
+      is_list(list) and
+        Enum.all?(list, fn
+          {address, keys} when is_list(keys) ->
+            address?(address) and Enum.all?(keys, &(word?(&1) or match?(<<_::256>>, &1)))
+
+          _entry ->
+            false
+        end)
+
+    if valid?, do: nil, else: "must be a list of {integer address, [integer storage key]}"
+  end
+
+  defp field_problem(:blob_versioned_hashes, hashes) do
+    if is_list(hashes) and Enum.all?(hashes, &match?(<<_::256>>, &1)),
+      do: nil,
+      else: "must be a list of 32-byte binaries"
+  end
+
+  defp field_problem(:authorization_list, list) do
+    valid? =
+      is_list(list) and
+        Enum.all?(list, fn
+          %{__struct__: EEVM.Transaction.Authorization, address: address} = auth ->
+            address?(address) and
+              Enum.all?([auth.chain_id, auth.nonce, auth.y_parity, auth.r, auth.s], &word?/1)
+
+          _other ->
+            false
+        end)
+
+    if valid?, do: nil, else: "must be a list of signed EEVM.Transaction.Authorization structs"
+  end
+
+  defp field_problem(_field, value) do
+    if is_integer(value) and value >= 0, do: nil, else: "must be a non-negative integer"
+  end
+
+  defp address?(address) when is_integer(address), do: address >= 0 and address < 2 ** 160
+  defp address?(address), do: match?(<<_::160>>, address)
+
+  defp word?(value), do: is_integer(value) and value >= 0
+
   @doc false
   # The wire bytes of `to` and of access-list and authorization addresses.
   # Also takes the deprecated 20-byte binary form.

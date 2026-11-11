@@ -132,6 +132,8 @@ defmodule EEVM do
   """
   @spec run(binary(), keyword()) :: {:ok, CallResult.t()} | {:error, EEVM.Error.reason()}
   def run(code, opts \\ []) when is_binary(code) do
+    refuse_hex!(code, "code")
+
     if Keyword.has_key?(opts, :db) and not Keyword.has_key?(opts, :address) do
       raise ArgumentError,
             "EEVM.run/2 got :db but no :address, so the code would see address 0's balance " <>
@@ -146,7 +148,7 @@ defmodule EEVM do
         address: opts[:address],
         caller: opts[:caller],
         callvalue: opts[:value],
-        calldata: opts[:calldata]
+        calldata: refuse_hex!(opts[:calldata], "calldata")
       )
 
     Database.catch_read_errors(fn ->
@@ -210,7 +212,7 @@ defmodule EEVM do
           {:ok, CallResult.t()} | {:error, EEVM.Error.reason()}
   def call(%Database{} = db, to, calldata \\ <<>>, opts \\ [])
       when is_integer(to) and to >= 0 and to < @address_limit and is_binary(calldata) do
-    message(db, to, calldata, opts)
+    message(db, to, refuse_hex!(calldata, "calldata"), opts)
   end
 
   @doc """
@@ -244,7 +246,7 @@ defmodule EEVM do
   @spec create(Database.t(), binary(), keyword()) ::
           {:ok, CallResult.t()} | {:error, EEVM.Error.reason()}
   def create(%Database{} = db, initcode, opts \\ []) when is_binary(initcode) do
-    message(db, nil, initcode, opts)
+    message(db, nil, refuse_hex!(initcode, "initcode"), opts)
   end
 
   defp message(db, to, data, opts) do
@@ -288,6 +290,30 @@ defmodule EEVM do
         :ok
     end
   end
+
+  # Code and calldata are bytes. A `0x`-prefixed hex string is almost surely
+  # a mistake: run as code, its ASCII would execute as ADDRESS, PUSH25, ...
+  defp refuse_hex!(data, what) do
+    if hex_string?(data) do
+      raise ArgumentError,
+            "#{what} is a hex string (#{inspect(data, printable_limit: 40)}), not bytes; " <>
+              "decode it with EEVM.bytes/1"
+    end
+
+    data
+  end
+
+  @doc false
+  # Whether `data` is a `0x`-prefixed hex string rather than raw bytes.
+  @spec hex_string?(binary()) :: boolean()
+  def hex_string?(<<"0x", digits::binary>>), do: hex_digits?(digits)
+  def hex_string?(_data), do: false
+
+  defp hex_digits?(<<c, rest::binary>>) when c in ?0..?9 or c in ?a..?f or c in ?A..?F,
+    do: hex_digits?(rest)
+
+  defp hex_digits?(<<>>), do: true
+  defp hex_digits?(_data), do: false
 
   # The result of a message call; on failure the database is `db_before`.
   defp call_result(state, db_before, opts) do
@@ -466,6 +492,38 @@ defmodule EEVM do
   end
 
   def address(other), do: raise(ArgumentError, "not an address: #{inspect(other)}")
+
+  @doc """
+  Decodes a hex string, with or without `0x` and in any case, into bytes:
+  the inverse of `hex/1` for binaries. Use it on bytecode, calldata, or raw
+  transactions copied from a compiler, explorer, or wallet; `run/2`,
+  `call/4`, `create/3`, and `transact/4` take bytes and reject
+  `0x`-prefixed hex strings.
+
+  Raises `ArgumentError` for anything that isn't an even number of hex
+  digits.
+
+  ## Examples
+
+      iex> EEVM.bytes("0x6002600301")
+      <<0x60, 0x02, 0x60, 0x03, 0x01>>
+      iex> EEVM.bytes("ABcd")
+      <<0xAB, 0xCD>>
+      iex> EEVM.bytes("0x")
+      ""
+  """
+  @spec bytes(String.t()) :: binary()
+  def bytes(<<prefix::binary-size(2), digits::binary>>) when prefix in ["0x", "0X"],
+    do: decode_hex!(digits)
+
+  def bytes(hex) when is_binary(hex), do: decode_hex!(hex)
+
+  defp decode_hex!(digits) do
+    case Base.decode16(digits, case: :mixed) do
+      {:ok, bytes} -> bytes
+      :error -> raise ArgumentError, "not a hex string: #{inspect(digits, printable_limit: 80)}"
+    end
+  end
 
   @doc """
   Renders bytes or a non-negative integer as `0x`-prefixed lowercase hex.
