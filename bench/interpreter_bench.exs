@@ -197,6 +197,74 @@ call_loop =
 callee_code = Asm.assemble([0, :sload, 0, :mstore, :stop])
 call_world = EEVM.Database.InMemory.new(accounts: %{callee => %{balance: 0, code: callee_code}})
 
+# --- Calls to large contracts (#210) -------------------------------------------------
+
+# CALL 100 distinct contracts of the EIP-170 maximum size, 24 KB. Each is new to the
+# transaction, so no work done for one helps the next. "STOP" contracts stop at their
+# first byte; "JUMP once" contracts jump straight to a JUMPDEST at their end, so the
+# jump must be checked against the whole code.
+large_contracts = 100
+large_base = 0x1A000
+
+large_call_loop =
+  Asm.assemble([
+    large_contracts,
+    {:label, :loop},
+    0,
+    0,
+    0,
+    0,
+    0,
+    :dup6,
+    large_base,
+    :add,
+    :gas,
+    :call,
+    :iszero,
+    {:ref, :fail},
+    :jumpi,
+    1,
+    :swap1,
+    :sub,
+    :dup1,
+    {:ref, :loop},
+    :jumpi,
+    :stop,
+    # A failed CALL reverts the run, so the job fails its check.
+    {:label, :fail},
+    0,
+    0,
+    :revert
+  ])
+
+large_code_size = 24_576
+
+# PUSH1 i pairs: distinct per contract, and no JUMPDEST outside PUSH data.
+large_filler = fn i, size ->
+  :binary.copy(<<0x60, i>>, div(size, 2)) <> :binary.copy(<<0x00>>, rem(size, 2))
+end
+
+large_world = fn code_for ->
+  InMemory.new(
+    accounts:
+      Map.new(1..large_contracts, fn i ->
+        {large_base + i, %{balance: 0, code: code_for.(i)}}
+      end)
+  )
+end
+
+stop_world =
+  large_world.(fn i -> <<0x00>> <> large_filler.(i, large_code_size - 2) <> <<0x00>> end)
+
+# PUSH2 <end>, JUMP, STOP, filler, JUMPDEST (at <end>), STOP
+jump_end = large_code_size - 2
+
+jump_world =
+  large_world.(fn i ->
+    <<0x61, jump_end::16, 0x56, 0x00>> <>
+      large_filler.(i, large_code_size - 7) <> <<0x5B, 0x00>>
+  end)
+
 # --- ERC-20 transfer through EEVM.Handler ---------------------------------------------
 
 # transfer(address to, uint256 amount): balances live at keccak256(owner . 0).
@@ -326,6 +394,12 @@ jobs = %{
   "keccak: 64 KiB" => fn -> execute.(keccak_64k, []) end,
   "storage: SSTORE/SLOAD 500 slots" => fn -> execute.(sstore_sload, []) end,
   "calls: STATICCALL loop (2k)" => fn -> execute.(call_loop, db: call_world) end,
+  "calls: CALL 100 distinct 24 KB contracts that STOP" => fn ->
+    execute.(large_call_loop, db: stop_world)
+  end,
+  "calls: CALL 100 distinct 24 KB contracts that JUMP once" => fn ->
+    execute.(large_call_loop, db: jump_world)
+  end,
   "erc20: transfer via Handler" => fn -> Handler.execute(transfer_tx, block, erc20_db) end
 }
 

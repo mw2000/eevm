@@ -32,6 +32,8 @@ small assembler in `bench/support/asm.exs`.
 | keccak: 64 KiB | One KECCAK256 over 64 KiB of memory |
 | storage: SSTORE/SLOAD 500 slots | Cold SSTORE then warm SLOAD of 500 slots |
 | calls: STATICCALL loop (2k) | 2,000 STATICCALLs to a contract that SLOADs and MSTOREs (stStaticCall/static_Call50000-style) |
+| calls: CALL 100 distinct 24 KB contracts that STOP | 100 CALLs, each to a different contract of the EIP-170 maximum size that stops at its first byte |
+| calls: CALL 100 distinct 24 KB contracts that JUMP once | The same, but each contract first jumps to a JUMPDEST at its end |
 | erc20: transfer via Handler | A signed legacy `transfer(address,uint256)` with two SLOAD/SSTOREs and a LOG3 |
 
 `bench/precompiles_bench.exs` calls `EEVM.Precompiles.execute/4` directly with valid
