@@ -3,6 +3,7 @@ defmodule EEVM.Interpreter.Instructions.ControlFlowTest do
   import EEVM.TestSupport.MachineHelpers
 
   doctest EEVM.Interpreter.Instructions.Helpers
+  doctest EEVM.Interpreter.InstructionTable
 
   describe "Executor - Stack Operations" do
     test "POP" do

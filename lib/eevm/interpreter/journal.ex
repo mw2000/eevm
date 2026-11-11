@@ -20,7 +20,7 @@ defmodule EEVM.Interpreter.Journal do
     success its (possibly negative) counter is added to the parent's; on
     failure it is dropped.
 
-  The `tracer` and `substate.jumpdest_cache` are *not* revertible — trace
+  The `tracer` and `substate.program_cache` are *not* revertible — trace
   events and JUMPDEST analyses accumulate monotonically and are always
   preserved across child boundaries regardless of the child's outcome.
 
@@ -59,7 +59,7 @@ defmodule EEVM.Interpreter.Journal do
   end
 
   def merge_child_result(%MachineState{} = parent, %MachineState{} = child) do
-    substate = %{parent.substate | jumpdest_cache: child.substate.jumpdest_cache}
+    substate = %{parent.substate | program_cache: child.substate.program_cache}
     %{parent | substate: substate, tracer: child.tracer}
   end
 end

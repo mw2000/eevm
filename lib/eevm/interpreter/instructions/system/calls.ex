@@ -305,7 +305,7 @@ defmodule EEVM.Interpreter.Instructions.System.Calls do
                 is_static: child_static?,
                 depth: state_after_touch.frame.depth + 1,
                 tracer: state_after_touch.tracer,
-                jumpdest_cache: state_after_touch.substate.jumpdest_cache
+                program_cache: state_after_touch.substate.program_cache
               )
 
             child_result = Interpreter.run_loop(child_state)
@@ -507,7 +507,7 @@ defmodule EEVM.Interpreter.Instructions.System.Calls do
                 is_static: state_after_touch.frame.is_static,
                 depth: state_after_touch.frame.depth + 1,
                 tracer: state_after_touch.tracer,
-                jumpdest_cache: state_after_touch.substate.jumpdest_cache
+                program_cache: state_after_touch.substate.program_cache
               )
 
             child_result = Interpreter.run_loop(child_state)

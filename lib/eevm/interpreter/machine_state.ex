@@ -96,7 +96,7 @@ defmodule EEVM.Interpreter.MachineState do
         original_storage: Keyword.get(opts, :original_storage, %{}),
         transient_storage: Keyword.get(opts, :transient_storage, %{}),
         logs: Keyword.get(opts, :logs, []),
-        jumpdest_cache: Keyword.get(opts, :jumpdest_cache, %{})
+        program_cache: Keyword.get(opts, :program_cache, %{})
       )
 
     frame = %Frame{

@@ -24,12 +24,12 @@ defmodule EEVM.Interpreter.MachineState.Substate do
   - `logs` — emitted log entries, newest first so LOG and frame merges
     prepend; `EEVM.logs/1` and the transaction result reverse them into
     emission order.
-  - `jumpdest_cache` — the JUMPDEST map of every code blob analysed so
-    far, keyed by the code, so a contract called many times is analysed once
-    (see `EEVM.Interpreter.Instructions.Helpers.check_jumpdest/2`).
+  - `program_cache` — the decoded program of every code blob run so far,
+    keyed by the code, so a contract called many times is decoded once
+    (see `EEVM.Interpreter.InstructionTable.decode/3`).
 
   The first eight fields revert together when a child frame fails (see
-  `EEVM.Interpreter.Journal`); `jumpdest_cache` is a cache and survives.
+  `EEVM.Interpreter.Journal`); `program_cache` is a cache and survives.
   Stack, memory, pc, and gas are *not* substate — they belong to the
   per-frame execution context.
   """
@@ -49,7 +49,7 @@ defmodule EEVM.Interpreter.MachineState.Substate do
           original_storage: %{{non_neg_integer(), non_neg_integer()} => non_neg_integer()},
           transient_storage: %{{non_neg_integer(), non_neg_integer()} => non_neg_integer()},
           logs: [log_entry()],
-          jumpdest_cache: %{binary() => binary()}
+          program_cache: %{binary() => EEVM.Interpreter.InstructionTable.program()}
         }
 
   defstruct touched_addresses: nil,
@@ -60,7 +60,7 @@ defmodule EEVM.Interpreter.MachineState.Substate do
             original_storage: %{},
             transient_storage: %{},
             logs: [],
-            jumpdest_cache: %{}
+            program_cache: %{}
 
   @doc """
   Builds a substate, taking each field from the option of the same name and
@@ -77,7 +77,7 @@ defmodule EEVM.Interpreter.MachineState.Substate do
       original_storage: Keyword.get(opts, :original_storage, %{}),
       transient_storage: Keyword.get(opts, :transient_storage, %{}),
       logs: Keyword.get(opts, :logs, []),
-      jumpdest_cache: Keyword.get(opts, :jumpdest_cache, %{})
+      program_cache: Keyword.get(opts, :program_cache, %{})
     }
   end
 end

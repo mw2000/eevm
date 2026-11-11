@@ -9,7 +9,6 @@ defmodule EEVM.Interpreter.Instructions.Helpers do
   - Two's-complement conversion (`to_signed/1`, `to_unsigned/1`) bridging
     the uint256 stack with signed opcodes (SLT, SGT, SDIV, SMOD, SAR).
   - `mod_pow/3`, square-and-multiply modular exponentiation used by EXP.
-  - `check_jumpdest/2` for JUMP / JUMPI destination validation.
   - `pop_address/1` for opcodes that take an address operand.
   - `touch_account/3`, which before EIP-161 creates the accounts a message
     call or fee credit touches. The transaction handler shares it.
@@ -18,7 +17,6 @@ defmodule EEVM.Interpreter.Instructions.Helpers do
 
   alias EEVM.{Database, HardforkConfig}
   alias EEVM.Interpreter.{MachineState, Stack}
-  alias EEVM.Interpreter.MachineState.Frame
 
   @max_uint256 (1 <<< 256) - 1
   @address_mask (1 <<< 160) - 1
@@ -181,73 +179,4 @@ defmodule EEVM.Interpreter.Instructions.Helpers do
   def pop_address(stack) do
     with {:ok, word, stack} <- Stack.pop(stack), do: {:ok, word &&& @address_mask, stack}
   end
-
-  @doc """
-  Checks that `dest` is a valid jump destination in the frame's code: a
-  JUMPDEST (0x5B) opcode, not a 0x5B byte inside PUSH1–PUSH32 data (Yellow
-  Paper §9.4.3).
-
-  The code is analysed once per transaction: the frame's first JUMP/JUMPI
-  takes the code's JUMPDEST map from `state.substate.jumpdest_cache`, or
-  builds it, and keeps it in `frame.jumpdests`, so later jumps cost one
-  `:binary.at/2`.
-
-  Returns `{:ok, state}` (with the map filled in) or
-  `{:error, :invalid_jump_destination, state}`.
-
-      iex> state = EEVM.Interpreter.MachineState.new(<<0x60, 0x5B, 0x5B>>)
-      iex> {:ok, _} = EEVM.Interpreter.Instructions.Helpers.check_jumpdest(state, 2)
-      iex> {:error, :invalid_jump_destination, _} =
-      ...>   EEVM.Interpreter.Instructions.Helpers.check_jumpdest(state, 1)
-  """
-  @spec check_jumpdest(MachineState.t(), non_neg_integer()) ::
-          {:ok, MachineState.t()} | {:error, :invalid_jump_destination, MachineState.t()}
-  def check_jumpdest(%MachineState{frame: %Frame{jumpdests: jumpdests}} = state, dest)
-      when is_binary(jumpdests) do
-    if dest < byte_size(jumpdests) and :binary.at(jumpdests, dest) == 1,
-      do: {:ok, state},
-      else: {:error, :invalid_jump_destination, state}
-  end
-
-  def check_jumpdest(%MachineState{frame: %Frame{code: code}} = state, dest) do
-    {jumpdests, cache} =
-      case state.substate.jumpdest_cache do
-        %{^code => jumpdests} = cache ->
-          {jumpdests, cache}
-
-        cache ->
-          jumpdests = jumpdest_map(code, <<>>)
-          {jumpdests, Map.put(cache, code, jumpdests)}
-      end
-
-    check_jumpdest(
-      %{
-        state
-        | frame: %{state.frame | jumpdests: jumpdests},
-          substate: %{state.substate | jumpdest_cache: cache}
-      },
-      dest
-    )
-  end
-
-  # One byte per code byte: 1 where a JUMPDEST opcode starts, else 0. A byte
-  # per position rather than a bit keeps the check a single `:binary.at/2`.
-  # PUSH1–PUSH32 (0x60–0x7F) immediates are skipped, including a truncated
-  # one at the end of the code.
-  defp jumpdest_map(<<0x5B, rest::binary>>, acc), do: jumpdest_map(rest, <<acc::binary, 1>>)
-
-  defp jumpdest_map(<<op, rest::binary>>, acc) when op in 0x60..0x7F do
-    n = op - 0x5F
-
-    case rest do
-      <<_::binary-size(n), rest::binary>> ->
-        jumpdest_map(rest, <<acc::binary, 0::size((n + 1) * 8)>>)
-
-      _ ->
-        <<acc::binary, 0::size((byte_size(rest) + 1) * 8)>>
-    end
-  end
-
-  defp jumpdest_map(<<_, rest::binary>>, acc), do: jumpdest_map(rest, <<acc::binary, 0>>)
-  defp jumpdest_map(<<>>, acc), do: acc
 end
