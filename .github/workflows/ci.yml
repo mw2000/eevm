@@ -295,15 +295,10 @@ jobs:
     - name: Compile project
       run: mix compile
     - name: Generate docs (fail on ExDoc warnings)
-      run: |
-        mix docs 2>&1 | tee docs.log
-        # Only fail on warnings emitted by ExDoc itself (after "Generating docs..."),
-        # not on compile warnings from deps that may surface during a fresh build.
-        if awk '/Generating docs\.\.\./{flag=1; next} flag' docs.log \
-             | grep -E "^[[:space:]]+warning:"; then
-          echo "::error::ExDoc emitted warnings — see log above"
-          exit 1
-        fi
+      # ExDoc's own flag fails on every warning it emits, in any format, such
+      # as a link to a file that isn't a docs page. The project is compiled in
+      # the step above, so compile warnings from deps don't reach this step.
+      run: mix docs --warnings-as-errors
     # Also part of `mix test`; run here so a docs regression fails the Docs job.
     - name: Run the README and guide snippets and lint the public docs
       run: mix test --only docs --warnings-as-errors
