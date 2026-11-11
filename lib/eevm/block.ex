@@ -330,9 +330,12 @@ defmodule EEVM.Block do
   # Before Byzantium a receipt commits to the state after its transaction
   # instead of a status code (EIP-658).
   defp put_receipt_state_root(tx_result, hardfork) do
-    if enabled?(hardfork, :eip_658),
-      do: tx_result,
-      else: Map.put(tx_result, :state_root, StateRoot.compute_state_root(tx_result.db))
+    if enabled?(hardfork, :eip_658) do
+      tx_result
+    else
+      {state_root, db} = StateRoot.update(tx_result.db)
+      %{tx_result | db: db} |> Map.put(:state_root, state_root)
+    end
   end
 
   # Before Paris the miner earns the block reward plus 1/32 of it per ommer,

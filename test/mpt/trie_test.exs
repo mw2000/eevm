@@ -3,6 +3,8 @@ defmodule EEVM.MPT.TrieTest do
 
   alias EEVM.MPT.Trie
 
+  doctest Trie
+
   describe "root_hash/1" do
     test "empty trie" do
       assert Trie.root_hash([]) ==
@@ -65,6 +67,33 @@ defmodule EEVM.MPT.TrieTest do
 
       assert Trie.root_hash(entries) ==
                hex_to_bin("5991bb8c6514148a29db676a14ac506cd2cd5775ace63c30a4fe457715e9ac84")
+    end
+  end
+
+  describe "put/3, delete/2, and hash/1" do
+    test "updating a hashed trie gives the root of a rebuild" do
+      # "do" is a prefix of "dog" and "doge", so it sits in a branch value;
+      # deleting "doge" and "horse" collapses branches back into leaves.
+      {_root, trie} =
+        Trie.new()
+        |> Trie.put("do", "verb")
+        |> Trie.put("dog", "puppy")
+        |> Trie.put("doge", "coin")
+        |> Trie.put("horse", "stallion")
+        |> Trie.hash()
+
+      {root, trie} =
+        trie
+        |> Trie.delete("doge")
+        |> Trie.delete("horse")
+        |> Trie.put("dog", "hound")
+        |> Trie.delete("absent")
+        |> Trie.hash()
+
+      assert root == Trie.root_hash([{"do", "verb"}, {"dog", "hound"}])
+
+      {root, _trie} = trie |> Trie.delete("dog") |> Trie.delete("do") |> Trie.hash()
+      assert root == Trie.root_hash([])
     end
   end
 

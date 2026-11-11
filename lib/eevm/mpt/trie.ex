@@ -1,229 +1,287 @@
 defmodule EEVM.MPT.Trie do
   @moduledoc """
-  Ethereum Merkle Patricia Trie (MPT) root computation.
+  Ethereum Merkle Patricia Trie (Yellow Paper, Appendix D), as a persistent
+  value that caches each node's hash.
 
-  The trie is path-compressed (nibble-by-nibble keys, hex-prefix compact
-  encoding for leaves and extensions) and content-addressed: each node is
-  RLP-encoded, and a child reference is either the raw RLP payload (when
-  `byte_size(RLP(node)) < 32`) or `keccak256(RLP(node))` otherwise.
+  The trie is path-compressed (nibble keys, hex-prefix compact encoding for
+  leaf and extension paths) and content-addressed: each node is RLP-encoded,
+  and a parent refers to a child by its RLP when that is shorter than 32
+  bytes and by `keccak256(RLP(child))` otherwise.
 
-  Implements the recursive `patricialize` strategy from Ethereum's execution
-  specs, producing roots compatible with geth/revm for the same inputs.
+  `put/3` and `delete/2` rebuild only the nodes on the key's path and mark
+  them unhashed; `hash/1` hashes exactly those and returns the trie with the
+  hashes filled in. Updating `k` keys of a hashed trie with `n` keys
+  therefore costs about `k · log₁₆ n` Keccak-256 calls instead of a rebuild.
+
+      iex> alias EEVM.MPT.Trie
+      iex> trie = Trie.new() |> Trie.put("doe", "reindeer") |> Trie.put("dog", "puppy")
+      iex> {root, trie} = trie |> Trie.put("dogglesworth", "cat") |> Trie.hash()
+      iex> Base.encode16(root, case: :lower)
+      "8aad789dff2f538bca5d8ea56e8abe10f4c7ba3a5dea95fea4cd6e7c3a1168d3"
+      iex> {^root, _trie} = trie |> Trie.put("do", "verb") |> Trie.delete("do") |> Trie.hash()
   """
 
   alias EEVM.Crypto.Keccak
-  alias EEVM.MPT.HexPrefix
 
-  @typedoc "Nibble values used for trie paths."
-  @type nibble :: 0..15
-
-  @typedoc "Raw trie key bytes and value bytes (nil means deletion in sequential updates)."
+  @typedoc "Raw trie key bytes and value bytes (`nil` deletes the key)."
   @type entry :: {binary(), binary() | nil}
 
-  @type trie_node ::
-          nil
-          | {:leaf, [nibble()], binary()}
-          | {:extension, [nibble()], trie_node()}
-          | {:branch, %{optional(nibble()) => trie_node()}, binary() | nil}
+  # A child reference: the child's RLP when shorter than 32 bytes, else its
+  # hash; nil until `hash/1` computes it.
+  @typep ref :: {:raw, binary()} | <<_::256>> | nil
 
-  @type node_ref :: {:raw, binary()} | binary()
+  # Paths are bitstrings of 4-bit nibbles. The ref comes second so comparing
+  # a rebuilt node (ref nil) with a hashed one stops early.
+  @typep trie_node ::
+           {:leaf, ref(), bitstring(), binary()}
+           | {:extension, ref(), bitstring(), trie_node()}
+           | {:branch, ref(), tuple(), binary() | nil}
 
-  @empty_trie_root Base.decode16!(
-                     "56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
-                     case: :lower
-                   )
+  @typedoc "A trie: `nil` when empty."
+  @opaque t :: trie_node() | nil
+
+  @empty_trie_root <<0x56E81F171BCC55A6FF8345E692C0F86E5B48E01B996CADC001622FB5E363B421::256>>
+  @empty_children List.to_tuple(List.duplicate(nil, 16))
+
+  @doc "Returns the empty trie."
+  @spec new() :: t()
+  def new, do: nil
+
+  @doc "Returns whether `trie` has no keys."
+  @spec empty?(t()) :: boolean()
+  def empty?(trie), do: trie == nil
 
   @doc """
-  Computes the MPT root hash from `{key, value}` pairs.
-
-  Keys are inserted as-is (non-secure trie). Entries are applied sequentially;
-  if a key appears multiple times, later values overwrite earlier ones. A `nil`
-  value deletes the key.
+  Computes the root hash of a non-secure trie built from `{key, value}`
+  pairs, applied in order: a later value for a key replaces an earlier one,
+  and `nil` deletes the key.
   """
   @spec root_hash([entry()]) :: binary()
   def root_hash(entries) when is_list(entries) do
     entries
-    |> build_kv_map()
-    |> patricialize(0)
-    |> root_from_node()
-  end
+    |> Enum.reduce(new(), fn
+      {key, nil}, trie when is_binary(key) ->
+        delete(trie, key)
 
-  @doc """
-  Computes the secure-trie MPT root hash.
+      {key, value}, trie when is_binary(key) and is_binary(value) ->
+        put(trie, key, value)
 
-  Secure tries pre-hash each key with Keccak-256 before insertion.
-  """
-  @spec secure_root_hash([entry()]) :: binary()
-  def secure_root_hash(entries) when is_list(entries) do
-    secure_entries =
-      Enum.map(entries, fn {key, value} -> {Keccak.hash_256(key), value} end)
-
-    root_hash(secure_entries)
-  end
-
-  @spec root_from_node(trie_node()) :: binary()
-  defp root_from_node(nil), do: @empty_trie_root
-
-  defp root_from_node(node) do
-    node
-    |> encode_node_rlp()
-    |> Keccak.hash_256()
-  end
-
-  @spec build_kv_map([entry()]) :: %{[nibble()] => binary()}
-  defp build_kv_map(entries) do
-    Enum.reduce(entries, %{}, fn
-      {key, nil}, acc when is_binary(key) ->
-        Map.delete(acc, key_to_nibbles(key))
-
-      {key, value}, acc when is_binary(key) and is_binary(value) ->
-        Map.put(acc, key_to_nibbles(key), value)
-
-      bad_entry, _acc ->
+      bad_entry, _trie ->
         raise ArgumentError,
               "invalid trie entry #{inspect(bad_entry)} (expected {binary_key, binary_value | nil})"
     end)
+    |> hash()
+    |> elem(0)
   end
 
-  @spec patricialize(%{[nibble()] => binary()}, non_neg_integer()) :: trie_node()
-  defp patricialize(obj, _level) when map_size(obj) == 0, do: nil
+  @doc "Like `root_hash/1`, but each key is hashed with Keccak-256 first (a secure trie)."
+  @spec secure_root_hash([entry()]) :: binary()
+  def secure_root_hash(entries) when is_list(entries),
+    do: entries |> Enum.map(fn {key, value} -> {Keccak.hash_256(key), value} end) |> root_hash()
 
-  defp patricialize(obj, level) when map_size(obj) == 1 do
-    [{key_nibbles, value}] = Map.to_list(obj)
-    {:leaf, drop_nibbles(key_nibbles, level), value}
-  end
+  @doc "Sets `key` to `value`. Returns `trie` itself when `key` already holds `value`."
+  @spec put(t(), binary(), binary()) :: t()
+  def put(trie, key, value) when is_binary(key) and is_binary(value), do: insert(trie, key, value)
 
-  defp patricialize(obj, level) do
-    keys = Map.keys(obj)
-    shared = common_prefix_length(keys, level)
+  @doc "Removes `key`. Returns `trie` itself when `key` is absent."
+  @spec delete(t(), binary()) :: t()
+  def delete(trie, key) when is_binary(key), do: remove(trie, key)
 
-    if shared > 0 do
-      [{first_key, _}] = Map.to_list(obj) |> Enum.take(1)
-      shared_nibbles = take_slice(first_key, level, shared)
-      {:extension, shared_nibbles, patricialize(obj, level + shared)}
-    else
-      build_branch(obj, level)
+  @doc """
+  Returns the root hash and the trie with every node's reference computed,
+  hashing only nodes changed since the trie was last hashed.
+  """
+  @spec hash(t()) :: {<<_::256>>, t()}
+  def hash(nil), do: {@empty_trie_root, nil}
+
+  def hash(trie) do
+    trie = seal(trie)
+
+    case elem(trie, 1) do
+      {:raw, rlp} -> {Keccak.hash_256(rlp), trie}
+      hash -> {hash, trie}
     end
   end
 
-  @spec build_branch(%{[nibble()] => binary()}, non_neg_integer()) :: trie_node()
-  defp build_branch(obj, level) do
-    {value_at_prefix, buckets} =
-      Enum.reduce(obj, {nil, %{}}, fn {key_nibbles, value}, {exact_value, acc_buckets} ->
-        if length(key_nibbles) == level do
-          {value, acc_buckets}
-        else
-          nibble = Enum.at(key_nibbles, level)
-          updated_bucket = Map.put(Map.get(acc_buckets, nibble, %{}), key_nibbles, value)
-          {exact_value, Map.put(acc_buckets, nibble, updated_bucket)}
+  # ---------------------------------------------------------------------------
+  # Insertion
+  # ---------------------------------------------------------------------------
+
+  defp insert(nil, path, value), do: {:leaf, nil, path, value}
+  defp insert({:leaf, _ref, path, value} = leaf, path, value), do: leaf
+  defp insert({:leaf, _ref, path, _old}, path, value), do: {:leaf, nil, path, value}
+
+  defp insert({:leaf, _ref, leaf_path, leaf_value}, path, value) do
+    prefix = common_prefix(leaf_path, path)
+    size = bit_size(prefix)
+    <<_::bitstring-size(size), leaf_rest::bitstring>> = leaf_path
+    <<_::bitstring-size(size), rest::bitstring>> = path
+
+    {:branch, nil, @empty_children, nil}
+    |> insert(leaf_rest, leaf_value)
+    |> insert(rest, value)
+    |> wrap(prefix)
+  end
+
+  defp insert({:extension, _ref, ext_path, child} = node, path, value) do
+    size = bit_size(ext_path)
+
+    case path do
+      <<^ext_path::bitstring-size(size), rest::bitstring>> ->
+        case insert(child, rest, value) do
+          ^child -> node
+          new_child -> {:extension, nil, ext_path, new_child}
         end
-      end)
 
-    children =
-      Enum.reduce(0..15, %{}, fn nibble, acc ->
-        Map.put(acc, nibble, patricialize(Map.get(buckets, nibble, %{}), level + 1))
-      end)
+      _ ->
+        prefix = common_prefix(ext_path, path)
+        prefix_size = bit_size(prefix)
+        <<_::bitstring-size(prefix_size), nibble::4, ext_rest::bitstring>> = ext_path
+        <<_::bitstring-size(prefix_size), rest::bitstring>> = path
+        below = if ext_rest == <<>>, do: child, else: {:extension, nil, ext_rest, child}
 
-    {:branch, children, value_at_prefix}
+        {:branch, nil, put_elem(@empty_children, nibble, below), nil}
+        |> insert(rest, value)
+        |> wrap(prefix)
+    end
   end
 
-  @spec encode_node(trie_node()) :: node_ref()
-  defp encode_node(node) do
-    encoded = encode_node_rlp(node)
+  defp insert({:branch, _ref, _children, value} = branch, <<>>, value), do: branch
+  defp insert({:branch, _ref, children, _old}, <<>>, value), do: {:branch, nil, children, value}
 
-    if byte_size(encoded) < 32 do
-      {:raw, encoded}
+  defp insert(
+         {:branch, _ref, children, branch_value} = branch,
+         <<nibble::4, rest::bitstring>>,
+         value
+       ) do
+    child = elem(children, nibble)
+
+    case insert(child, rest, value) do
+      ^child -> branch
+      new_child -> {:branch, nil, put_elem(children, nibble, new_child), branch_value}
+    end
+  end
+
+  defp wrap(node, <<>>), do: node
+  defp wrap(node, prefix), do: {:extension, nil, prefix, node}
+
+  defp common_prefix(a, b), do: common_prefix(a, b, <<>>)
+
+  defp common_prefix(<<n::4, a::bitstring>>, <<n::4, b::bitstring>>, acc),
+    do: common_prefix(a, b, <<acc::bitstring, n::4>>)
+
+  defp common_prefix(_a, _b, acc), do: acc
+
+  # ---------------------------------------------------------------------------
+  # Deletion: rebuild the path, then restore the canonical shape (a branch
+  # with one entry left collapses into its neighbour).
+  # ---------------------------------------------------------------------------
+
+  defp remove(nil, _path), do: nil
+  defp remove({:leaf, _ref, path, _value}, path), do: nil
+  defp remove({:leaf, _ref, _other, _value} = leaf, _path), do: leaf
+
+  defp remove({:extension, _ref, ext_path, child} = node, path) do
+    size = bit_size(ext_path)
+
+    case path do
+      <<^ext_path::bitstring-size(size), rest::bitstring>> ->
+        case remove(child, rest) do
+          ^child -> node
+          new_child -> join(ext_path, new_child)
+        end
+
+      _ ->
+        node
+    end
+  end
+
+  defp remove({:branch, _ref, _children, nil} = branch, <<>>), do: branch
+  defp remove({:branch, _ref, children, _value}, <<>>), do: collapse(children, nil)
+
+  defp remove({:branch, _ref, children, value} = branch, <<nibble::4, rest::bitstring>>) do
+    child = elem(children, nibble)
+
+    case remove(child, rest) do
+      ^child -> branch
+      new_child -> collapse(put_elem(children, nibble, new_child), value)
+    end
+  end
+
+  # Prefixes `path` onto `node`.
+  defp join(path, {:leaf, _ref, rest, value}),
+    do: {:leaf, nil, <<path::bitstring, rest::bitstring>>, value}
+
+  defp join(path, {:extension, _ref, rest, child}),
+    do: {:extension, nil, <<path::bitstring, rest::bitstring>>, child}
+
+  defp join(path, {:branch, _ref, _children, _value} = branch),
+    do: {:extension, nil, path, branch}
+
+  defp collapse(children, value) do
+    case {Enum.reject(0..15, &(elem(children, &1) == nil)), value} do
+      {[], value} -> {:leaf, nil, <<>>, value}
+      {[nibble], nil} -> join(<<nibble::4>>, elem(children, nibble))
+      _two_or_more -> {:branch, nil, children, value}
+    end
+  end
+
+  # ---------------------------------------------------------------------------
+  # Hashing
+  # ---------------------------------------------------------------------------
+
+  defp seal(nil), do: nil
+
+  defp seal({:leaf, nil, path, value}),
+    do: {:leaf, ref(ExRLP.encode([compact(path, true), value])), path, value}
+
+  defp seal({:extension, nil, path, child}) do
+    child = seal(child)
+    {:extension, ref(list([ExRLP.encode(compact(path, false)), element(child)])), path, child}
+  end
+
+  defp seal({:branch, nil, children, value}) do
+    children = for(child <- Tuple.to_list(children), do: seal(child))
+    rlp = list([Enum.map(children, &element/1), ExRLP.encode(value || <<>>)])
+    {:branch, ref(rlp), List.to_tuple(children), value}
+  end
+
+  defp seal(hashed), do: hashed
+
+  defp ref(rlp) when byte_size(rlp) < 32, do: {:raw, rlp}
+  defp ref(rlp), do: Keccak.hash_256(rlp)
+
+  # A child as an item of its parent's RLP list: embedded when short, else
+  # the RLP string of its hash.
+  defp element(nil), do: <<0x80>>
+
+  defp element(node) do
+    case elem(node, 1) do
+      {:raw, rlp} -> rlp
+      hash -> <<0xA0, hash::binary>>
+    end
+  end
+
+  defp list(items) do
+    payload = IO.iodata_to_binary(items)
+    size = byte_size(payload)
+
+    if size <= 55 do
+      <<0xC0 + size, payload::binary>>
     else
-      Keccak.hash_256(encoded)
+      size_bytes = :binary.encode_unsigned(size)
+      <<0xF7 + byte_size(size_bytes), size_bytes::binary, payload::binary>>
     end
   end
 
-  @spec encode_node_rlp(trie_node()) :: binary()
-  defp encode_node_rlp(nil), do: ExRLP.encode(<<>>)
+  # Hex-prefix encoding (Yellow Paper, Appendix C): a flag nibble for leaf
+  # vs. extension and odd vs. even length, padded to whole bytes.
+  defp compact(path, leaf?) do
+    flag = if leaf?, do: 2, else: 0
 
-  defp encode_node_rlp({:leaf, path_nibbles, value}) do
-    ExRLP.encode([HexPrefix.encode(path_nibbles, true), value])
-  end
-
-  defp encode_node_rlp({:extension, shared_nibbles, child}) do
-    child_element = child_to_element(child)
-    encode_list_raw([HexPrefix.encode(shared_nibbles, false), child_element])
-  end
-
-  defp encode_node_rlp({:branch, children, value}) do
-    child_elements =
-      Enum.map(0..15, fn nibble ->
-        child_to_element(Map.get(children, nibble))
-      end)
-
-    encode_list_raw(child_elements ++ [value || <<>>])
-  end
-
-  @spec child_to_element(trie_node()) :: binary() | {:raw, binary()}
-  defp child_to_element(nil), do: <<>>
-
-  defp child_to_element(child) do
-    case encode_node(child) do
-      {:raw, encoded} -> {:raw, encoded}
-      hash -> hash
+    case rem(bit_size(path), 8) do
+      0 -> <<flag::4, 0::4, path::bitstring>>
+      4 -> <<flag + 1::4, path::bitstring>>
     end
   end
-
-  @spec encode_list_raw([term() | {:raw, binary()}]) :: binary()
-  defp encode_list_raw(elements) do
-    payload =
-      Enum.reduce(elements, <<>>, fn
-        {:raw, encoded}, acc -> acc <> encoded
-        term, acc -> acc <> ExRLP.encode(term)
-      end)
-
-    encode_list_header(payload)
-  end
-
-  @spec encode_list_header(binary()) :: binary()
-  defp encode_list_header(payload) do
-    length = byte_size(payload)
-
-    if length <= 55 do
-      <<0xC0 + length, payload::binary>>
-    else
-      length_bytes = :binary.encode_unsigned(length)
-      <<0xF7 + byte_size(length_bytes), length_bytes::binary, payload::binary>>
-    end
-  end
-
-  @spec key_to_nibbles(binary()) :: [nibble()]
-  defp key_to_nibbles(key), do: key_to_nibbles(key, [])
-
-  defp key_to_nibbles(<<>>, acc), do: Enum.reverse(acc)
-
-  defp key_to_nibbles(<<high::4, low::4, rest::binary>>, acc) do
-    key_to_nibbles(rest, [low, high | acc])
-  end
-
-  @spec common_prefix_length([[nibble()]], non_neg_integer()) :: non_neg_integer()
-  defp common_prefix_length(keys, level), do: common_prefix_length(keys, level, 0)
-
-  defp common_prefix_length(keys, level, acc) do
-    index = level + acc
-
-    if Enum.any?(keys, &(length(&1) <= index)) do
-      acc
-    else
-      [first_key | _] = keys
-      nibble = Enum.at(first_key, index)
-
-      if Enum.all?(keys, &(Enum.at(&1, index) == nibble)) do
-        common_prefix_length(keys, level, acc + 1)
-      else
-        acc
-      end
-    end
-  end
-
-  @spec drop_nibbles([nibble()], non_neg_integer()) :: [nibble()]
-  defp drop_nibbles(nibbles, count), do: Enum.drop(nibbles, count)
-
-  @spec take_slice([nibble()], non_neg_integer(), non_neg_integer()) :: [nibble()]
-  defp take_slice(nibbles, start, length), do: Enum.slice(nibbles, start, length)
 end

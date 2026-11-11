@@ -244,11 +244,14 @@ defmodule EEVM.Block.Processor do
           tx_encoder()
         ) :: Result.t()
   defp build_result(post_db, receipts, transactions, gas_used, tx_encoder) do
+    # `update/1` keeps the hashed tries in `post_db` for the next block (#203).
+    {state_root, post_db} = StateRoot.update(post_db)
+
     %Result{
       db: post_db,
       post_state_db: post_db,
       receipts: receipts,
-      state_root: StateRoot.compute_state_root(post_db),
+      state_root: state_root,
       receipts_root: compute_receipts_root(receipts),
       transactions_root: compute_transactions_root(transactions, tx_encoder),
       logs_bloom: aggregate_logs_bloom(receipts),

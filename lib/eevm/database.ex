@@ -48,7 +48,7 @@ defmodule EEVM.Database do
 
   alias EEVM.Crypto.Keccak
   alias EEVM.Database.Legacy
-  alias EEVM.StateChanges
+  alias EEVM.{StateChanges, StateRoot}
 
   defmodule ReadError do
     @moduledoc "Raised when a database backend returns `{:error, reason}` from a read."
@@ -94,10 +94,13 @@ defmodule EEVM.Database do
           state: term(),
           accounts: %{address() => overlay_account() | nil},
           storage: %{address() => %{non_neg_integer() => non_neg_integer()}},
-          destroyed: MapSet.t(address())
+          destroyed: MapSet.t(address()),
+          tries: EEVM.StateRoot.tries() | nil
         }
 
-  defstruct [:impl, :state, accounts: %{}, storage: %{}, destroyed: MapSet.new()]
+  # `tries` caches the hashed state tries for `EEVM.StateRoot`; nil until a
+  # state root is computed.
+  defstruct [:impl, :state, :tries, accounts: %{}, storage: %{}, destroyed: MapSet.new()]
 
   # ---------------------------------------------------------------------------
   # Callbacks
@@ -211,10 +214,18 @@ defmodule EEVM.Database do
   """
   @spec commit(t()) :: {:ok, t()} | {:error, term()}
   def commit(%__MODULE__{impl: impl, state: state} = db) do
-    case capability(impl, :commit, fn -> impl.commit(state, changes(db)) end) do
-      {:ok, new_state} -> {:ok, %__MODULE__{impl: impl, state: new_state}}
-      {:error, :unsupported} -> {:error, :commit_not_supported}
-      {:error, reason} -> {:error, reason}
+    changes = changes(db)
+
+    case capability(impl, :commit, fn -> impl.commit(state, changes) end) do
+      {:ok, new_state} ->
+        {:ok,
+         %__MODULE__{impl: impl, state: new_state, tries: StateRoot.mark_stale(db.tries, changes)}}
+
+      {:error, :unsupported} ->
+        {:error, :commit_not_supported}
+
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 

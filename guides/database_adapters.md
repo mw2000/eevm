@@ -27,7 +27,10 @@ a module exports, so what an adapter supports is stated in its code:
 - `accounts(state)` and `storage_slots(state, address)` enumerate the state
   as `{:ok, enumerable}`. Only `EEVM.StateRoot` needs them, so
   `EEVM.Block.execute/4`, which checks the header's state root, needs them
-  too.
+  too. They enumerate once: the database a block returns keeps the hashed
+  state tries, and the next block rehashes only what it wrote. That assumes
+  the state changes only through `commit/2`; after changing it any other
+  way, wrap it again with `EEVM.Database.new/2`.
 
 Addresses and storage words are integers; hashes are 32-byte binaries.
 
