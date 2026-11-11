@@ -7,8 +7,9 @@ defmodule EEVM.Interpreter.MachineState.Frame do
 
   - `pc`, `stack`, `memory`, `gas`, `refund` — execution registers
   - `code` — the currently-executing bytecode
-  - `program` — `code` decoded for the interpreter, filled in when the frame
-    starts (see `EEVM.Interpreter.InstructionTable.decode/3`)
+  - `program` — `code` decoded for the interpreter
+    (`EEVM.Interpreter.InstructionTable.decode/3`), or `t:undecoded/0` while
+    the frame runs `code` undecoded; `nil` until the frame starts
   - `return_data` — buffer holding the most recent child frame's output
   - `contract` — the per-call message context (`msg.sender`, `msg.value`,
     `address`, `calldata`, `balances`)
@@ -23,6 +24,13 @@ defmodule EEVM.Interpreter.MachineState.Frame do
   alias EEVM.Context.Contract
   alias EEVM.Interpreter.{Memory, Stack}
 
+  @typedoc """
+  A frame running its code undecoded (#210): the gas left at which its next
+  jump decodes the code, and the code's JUMPDEST map
+  (`EEVM.Interpreter.InstructionTable.jumpdests/1`) once it has jumped.
+  """
+  @type undecoded :: {:undecoded, decode_at :: integer(), jumpdests :: binary() | nil}
+
   @type t :: %__MODULE__{
           pc: non_neg_integer(),
           stack: Stack.t(),
@@ -30,7 +38,7 @@ defmodule EEVM.Interpreter.MachineState.Frame do
           gas: non_neg_integer(),
           refund: integer(),
           code: binary(),
-          program: EEVM.Interpreter.InstructionTable.program() | nil,
+          program: EEVM.Interpreter.InstructionTable.program() | undecoded() | nil,
           return_data: binary(),
           contract: Contract.t(),
           depth: non_neg_integer(),

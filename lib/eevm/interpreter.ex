@@ -104,7 +104,15 @@ defmodule EEVM.Interpreter do
     %Stack{elements: stack, size: depth} = frame.stack
     gas = min(frame.gas, @gas_window)
     state = %{state | frame: %{frame | gas: frame.gas - gas}}
-    loop(state, frame.program, frame.pc, gas, stack, depth)
+
+    # Undecoded code is its own program (see `load_program/1`).
+    program =
+      case frame.program do
+        {:undecoded, _decode_at, _jumpdests} -> frame.code
+        program -> program
+      end
+
+    loop(state, program, frame.pc, gas, stack, depth)
   end
 
   def run_loop(state), do: state
@@ -182,7 +190,7 @@ defmodule EEVM.Interpreter do
   #
   # `loop/6` keeps what changes on almost every opcode in its own arguments
   # instead of in the `MachineState`: `pc`, `gas`, and `stack` (a list, top
-  # first) with its `depth`, plus the frame's decoded `program`, so the hot
+  # first) with its `depth`, plus the frame's `program`, so the hot
   # path never reads them out of a struct.
   #
   # While it runs, `state.frame`'s pc and stack are stale and `frame.gas` holds
@@ -192,7 +200,7 @@ defmodule EEVM.Interpreter do
   # end of the frame first writes the registers back (`sync/5`), so opcode
   # modules and callers only ever see a complete `MachineState` (#193).
   #
-  # The program is the code decoded once per transaction
+  # The program is the code decoded at most once per transaction
   # (`EEVM.Interpreter.InstructionTable.decode/3`): `elem(program, pc)` is the
   # instruction at `pc`, with PUSH data already read and PUSH+JUMP(I) pairs
   # fused into one instruction (#208). Each instruction carries its checks,
@@ -201,24 +209,76 @@ defmodule EEVM.Interpreter do
   # opcode would end with more than 1024 items, a stack overflow (Yellow Paper
   # §9.4.2). Opcodes can therefore assume their inputs are there and push
   # freely.
+  #
+  # Decoding costs time in proportion to the code's size, and a call to a
+  # large contract that runs a few opcodes must not pay for it, or calling
+  # such contracts over and over would cost far more time per gas than any
+  # other work (#210). So a frame can start undecoded
+  # (`t:EEVM.Interpreter.MachineState.Frame.undecoded/0`): the loop then gets
+  # the code itself as its program, reads each instruction from it
+  # (`EEVM.Interpreter.InstructionTable.fetch/3`), and checks jumps against
+  # the code's JUMPDEST map, which takes about a sixth of the time decoding
+  # does to build. Only code that loops runs long enough to repay a decode, and
+  # looping takes a jump: the first jump after the frame has used
+  # `@decode_gas_per_byte` gas per code byte decodes the code.
+  #
+  # The threshold is where running undecoded has cost as much extra time as
+  # decoding takes, so whichever way a frame turns out, the choice costs it at
+  # most about twice what the better one would have. Decoding takes 20-36 ns
+  # per code byte, and undecoded code runs at about 50 Mgas/s against 170
+  # decoded, about 14 ns more per gas, so the break-even is about 3 gas per
+  # byte. Gas then also bounds the time decoding can add, to about 12 ns per
+  # gas, and a call that spends a few thousand gas in a 24 KB contract never
+  # decodes it.
+  @decode_gas_per_byte 3
 
-  # Loads the frame's program: from the transaction's cache when this code ran
-  # before, else decoded and cached. Traced runs decode a traced program; the
-  # tracer is fixed for a transaction, and so is the hardfork's table.
-  defp load_program(%MachineState{frame: %{code: code} = frame, substate: substate} = state) do
-    {program, cache} =
-      case substate.program_cache do
-        %{^code => program} = cache ->
-          {program, cache}
+  # Gas paid to reach code the transaction has not run yet counts toward the
+  # threshold too: the 21,000 intrinsic gas of the transaction for its top
+  # frame, and at least 2,600 for a cold account (EIP-2929) or 2,400 for an
+  # access-list entry below it.
+  defp reach_gas(0 = _depth), do: 21_000
+  defp reach_gas(_depth), do: 2_600
 
-        cache ->
-          program =
-            InstructionTable.decode(code, state.env.instruction_table, state.tracer != nil)
+  # Starts the frame on its code. Code decoded earlier in the transaction
+  # starts decoded, and so does code whose decoding the gas paid to reach it
+  # covers already: a callee's code up to about 870 bytes, and a
+  # transaction's own code up to about 7 KB. Other code starts undecoded, with
+  # the JUMPDEST map cached for it, if any. Traced runs always decode, so the
+  # tracer sees every instruction through one kind of program; the tracer is
+  # fixed for a transaction, and so is the hardfork's table.
+  defp load_program(%MachineState{frame: %{code: code} = frame} = state) do
+    case state.substate.program_cache do
+      %{^code => program} when is_tuple(program) ->
+        %{state | frame: %{frame | program: program}}
 
-          {program, Map.put(cache, code, program)}
+      cache ->
+        decode_at = frame.gas + reach_gas(frame.depth) - @decode_gas_per_byte * byte_size(code)
+
+        if state.tracer != nil or decode_at >= frame.gas,
+          do: decode_program(state),
+          else: %{state | frame: %{frame | program: {:undecoded, decode_at, cache[code]}}}
+    end
+  end
+
+  # Decodes the frame's code, unless a frame decoded it earlier in the transaction.
+  defp decode_program(%MachineState{frame: %{code: code} = frame, substate: substate} = state) do
+    program =
+      case substate.program_cache[code] do
+        program when is_tuple(program) -> program
+        _ -> InstructionTable.decode(code, state.env.instruction_table, state.tracer != nil)
       end
 
+    cache = Map.put(substate.program_cache, code, program)
     %{state | frame: %{frame | program: program}, substate: %{substate | program_cache: cache}}
+  end
+
+  # Computes and caches the JUMPDEST map of the frame's undecoded code.
+  defp load_jumpdests(%MachineState{frame: %{code: code} = frame, substate: substate} = state) do
+    {:undecoded, decode_at, nil} = frame.program
+    jumpdests = InstructionTable.jumpdests(code)
+    cache = Map.put_new(substate.program_cache, code, jumpdests)
+    frame = %{frame | program: {:undecoded, decode_at, jumpdests}}
+    %{state | frame: frame, substate: %{substate | program_cache: cache}}
   end
 
   # The instruction's gas and stack checks pass.
@@ -227,7 +287,7 @@ defmodule EEVM.Interpreter do
 
   # The hot path matches the instruction here rather than in a function head:
   # a call per opcode just to match it made loopMul about 3x slower.
-  defp loop(state, program, pc, gas, stack, depth) do
+  defp loop(state, program, pc, gas, stack, depth) when is_tuple(program) do
     case elem(program, pc) do
       {op, cost, min_depth, max_depth, arg}
       when runnable(cost, min_depth, max_depth, gas, depth) ->
@@ -235,6 +295,18 @@ defmodule EEVM.Interpreter do
 
       instruction ->
         execute(instruction, state, program, pc, gas, stack, depth)
+    end
+  end
+
+  # Code not decoded yet is its own program: each instruction is read from it.
+  defp loop(state, code, pc, gas, stack, depth) do
+    case InstructionTable.fetch(code, pc, state.env.instruction_table) do
+      {op, cost, min_depth, max_depth, arg}
+      when runnable(cost, min_depth, max_depth, gas, depth) ->
+        step(state, code, pc, gas - cost, stack, depth, op, arg)
+
+      instruction ->
+        execute(instruction, state, code, pc, gas, stack, depth)
     end
   end
 
@@ -354,11 +426,32 @@ defmodule EEVM.Interpreter do
 
   # JUMP and JUMPI may only land on a JUMPDEST opcode (Yellow Paper §9.4.3).
   # PUSH data decodes as `:push_data`, so the program itself is the JUMPDEST map.
-  defp jump(state, program, pc, gas, stack, depth, dest) do
+  defp jump(state, program, pc, gas, stack, depth, dest) when is_tuple(program) do
     case dest < tuple_size(program) and elem(program, dest) do
       {0x5B, _cost, _min, _max, _arg} -> loop(state, program, dest, gas, stack, depth)
       {:trace, 0x5B, _instruction} -> loop(state, program, dest, gas, stack, depth)
       _ -> halt(state, :invalid_jump_destination, pc, gas, stack, depth)
+    end
+  end
+
+  # In undecoded code, a jump decodes it once the frame has used enough gas
+  # (see `@decode_gas_per_byte`), and is checked against the JUMPDEST map until then.
+  defp jump(%MachineState{frame: frame} = state, code, pc, gas, stack, depth, dest) do
+    {:undecoded, decode_at, jumpdests} = frame.program
+
+    cond do
+      frame.gas + gas <= decode_at ->
+        state = decode_program(state)
+        jump(state, state.frame.program, pc, gas, stack, depth, dest)
+
+      jumpdests == nil ->
+        jump(load_jumpdests(state), code, pc, gas, stack, depth, dest)
+
+      dest < byte_size(jumpdests) and :binary.at(jumpdests, dest) == 1 ->
+        loop(state, code, dest, gas, stack, depth)
+
+      true ->
+        halt(state, :invalid_jump_destination, pc, gas, stack, depth)
     end
   end
 

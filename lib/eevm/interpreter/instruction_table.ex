@@ -21,8 +21,10 @@ defmodule EEVM.Interpreter.InstructionTable do
 
   `EEVM.Interpreter.MachineState.Env` resolves the table once per frame from
   the active hardfork, and `decode/3` turns a contract's code into a program
-  of these instructions once per transaction, so the per-opcode path never
-  checks which fork is active or decodes a byte.
+  of these instructions at most once per transaction, so the per-opcode path
+  never checks which fork is active or decodes a byte. Until code has run long
+  enough to repay decoding, `fetch/3` reads its instructions one at a time
+  and `jumpdests/1` checks its jumps (#210).
   """
 
   import Bitwise, only: [<<<: 2]
@@ -183,4 +185,74 @@ defmodule EEVM.Interpreter.InstructionTable do
   end
 
   defp fuse_jump(push, _rest, _jump_pc, _table), do: push
+
+  @doc """
+  Reads the instruction at `pc` straight from `code`, as `decode/3` would
+  without `tracing?` but with nothing fused, or `:end` past the end of the code.
+
+  This runs code that has not been decoded yet, one instruction at a time.
+  `pc` must be an instruction's position, not PUSH data.
+
+      iex> alias EEVM.Interpreter.InstructionTable
+      iex> table = InstructionTable.for_spec(:prague)
+      iex> InstructionTable.fetch(<<0x61, 0x01>>, 0, table)
+      {0x61, 3, 0, 1023, 0x0100}
+      iex> InstructionTable.fetch(<<0x61, 0x01>>, 3, table)
+      :end
+  """
+  @spec fetch(binary(), non_neg_integer(), t()) :: instruction() | :end
+  def fetch(code, pc, table) when pc < byte_size(code) do
+    case :binary.at(code, pc) do
+      byte when byte in 0x60..0x7F -> fetch_push(code, pc + 1, byte - 0x5F, elem(table, byte))
+      byte -> elem(table, byte)
+    end
+  end
+
+  def fetch(_code, _pc, _table), do: :end
+
+  defp fetch_push(code, at, n, push) do
+    case code do
+      <<_::binary-size(at), value::size(n)-unit(8), _::binary>> ->
+        with_value(push, value)
+
+      <<_::binary-size(at), rest::binary>> ->
+        with_value(push, :binary.decode_unsigned(rest) <<< (8 * (n - byte_size(rest))))
+    end
+  end
+
+  @doc """
+  Returns the JUMPDEST map of `code`: one byte per code byte, 1 where a
+  JUMPDEST opcode starts and 0 elsewhere, including PUSH data (Yellow Paper
+  §9.4.3).
+
+  Jumps in code that has not been decoded yet are checked against it. One
+  byte per position rather than one bit keeps each check a single
+  `:binary.at/2`.
+
+      iex> EEVM.Interpreter.InstructionTable.jumpdests(<<0x60, 0x5B, 0x5B>>)
+      <<0, 0, 1>>
+  """
+  @spec jumpdests(binary()) :: binary()
+  def jumpdests(code), do: jumpdests(code, 0, 0, <<>>)
+
+  # `last` is where the map built so far ends. The map grows only at a
+  # JUMPDEST, by the zeros since `last` and then the 1, not once per byte:
+  # that is 2.5x faster on Solidity code and no slower on all-JUMPDEST code.
+  defp jumpdests(<<0x5B, rest::binary>>, pc, pc, map),
+    do: jumpdests(rest, pc + 1, pc + 1, <<map::binary, 1>>)
+
+  defp jumpdests(<<0x5B, rest::binary>>, pc, last, map),
+    do: jumpdests(rest, pc + 1, pc + 1, <<map::binary, 0::size((pc - last) * 8), 1>>)
+
+  defp jumpdests(<<byte, rest::binary>>, pc, last, map) when byte in 0x60..0x7F do
+    n = byte - 0x5F
+
+    case rest do
+      <<_::binary-size(n), rest::binary>> -> jumpdests(rest, pc + n + 1, last, map)
+      _truncated -> jumpdests(<<>>, pc + 1 + byte_size(rest), last, map)
+    end
+  end
+
+  defp jumpdests(<<_byte, rest::binary>>, pc, last, map), do: jumpdests(rest, pc + 1, last, map)
+  defp jumpdests(<<>>, pc, last, map), do: <<map::binary, 0::size((pc - last) * 8)>>
 end

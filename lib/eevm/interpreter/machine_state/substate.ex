@@ -24,9 +24,11 @@ defmodule EEVM.Interpreter.MachineState.Substate do
   - `logs` — emitted log entries, newest first so LOG and frame merges
     prepend; `EEVM.logs/1` and the transaction result reverse them into
     emission order.
-  - `program_cache` — the decoded program of every code blob run so far,
-    keyed by the code, so a contract called many times is decoded once
-    (see `EEVM.Interpreter.InstructionTable.decode/3`).
+  - `program_cache` — what is known of every code blob run so far, keyed by
+    the code: its decoded program once a frame has decoded it
+    (`EEVM.Interpreter.InstructionTable.decode/3`), else its JUMPDEST map
+    once a frame has jumped in it (`EEVM.Interpreter.InstructionTable.jumpdests/1`).
+    A contract called many times is analysed once.
 
   The first eight fields revert together when a child frame fails (see
   `EEVM.Interpreter.Journal`); `program_cache` is a cache and survives.
@@ -49,7 +51,7 @@ defmodule EEVM.Interpreter.MachineState.Substate do
           original_storage: %{{non_neg_integer(), non_neg_integer()} => non_neg_integer()},
           transient_storage: %{{non_neg_integer(), non_neg_integer()} => non_neg_integer()},
           logs: [log_entry()],
-          program_cache: %{binary() => EEVM.Interpreter.InstructionTable.program()}
+          program_cache: %{binary() => EEVM.Interpreter.InstructionTable.program() | binary()}
         }
 
   defstruct touched_addresses: nil,

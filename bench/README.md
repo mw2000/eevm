@@ -296,6 +296,50 @@ transaction ([#210](https://github.com/mw2000/eevm/issues/210)). Times for
 | 24 KB contract, 1 loop iteration | 359 µs | 1,225 µs |
 | 24 KB contract that STOPs at once | 6 µs | 557 µs |
 
+## Decoding only code that loops
+
+[#210](https://github.com/mw2000/eevm/issues/210) removed that cost. A frame now decodes
+its code only once decoding pays for itself. Until then it runs the code undecoded: the
+loop reads each instruction straight from the bytes
+(`EEVM.Interpreter.InstructionTable.fetch/3`), at about 50 Mgas/s against 170 decoded,
+and checks jumps against the code's JUMPDEST map, which takes about a sixth of the time
+decoding does to build. The first jump after the frame has used 3 gas per code byte decodes the
+code. By then, running undecoded has cost about as much extra time as decoding would, so
+either way a frame spends at most about twice what the better choice would have, and the
+time decoding can add stays below about 12 ns per gas. The gas paid to reach the code
+counts too: 21,000 for a transaction's own code, and 2,600 (a cold account, EIP-2929) for
+a callee's. So a transaction's code up to about 7 KB and a callee's up to about 870 bytes
+still decode at once.
+
+The JUMPDEST map also got 2.5x faster on Solidity code: it now grows at each JUMPDEST
+rather than once per byte.
+
+`EEVM.Interpreter.run/2` on the same contracts as above, plus 24 KB of code that jumps
+once, to a JUMPDEST at its end. `MIX_ENV=prod`, median of 201 runs (501 to 1,001 for the
+1 KB rows, each in a fresh process):
+
+| Run | d0164ce | cdbd45d (#208) | after |
+|---|---:|---:|---:|
+| 1 KB contract, 1 loop iteration | 62 µs | 48 µs | 54 µs |
+| 1 KB contract, 100 loop iterations | 1,267 µs | 445 µs | 446 µs |
+| 24 KB contract, 1 loop iteration | 353 µs | 1,170 µs | 215 µs |
+| 24 KB contract that STOPs at once | 5 µs | 530 µs | 6 µs |
+| 24 KB contract that jumps once | 262 µs | 1,299 µs | 110 µs |
+
+`mix bench interpreter`, `cdbd45d` against this change, `MIX_ENV=prod`, Mgas/s as the
+mean of six runs before and two after:
+
+| Scenario | Mgas/s before | Mgas/s after | Speedup | Memory/run |
+|---|---:|---:|---:|---:|
+| calls: CALL 100 distinct 24 KB contracts that STOP | 0.65 | 228 | 349x | 150 → 1.0 MB |
+| calls: CALL 100 distinct 24 KB contracts that JUMP once | 0.62 | 18.3 | 30x | 150 → 1.1 MB |
+
+Every other scenario, and its memory per run, is unchanged within the ±5% these runs vary
+by. With 100 decoded 24 KB programs alive at once, `cdbd45d` spent most of each call
+copying them in the garbage collector, about 4 ms per call that stops at once. Now such a
+call takes about 12 µs, and one that jumps once about 150 µs, most of it building the
+JUMPDEST map.
+
 ## Pure-Elixir BLS12-381, KZG, and ModExp
 
 [#199](https://github.com/mw2000/eevm/issues/199) replaced the last native code in the
