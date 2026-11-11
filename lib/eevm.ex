@@ -22,7 +22,9 @@ defmodule EEVM do
 
   - `EEVM` — run bytecode (`run/2`), call or deploy a contract without a
     signature (`call/4`, `create/3`), execute a signed transaction
-    (`transact/4`), and disassemble bytecode
+    (`transact/4`), decode revert reasons, and the hashing and hex helpers
+    that calls need (`keccak256/1`, `selector/1`, `event_topic/1`,
+    `address/1`, `hex/1`)
   - `EEVM.Config` — the hardfork, chain id, and custom precompiles
   - `EEVM.BlockEnv` and `EEVM.TxEnv` — the block and transaction environment
     code executes in
@@ -44,6 +46,7 @@ defmodule EEVM do
   alias EEVM.Block.Bloom
   alias EEVM.{BlockEnv, CallResult, Database, Handler, HardforkConfig, TransactionResult, TxEnv}
   alias EEVM.Context.Contract
+  alias EEVM.Crypto.Keccak
   alias EEVM.Database.InMemory
   alias EEVM.Handler.{Execution, PostExecution, Validation}
   alias EEVM.Interpreter
@@ -392,6 +395,50 @@ defmodule EEVM do
   end
 
   defp abi_bytes(_args), do: :error
+
+  @doc """
+  Returns the 32-byte Keccak-256 hash of `data`, Ethereum's hash function
+  (the original Keccak padding, not NIST SHA3-256).
+
+  ## Example
+
+      iex> EEVM.keccak256("") |> EEVM.hex()
+      "0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470"
+  """
+  @spec keccak256(binary()) :: <<_::256>>
+  def keccak256(data) when is_binary(data), do: Keccak.hash_256(data)
+
+  @doc """
+  Returns the 4-byte ABI selector of a function signature: the first four
+  bytes of its Keccak-256 hash. Write the signature in canonical form, with
+  no spaces or parameter names and full type names (`uint256`, not `uint`).
+
+  Prepend it to the ABI-encoded arguments to build calldata.
+
+  ## Example
+
+      iex> EEVM.selector("transfer(address,uint256)")
+      <<0xA9, 0x05, 0x9C, 0xBB>>
+  """
+  @spec selector(String.t()) :: <<_::32>>
+  def selector(signature) when is_binary(signature),
+    do: binary_part(Keccak.hash_256(signature), 0, 4)
+
+  @doc """
+  Returns the first log topic of an event signature, its Keccak-256 hash, as
+  an integer, which is how `result.logs` carries topics. Anonymous events
+  have no such topic.
+
+  ## Example
+
+      iex> EEVM.event_topic("Transfer(address,address,uint256)") |> EEVM.hex()
+      "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
+  """
+  @spec event_topic(String.t()) :: non_neg_integer()
+  def event_topic(signature) when is_binary(signature) do
+    <<topic::unsigned-big-256>> = Keccak.hash_256(signature)
+    topic
+  end
 
   @doc """
   Returns an address as the integer eevm uses everywhere: from a hex string

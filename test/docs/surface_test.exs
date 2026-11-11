@@ -24,10 +24,7 @@ defmodule EEVM.Docs.SurfaceTest do
   # Known violations, each with the issue that removes it. Like the purity
   # test's allow-list, it only shrinks: the test fails on an entry nothing
   # needs, so delete an entry once its issue lands.
-  @pending %{
-    {"README.md", EEVM.Crypto.ECDSA} => "#217",
-    {"README.md", EEVM.Crypto.Keccak} => "#217"
-  }
+  @pending %{}
 
   # Structs whose fields are an implementation detail: callers use the
   # module's functions, never the fields.

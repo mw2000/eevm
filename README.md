@@ -114,8 +114,7 @@ alias EEVM.Database.InMemory
 alias EEVM.Transaction.{FeeMarket, Signer}
 
 private_key = <<0x46::256>>
-{:ok, {x, y}} = EEVM.Crypto.ECDSA.public_key(:secp256k1, private_key)
-<<_::binary-size(12), sender::unsigned-big-160>> = EEVM.Crypto.Keccak.hash_256(<<x::256, y::256>>)
+{:ok, sender} = Signer.address(private_key)
 recipient = 0xB0B
 
 db = InMemory.new(accounts: %{sender => %{balance: 10 ** 18, nonce: 0, code: <<>>}})
@@ -158,6 +157,17 @@ Addresses are integers everywhere, transaction `to` included (`nil` creates a
 contract), and hashes and roots are 32-byte binaries. `EEVM.address/1` and
 `EEVM.hex/1` convert hex strings and binaries at the edges. `EEVM.transact/4`
 also accepts raw signed transaction bytes.
+`EEVM.Transaction.Signer.address/1` turns a private key into its address, and
+`EEVM.keccak256/1`, `EEVM.selector/1`, and `EEVM.event_topic/1` build calldata
+and match logs:
+
+```elixir
+iex> calldata = EEVM.selector("balanceOf(address)") <> <<0xA11CE::256>>
+iex> EEVM.hex(calldata)
+"0x70a08231" <> String.duplicate("0", 59) <> "a11ce"
+iex> EEVM.event_topic("Transfer(address,address,uint256)") == 0xDDF252AD1BE2C89B69C2B068FC378DAA952BA7F163C4A11628F55A4DF523B3EF
+true
+```
 
 ### Build, encode, and execute a block
 
@@ -174,8 +184,7 @@ Both take the same `:config` (or `:hardfork` shorthand) option as
 iex> alias EEVM.Block
 iex> alias EEVM.Transaction.{FeeMarket, Signer}
 iex> private_key = <<0x46::256>>
-iex> {:ok, {x, y}} = EEVM.Crypto.ECDSA.public_key(:secp256k1, private_key)
-iex> <<_::binary-size(12), sender::unsigned-big-160>> = EEVM.Crypto.Keccak.hash_256(<<x::256, y::256>>)
+iex> {:ok, sender} = Signer.address(private_key)
 iex> db = EEVM.Database.InMemory.new(accounts: %{sender => %{balance: 10 ** 18, nonce: 0, code: <<>>}})
 iex> config = EEVM.Config.new(:cancun, chain_id: 1)
 iex> tx = %FeeMarket{max_priority_fee_per_gas: 1, max_fee_per_gas: 10, gas_limit: 21_000,

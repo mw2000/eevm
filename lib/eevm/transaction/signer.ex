@@ -23,6 +23,29 @@ defmodule EEVM.Transaction.Signer do
   @secp256k1n_half div(@secp256k1n, 2)
 
   @doc """
+  Returns the address of the secp256k1 `private_key`: the last 20 bytes of
+  the keccak256 hash of its uncompressed public key (Yellow Paper,
+  Appendix F).
+
+  Returns `{:error, :invalid_private_key}` when the key is zero or not below
+  the curve order.
+
+  ## Example
+
+      iex> # The private key from the EIP-155 example.
+      iex> {:ok, address} = EEVM.Transaction.Signer.address(:binary.copy(<<0x46>>, 32))
+      iex> EEVM.hex(<<address::160>>)
+      "0x9d8a62f656a8d1615c1294fd71e9cfb3e4855a4f"
+  """
+  @spec address(<<_::256>>) :: {:ok, Transaction.address()} | {:error, :invalid_private_key}
+  def address(<<_::256>> = private_key) do
+    with {:ok, {x, y}} <- ECDSA.public_key(:secp256k1, private_key) do
+      <<_::binary-size(12), address::unsigned-big-160>> = Keccak.hash_256(<<x::256, y::256>>)
+      {:ok, address}
+    end
+  end
+
+  @doc """
   Signs `tx` with the 32-byte secp256k1 `private_key` for `config`'s chain.
 
   A legacy transaction is signed with EIP-155 replay protection, so its `v`

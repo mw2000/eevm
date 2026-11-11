@@ -119,6 +119,21 @@ defmodule EEVM.Transaction.SignerTest do
     end
   end
 
+  describe "address/1" do
+    test "derives the address of a private key" do
+      # Private key 1: the address of the generator point, as given by any
+      # Ethereum key tool.
+      assert Signer.address(<<1::256>>) == {:ok, 0x7E5F4552091A69125D5DFCB7B8C2659029395BDF}
+      assert Signer.address(@eip155_key) == {:ok, String.to_integer(@eip155_sender, 16)}
+    end
+
+    test "accepts keys in 1..n-1 only" do
+      assert {:ok, _} = Signer.address(<<@secp256k1n - 1::256>>)
+      assert Signer.address(<<@secp256k1n::256>>) == {:error, :invalid_private_key}
+      assert Signer.address(<<0::256>>) == {:error, :invalid_private_key}
+    end
+  end
+
   describe "sign/3" do
     test "signs a legacy transaction exactly as the EIP-155 example" do
       tx = %Legacy{
