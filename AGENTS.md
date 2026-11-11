@@ -88,7 +88,7 @@ mix compile --warnings-as-errors
 mix credo --strict
 mix dialyzer
 mix test --warnings-as-errors   # test a deprecated function via apply/3, which skips the warning
-mix docs   # must emit no ExDoc warnings
+mix docs --warnings-as-errors
 (cd examples/devx && mix deps.get && mix test --warnings-as-errors)
 ```
 
