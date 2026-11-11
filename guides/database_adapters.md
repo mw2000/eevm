@@ -109,13 +109,34 @@ end
 Seed it, run a transaction, and the table holds the result:
 
 ```elixir
+alias EEVM.Transaction.{FeeMarket, Signer}
+
+config = EEVM.Config.new(:cancun, chain_id: 1)
+recipient = 0xB0B
+
+{:ok, signed_tx} =
+  %FeeMarket{max_priority_fee_per_gas: 1, max_fee_per_gas: 10, gas_limit: 21_000, to: recipient, value: 1_000}
+  |> Signer.sign(<<0x46::256>>, config)
+
+{:ok, sender} = Signer.recover_sender(signed_tx, config.chain_id)
+
 db = MyApp.EtsDatabase.new()
 :ets.insert(db.state, {{:account, sender}, %{balance: 10 ** 18, nonce: 0, code: <<>>}})
 
-{:ok, result} = EEVM.transact(signed_tx, EEVM.BlockEnv.new(gas_limit: 30_000_000), db)
+{:ok, result} = EEVM.transact(signed_tx, EEVM.BlockEnv.new(gas_limit: 30_000_000), db, config: config)
 EEVM.Database.get_balance(result.db, recipient)
 #=> 1000
+:ets.lookup(db.state, {:account, recipient})
+#=> [{{:account, 0xB0B}, %{balance: 1000, nonce: 0, ...}}]
 ```
+
+The table now holds the committed state, so the next transaction can run on
+`result.db` or on `MyApp.EtsDatabase.new(table)`. Within one process, keep
+passing `result.db`: it carries any state tries `EEVM.StateRoot` has
+already hashed, so the next state root rehashes only what changed. Wrap the
+table again with `new/1` when something else may have written to it, such
+as another process, because those cached tries assume every change went
+through `commit/2`.
 
 An account may carry `code` in place of `code_hash`, as the seed above does.
 eevm then hashes the code when it needs the hash.
@@ -153,7 +174,7 @@ defmodule MyApp.RpcDatabase do
 
   # Accounts always carry their code, so eevm never asks for it by hash.
   @impl true
-  def code(_state, _code_hash), do: {:error, :not_supported}
+  def code(_state, _code_hash), do: {:error, :unsupported}
 
   @impl true
   def storage({rpc, tag}, address, slot),

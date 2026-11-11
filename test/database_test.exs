@@ -38,6 +38,27 @@ defmodule EEVM.DatabaseTest do
     end
   end
 
+  # A read-only backend that answers :not_supported, the atom the adapter
+  # guide's RPC example used before #219, instead of :unsupported.
+  defmodule NotSupported do
+    @behaviour EEVM.Database
+
+    @impl true
+    defdelegate account(state, address), to: ReadOnly
+    @impl true
+    defdelegate code(state, hash), to: ReadOnly
+    @impl true
+    defdelegate storage(state, address, slot), to: ReadOnly
+    @impl true
+    defdelegate block_hash(state, number), to: ReadOnly
+    @impl true
+    def commit(_state, _changes), do: {:error, :not_supported}
+    @impl true
+    def accounts(_state), do: {:error, :not_supported}
+    @impl true
+    def storage_slots(_state, _address), do: {:error, :not_supported}
+  end
+
   # A backend written for the first read-only behaviour (before #204): commit/2,
   # accounts/1 and storage_slots/2 were optional, and the enumerations returned
   # bare lists. No @behaviour, so leaving callbacks out doesn't warn.
@@ -370,6 +391,20 @@ defmodule EEVM.DatabaseTest do
       # The bare list from accounts/1 is accepted; storage_slots/2 is missing.
       assert sender() in Database.account_addresses(result.db)
       assert Database.storage_slots(result.db, sender()) == []
+    end
+
+    test "a backend answering :not_supported is treated as :unsupported (deprecated)" do
+      state = %{{:account, sender()} => %{balance: 10 ** 18, nonce: 0, code: <<>>}}
+
+      assert {:ok, result} =
+               EEVM.transact(transfer_tx(), block(), Database.new(NotSupported, state))
+
+      assert result.db.state == state
+      assert Database.commit(result.db) == {:error, :commit_not_supported}
+
+      db = result.db |> Database.storage_store(0xA, 1, 2)
+      assert Database.storage_slots(db, 0xA) == [{1, 2}]
+      assert 0xA in Database.account_addresses(db)
     end
 
     test "code is fetched by hash only when it isn't returned with the account" do

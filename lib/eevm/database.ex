@@ -41,6 +41,9 @@ defmodule EEVM.Database do
     `c:storage_slots/2` (optional before #204) is treated as returning
     `{:error, :unsupported}`, and a bare enumerable from `c:accounts/1` or
     `c:storage_slots/2` is accepted.
+  - A `c:commit/2`, `c:accounts/1`, or `c:storage_slots/2` that returns
+    `{:error, :not_supported}`, as the adapter guide's RPC example once
+    did, is treated as returning `{:error, :unsupported}`.
   - A module that implements only the pre-1.0 write and query callbacks
     (`get_account/2`, `set_balance/3`, `storage_store/4`, and so on) is
     wrapped in `EEVM.Database.Legacy` by `new/2`.
@@ -506,9 +509,13 @@ defmodule EEVM.Database do
 
   # Deprecated: before #204, commit/2, accounts/1 and storage_slots/2 were
   # optional callbacks. A backend that leaves one out still works for one minor
-  # version, as if it returned `{:error, :unsupported}`.
+  # version, as if it returned `{:error, :unsupported}`. So does one that
+  # returns `{:error, :not_supported}`, the atom the adapter guide once used.
   defp capability(impl, callback, fun) do
-    fun.()
+    case fun.() do
+      {:error, :not_supported} -> {:error, :unsupported}
+      result -> result
+    end
   rescue
     error in UndefinedFunctionError ->
       if error.module == impl and error.function == callback,
