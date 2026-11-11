@@ -1,6 +1,8 @@
 defmodule EEVM.Crypto.ECDSATest do
   use ExUnit.Case, async: true
 
+  import Bitwise
+
   alias EEVM.Crypto.{ECDSA, Keccak, SHA256}
 
   doctest ECDSA
@@ -66,6 +68,45 @@ defmodule EEVM.Crypto.ECDSATest do
     test "the other recovery id recovers a different key" do
       assert {:ok, other} = ECDSA.recover(:secp256k1, @hash, @r, @s, 1)
       refute {:ok, other} == ECDSA.public_key(:secp256k1, @key)
+    end
+  end
+
+  # Products whose expected value follows from the group law, not from eevm:
+  # (n − 1)·G = −G, and on secp256k1 λ·G = φ(G) = (β·Gx, Gy) for the cube roots
+  # of unity λ mod n and β mod p (Guide to ECC, Example 3.73). These scalars
+  # split into GLV halves of opposite signs and the full 256-bit width.
+  describe "scalar multiplication at GLV and wNAF boundaries" do
+    @k1_p 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEFFFFFC2F
+    @k1_g {0x79BE667EF9DCBBAC55A06295CE870B07029BFCDB2DCE28D959F2815B16F81798,
+           0x483ADA7726A3C4655DA4FBFC0E1108A8FD17B448A68554199C47D08FFB10D4B8}
+    @lambda 0x5363AD4CC05C30E0A5261C028812645A122E22EA20816678DF02967C1B23BD72
+    @beta 0x7AE96A2B657C07106E64479EAC3434E99CF0497512F58995C1396C28719501EE
+
+    test "(n − 1)·G is −G on both curves" do
+      p256_p = 0xFFFFFFFF00000001000000000000000000000000FFFFFFFFFFFFFFFFFFFFFFFF
+      {:ok, {p256_gx, p256_gy}} = ECDSA.public_key(:p256, <<1::256>>)
+      {gx, gy} = @k1_g
+
+      assert ECDSA.public_key(:secp256k1, <<ECDSA.order(:secp256k1) - 1::256>>) ==
+               {:ok, {gx, @k1_p - gy}}
+
+      assert ECDSA.public_key(:p256, <<@p256_n - 1::256>>) == {:ok, {p256_gx, p256_p - p256_gy}}
+    end
+
+    test "λ·G and (n − λ)·G are ±φ(G) on secp256k1" do
+      {gx, gy} = @k1_g
+      n = ECDSA.order(:secp256k1)
+      phi_x = rem(@beta * gx, @k1_p)
+
+      assert ECDSA.public_key(:secp256k1, <<@lambda::256>>) == {:ok, {phi_x, gy}}
+      assert ECDSA.public_key(:secp256k1, <<n - @lambda::256>>) == {:ok, {phi_x, @k1_p - gy}}
+    end
+
+    test "recovery from s·R − e·G with e ≡ 0 (mod n) leaves only the R term" do
+      # With e = n the G term vanishes: Q = r⁻¹·s·R. Taking s = r gives Q = R.
+      n = ECDSA.order(:secp256k1)
+      {gx, gy} = @k1_g
+      assert ECDSA.recover(:secp256k1, <<n::256>>, gx, gx, gy &&& 1) == {:ok, @k1_g}
     end
   end
 

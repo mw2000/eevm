@@ -7,6 +7,7 @@ from the repository root:
 mix bench                  # every suite in bench/*_bench.exs except state_fixtures
 mix bench interpreter      # only bench/interpreter_bench.exs
 mix bench precompiles      # only bench/precompiles_bench.exs
+mix bench ecdsa            # only bench/ecdsa_bench.exs
 mix bench state_fixtures   # the slow ethereum/tests fixtures (needs the submodule)
 ```
 
@@ -41,6 +42,11 @@ inputs: ecrecover, sha256, ripemd160, and identity (1 KiB), a 2048-bit ModExp, B
 ecAdd, ecMul with a random 256-bit scalar, a two-pair BN256 pairing, BLAKE2F at 12 and 1M rounds, KZG
 point evaluation, and every BLS12-381 precompile: G1/G2 ADD, MSM with 1 and 128 pairs,
 1- and 2-pair pairings, and both maps to the curve.
+
+`bench/ecdsa_bench.exs` times `EEVM.Crypto.ECDSA` on its own: secp256k1 recovery
+(ECRECOVER and every signed transaction), secp256k1 signing, and P-256 verification,
+plus the P256VERIFY precompile (`0x100`), which is Osaka-only and so not in the
+precompiles suite.
 
 `bench/state_fixtures_bench.exs` times the ethereum/tests GeneralStateTests fixtures
 that `test/fixtures/state_tests/skip.txt` skipped as too slow for the conformance
@@ -398,3 +404,48 @@ Mgas/s. The NIF itself was not native-fast: `bls12_381_plus` multiplies with
 constant-time double-and-add, so a G1 multiplication took 0.56 ms.
 
 `mix bench precompiles` now includes the BLS12-381 and KZG workloads.
+
+## Faster pure-Elixir ECDSA
+
+[#197](https://github.com/mw2000/eevm/issues/197) replaced `ex_secp256k1` and
+`:crypto.verify/5` with `EEVM.Crypto.ECDSA`, and recovering a transaction sender went
+from about 0.2-0.35 ms to 1.2 ms.
+[#209](https://github.com/mw2000/eevm/issues/209) cuts the number of field operations
+per scalar multiplication:
+
+- GLV on secp256k1: the endomorphism φ(x, y) = (β·x, y) = λ·P splits each 256-bit
+  scalar into two halves of about 128 bits, so the doubling chain is half as long.
+- Width-w NAF: signed odd digits, so about one bit in six (w = 5) or nine (w = 8)
+  costs an addition, and tables hold only odd multiples.
+- A compile-time table of the base point's odd multiples G … 127G (and their φ
+  images), with Z = 1, so each addition uses the cheaper mixed formula.
+- Shamir's trick, as before: `u₁·G + u₂·Q` (up to four GLV halves) shares one
+  doubling chain.
+- P-256's a = −3 doubling, 3(X − Z²)(X + Z²), and a 4-bit window for the
+  square root in recovery.
+
+Before (`2e1bedf`) and after (the same base plus this change, so before the
+interpreter work that follows `2e1bedf`), same orb, `MIX_ENV=prod`, two alternating
+rounds each
+(`mix bench ecdsa` and `mix bench interpreter`). ips are calls per second; native is
+`ex_secp256k1` or `:crypto` as #197 measured it.
+
+| Workload | native | before | after | after / before |
+|---|---:|---:|---:|---:|
+| secp256k1 recover | 0.18-0.35 ms | 1.27 / 1.19 ms | 0.71 / 0.73 ms | 1.7× |
+| secp256k1 sign | 0.18-0.25 ms | 0.97 / 0.92 ms | 0.48 / 0.54 ms | 1.9× |
+| P-256 verify | 0.10-0.17 ms | 1.14 / 1.15 ms | 0.86 / 0.86 ms | 1.3× |
+| ecrecover (0x01) | 2,704 / 4,792 ips | 730 / 748 ips | 1,336 / 1,358 ips | 1.8× |
+| p256verify (0x100) | | 924 / 926 ips | 1,230 / 1,193 ips | 1.3× |
+| erc20: transfer via Handler | 3,220 / 1,595 ips | 633 / 667 ips | 1,070 / 951 ips | 1.55× |
+
+Recovery stays 2-4× slower than libsecp256k1. P-256 gains least: it has no
+endomorphism, so its doubling chain stays 256 long. The six conformance ratchets went
+from 767 s to 705 s on the orb, mostly in the blockchain suites, which recover one
+sender per transaction (EEST blockchain 259 → 232 s, Osaka blockchain 283 → 251 s).
+Before #197 they took about 597 s on the same orb, so this wins back about a third
+of the 170 s that pure-Elixir recovery added.
+
+Tried and not kept: a special-form reduction for p = 2²⁵⁶ − 0x1000003D1 was no faster
+than `rem/2` on the bignum product (#209), and the profile now splits mostly between
+`double/2` (about 23%) and `add/3` (about 28%), each a handful of 256-bit `rem` calls.
