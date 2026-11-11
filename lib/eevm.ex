@@ -20,7 +20,8 @@ defmodule EEVM do
 
   The public API:
 
-  - `EEVM` — run bytecode (`run/2`), execute a signed transaction
+  - `EEVM` — run bytecode (`run/2`), call or deploy a contract without a
+    signature (`call/4`, `create/3`), execute a signed transaction
     (`transact/4`), and disassemble bytecode
   - `EEVM.Config` — the hardfork, chain id, and custom precompiles
   - `EEVM.BlockEnv` and `EEVM.TxEnv` — the block and transaction environment
@@ -41,10 +42,10 @@ defmodule EEVM do
   """
 
   alias EEVM.Block.Bloom
-  alias EEVM.{BlockEnv, CallResult, Database, Handler, TransactionResult}
+  alias EEVM.{BlockEnv, CallResult, Database, Handler, HardforkConfig, TransactionResult, TxEnv}
   alias EEVM.Context.Contract
   alias EEVM.Database.InMemory
-  alias EEVM.Handler.{PostExecution, Validation}
+  alias EEVM.Handler.{Execution, PostExecution, Validation}
   alias EEVM.Interpreter
   alias EEVM.Interpreter.{MachineState, Stack}
   alias EEVM.Tracer
@@ -68,6 +69,20 @@ defmodule EEVM do
     debug: false
   ]
 
+  @message_opts [
+    :config,
+    :hardfork,
+    :block,
+    :tracer,
+    gas: 30_000_000,
+    caller: 0,
+    value: 0,
+    debug: false
+  ]
+
+  # EIP-3860 (Shanghai): the most initcode a contract creation may carry.
+  @max_initcode_size 49_152
+
   @doc """
   Runs `code` as a message call, with no transaction rules: no signature,
   nonce, intrinsic gas, or fee checks.
@@ -83,12 +98,15 @@ defmodule EEVM do
     - `:db` — the `EEVM.Database` (default: an empty `EEVM.Database.InMemory`)
     - `:block` and `:tx` — the `EEVM.BlockEnv` and `EEVM.TxEnv` the code sees
     - `:address`, `:caller`, `:value`, `:calldata` — the executing account,
-      CALLER, CALLVALUE, and the call's input (defaults `0`, `0`, `0`, `<<>>`)
+      CALLER, CALLVALUE, and the call's input (defaults `0`, `0`, `0`, `<<>>`).
+      `:address` is required with `:db`: it is the account whose balance and
+      storage the code sees. To call a contract already in `:db`, use
+      `call/4`, which loads its code for you.
     - `:tracer` — `true` or an `EEVM.Tracer` to record an EIP-3155 trace,
       returned as `result.trace`
     - `:debug` — `true` to return the final stack as `result.stack`
 
-  Any other option raises `ArgumentError`.
+  Any other option, or `:db` without `:address`, raises `ArgumentError`.
 
   Returns `{:ok, %EEVM.CallResult{}}` however execution ends; check
   `result.status`. Writes stay in `result.db`'s overlay and are listed in
@@ -107,6 +125,12 @@ defmodule EEVM do
   """
   @spec run(binary(), keyword()) :: {:ok, CallResult.t()} | {:error, EEVM.Error.reason()}
   def run(code, opts \\ []) when is_binary(code) do
+    if Keyword.has_key?(opts, :db) and not Keyword.has_key?(opts, :address) do
+      raise ArgumentError,
+            "EEVM.run/2 got :db but no :address, so the code would see address 0's balance " <>
+              "and storage. Pass :address, or use EEVM.call/4 to call a contract in the database"
+    end
+
     opts = Keyword.validate!(opts, @run_opts)
     db = Keyword.get_lazy(opts, :db, &InMemory.new/0)
 
@@ -131,22 +155,149 @@ defmodule EEVM do
           ] ++ Keyword.take(opts, [:block, :tx])
         )
 
-      status = PostExecution.status(state.status)
-      db_after = if status == :success, do: state.db, else: db
-
-      {:ok,
-       %CallResult{
-         status: status,
-         return_data: state.frame.return_data,
-         gas_used: opts[:gas] - state.frame.gas,
-         gas_left: state.frame.gas,
-         logs: if(status == :success, do: Enum.reverse(state.substate.logs), else: []),
-         db: db_after,
-         changes: Database.changes(db_after),
-         trace: state.tracer,
-         stack: if(opts[:debug], do: Stack.to_list(state.frame.stack))
-       }}
+      {:ok, call_result(state, db, opts)}
     end)
+  end
+
+  @doc """
+  Calls the contract at address `to` with `calldata`, without a signed
+  transaction: like `eth_call`, from any `:caller`.
+
+  The code is loaded from `db`, following an EIP-7702 delegation, and runs
+  as `to`, so it sees `to`'s balance and storage; a precompile address runs
+  the precompile. `:value` moves from the caller to `to` first, and the
+  addresses EIP-2929 starts warm (caller, `to`, precompiles, and from
+  Shanghai the coinbase) are warm.
+
+  No transaction rules apply: no signature, nonce, intrinsic gas, or fees.
+  `result.gas_used` is execution gas only, without the 21,000 a transaction
+  would add.
+
+  ## Options
+
+    - `:caller` — CALLER and ORIGIN (default `0`)
+    - `:value` — wei sent with the call (default `0`)
+    - `:gas` — the gas limit (default 30,000,000)
+    - `:config` (or the `:hardfork` shorthand), `:block`, `:tracer`, and
+      `:debug`, as for `run/2`
+
+  Any other option raises `ArgumentError`.
+
+  Returns `{:ok, %EEVM.CallResult{}}` however execution ends; check
+  `result.status`, and see `revert_reason/1` for a revert. Nothing is
+  committed: on success `result.db` holds the writes in its overlay, so pass
+  it to the next call, or commit it with `EEVM.Database.commit/1`. Returns
+  `{:error, :insufficient_balance}` when `:value` exceeds the caller's
+  balance, or `{:error, {:database, reason}}` when the backend fails a read.
+
+  ## Example
+
+      iex> # Runtime code: return storage slot 0 as a word.
+      iex> code = <<0x60, 0, 0x54, 0x60, 0, 0x52, 0x60, 32, 0x60, 0, 0xF3>>
+      iex> db = EEVM.Database.InMemory.new(accounts: %{0xC0DE => %{code: code}}, storage: %{0xC0DE => %{0 => 42}})
+      iex> {:ok, result} = EEVM.call(db, 0xC0DE, <<>>, caller: 0xA11CE)
+      iex> {result.status, :binary.decode_unsigned(result.return_data)}
+      {:success, 42}
+  """
+  @spec call(Database.t(), non_neg_integer(), binary(), keyword()) ::
+          {:ok, CallResult.t()} | {:error, EEVM.Error.reason()}
+  def call(%Database{} = db, to, calldata \\ <<>>, opts \\ [])
+      when is_integer(to) and to >= 0 and to < @address_limit and is_binary(calldata) do
+    message(db, to, calldata, opts)
+  end
+
+  @doc """
+  Deploys a contract by running `initcode`, without a signed transaction:
+  CREATE from any `:caller`.
+
+  The caller's nonce is incremented and the new address derived from its
+  value before the increment, as for a contract-creation transaction, so
+  repeated deploys get new addresses. `:value` moves to the new account,
+  the initcode runs there, and the code it returns is installed under the
+  EIP-170 size limit, EIP-3541, and the code-deposit charge.
+  `result.contract_address` is the new address, or `nil` when the
+  deployment failed.
+
+  Takes the same options as `call/4`, and like it applies no transaction
+  rules and commits nothing: on success `result.db` holds the new account in
+  its overlay; on failure it is `db` unchanged, nonce included. From
+  Shanghai, initcode over 49,152 bytes returns `{:error, :initcode_too_large}`
+  (EIP-3860).
+
+  ## Example
+
+      iex> # Initcode: copy the 11-byte runtime code from the call in `call/4`
+      iex> # and return it.
+      iex> runtime = <<0x60, 0, 0x54, 0x60, 0, 0x52, 0x60, 32, 0x60, 0, 0xF3>>
+      iex> initcode = <<0x60, 11, 0x60, 12, 0x60, 0, 0x39, 0x60, 11, 0x60, 0, 0xF3>> <> runtime
+      iex> {:ok, result} = EEVM.create(EEVM.Database.InMemory.new(), initcode, caller: 0xA11CE)
+      iex> EEVM.Database.get_code(result.db, result.contract_address) == runtime
+      true
+  """
+  @spec create(Database.t(), binary(), keyword()) ::
+          {:ok, CallResult.t()} | {:error, EEVM.Error.reason()}
+  def create(%Database{} = db, initcode, opts \\ []) when is_binary(initcode) do
+    message(db, nil, initcode, opts)
+  end
+
+  defp message(db, to, data, opts) do
+    opts = Keyword.validate!(opts, @message_opts)
+    config = Validation.resolve_config(opts)
+    block = Keyword.get_lazy(opts, :block, &BlockEnv.new/0)
+    tx = %TxEnv{origin: opts[:caller], to: to, value: opts[:value], data: data}
+
+    Database.catch_read_errors(fn ->
+      with :ok <- check_message(db, tx, config) do
+        # A creation bumps the caller's nonce first; Execution derives the
+        # address from the nonce before the bump.
+        db_ready = if to == nil, do: Database.increment_nonce(db, tx.origin), else: db
+
+        {state, contract_address} =
+          Execution.run_top_level(
+            tx,
+            db_ready,
+            block,
+            config,
+            opts[:gas],
+            %{authorities: MapSet.new(), refund: 0},
+            Validation.resolve_tracer(opts)
+          )
+
+        {:ok, %{call_result(state, db, opts) | contract_address: contract_address}}
+      end
+    end)
+  end
+
+  defp check_message(db, %TxEnv{} = tx, config) do
+    cond do
+      Database.get_balance(db, tx.origin) < tx.value ->
+        {:error, :insufficient_balance}
+
+      tx.to == nil and byte_size(tx.data) > @max_initcode_size and
+          HardforkConfig.enabled?(config.hardfork, :eip_3860) ->
+        {:error, :initcode_too_large}
+
+      true ->
+        :ok
+    end
+  end
+
+  # The result of a message call; on failure the database is `db_before`.
+  defp call_result(state, db_before, opts) do
+    status = PostExecution.status(state.status)
+    db_after = if status == :success, do: state.db, else: db_before
+
+    %CallResult{
+      status: status,
+      return_data: state.frame.return_data,
+      gas_used: opts[:gas] - state.frame.gas,
+      gas_left: state.frame.gas,
+      logs: if(status == :success, do: Enum.reverse(state.substate.logs), else: []),
+      db: db_after,
+      changes: Database.changes(db_after),
+      trace: state.tracer,
+      stack: if(opts[:debug], do: Stack.to_list(state.frame.stack))
+    }
   end
 
   @doc """

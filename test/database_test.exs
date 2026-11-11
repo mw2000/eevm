@@ -453,13 +453,24 @@ defmodule EEVM.DatabaseTest do
       db = InMemory.new(block_hashes: %{99 => <<0xAA::256>>})
 
       assert {:ok, %{stack: [0xAA]}} =
-               EEVM.run(@blockhash_99, db: db, block: BlockEnv.new(number: 355), debug: true)
+               EEVM.run(@blockhash_99,
+                 address: 0xA,
+                 db: db,
+                 block: BlockEnv.new(number: 355),
+                 debug: true
+               )
 
       assert {:ok, %{stack: [0]}} =
-               EEVM.run(@blockhash_99, db: db, block: BlockEnv.new(number: 356), debug: true)
+               EEVM.run(@blockhash_99,
+                 address: 0xA,
+                 db: db,
+                 block: BlockEnv.new(number: 356),
+                 debug: true
+               )
 
       assert {:ok, %{stack: [0xBB]}} =
                EEVM.run(@blockhash_99,
+                 address: 0xA,
                  db: db,
                  block: BlockEnv.new(number: 100, block_hashes: %{99 => <<0xBB::256>>}),
                  debug: true

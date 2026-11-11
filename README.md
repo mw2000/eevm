@@ -76,6 +76,30 @@ EIP-3155 format that geth and other clients use, so traces can be diffed
 against them. `EEVM.transact/4` and `EEVM.Block.execute/4` take `tracer: true`
 too.
 
+### Deploy and call a contract without a key
+
+`EEVM.create/3` deploys a contract and `EEVM.call/4` calls one by address,
+like `eth_call` and revm's unsigned transactions: no signature, nonce check,
+intrinsic gas, or fees, so `:caller` can be any address. `call/4` loads the
+code at the address and runs it against that account's storage. Neither
+commits anything: thread `result.db` into the next call, or commit it with
+`EEVM.Database.commit/1`.
+
+```elixir
+# Runtime code: return storage slot 0. Initcode: store 42 in slot 0, then
+# copy the runtime code from its own tail and return it.
+iex> runtime = <<0x60, 0, 0x54, 0x60, 0, 0x52, 0x60, 32, 0x60, 0, 0xF3>>
+iex> initcode = <<0x60, 42, 0x60, 0, 0x55, 0x60, 11, 0x60, 17, 0x60, 0, 0x39, 0x60, 11, 0x60, 0, 0xF3>> <> runtime
+iex> {:ok, deployed} = EEVM.create(EEVM.Database.InMemory.new(), initcode, caller: 0xA11CE)
+iex> {:ok, result} = EEVM.call(deployed.db, deployed.contract_address, <<>>, caller: 0xB0B)
+iex> {result.status, :binary.decode_unsigned(result.return_data)}
+{:success, 42}
+```
+
+`EEVM.run/2` with a `:db` needs an explicit `:address`, the account whose
+balance and storage the code sees; to run a contract that is already in the
+database, use `call/4`.
+
 ### Execute a transaction
 
 `EEVM.transact/4` runs a signed transaction end to end: decode, recover the

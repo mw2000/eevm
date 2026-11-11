@@ -56,7 +56,7 @@ minor version) before removing anything (#150).
 
 | What | Where |
 |------|-------|
-| Public entry points | `lib/eevm.ex` (`run/2`, `transact/4`, `disassemble/1`), `lib/eevm/block.ex` |
+| Public entry points | `lib/eevm.ex` (`run/2`, `call/4`, `create/3`, `transact/4`), `lib/eevm/block.ex` |
 | Fetch-decode-execute loop, refunds | `lib/eevm/interpreter.ex` |
 | Opcode metadata (name, stack I/O, module, static flag) | `lib/eevm/interpreter/instructions/registry.ex` |
 | Opcode semantics | `lib/eevm/interpreter/instructions/` by family (`arithmetic.ex`, `system/calls.ex`, ...) |

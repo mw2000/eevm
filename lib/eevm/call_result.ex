@@ -1,6 +1,7 @@
 defmodule EEVM.CallResult do
   @moduledoc """
-  The outcome of running bytecode with `EEVM.run/2`.
+  The outcome of a message call: `EEVM.run/2`, `EEVM.call/4`, or
+  `EEVM.create/3`.
 
   | Field | Description |
   |-------|-------------|
@@ -10,7 +11,8 @@ defmodule EEVM.CallResult do
   | `gas_left` | Gas remaining from the `:gas` limit |
   | `logs` | Logs emitted, in order; empty unless `status` is `:success` |
   | `db` | The `EEVM.Database` after the call, writes still in its overlay; unchanged unless `status` is `:success` |
-  | `changes` | `db`'s pending writes as an `EEVM.StateChanges`; `run/2` never commits them |
+  | `changes` | `db`'s pending writes as an `EEVM.StateChanges`; message calls never commit them |
+  | `contract_address` | The new contract's address after a successful `EEVM.create/3`, else `nil` |
   | `trace` | The `EEVM.Tracer` when run with `tracer:`, else `nil` |
   | `stack` | The final stack, top first, when run with `debug: true`, else `nil` |
   """
@@ -35,6 +37,7 @@ defmodule EEVM.CallResult do
           logs: [Bloom.log_entry()],
           db: Database.t(),
           changes: EEVM.StateChanges.t(),
+          contract_address: non_neg_integer() | nil,
           trace: Tracer.t() | nil,
           stack: [non_neg_integer()] | nil
         }
@@ -46,6 +49,7 @@ defmodule EEVM.CallResult do
             logs: [],
             db: nil,
             changes: %EEVM.StateChanges{},
+            contract_address: nil,
             trace: nil,
             stack: nil
 end
