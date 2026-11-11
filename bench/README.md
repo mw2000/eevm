@@ -239,6 +239,61 @@ list allows and too close to CI's 180 s per-case timeout, so it stays skipped
 itself: `loop/7` and `step/8` take 60% of its time under tprof, and the tracer hook's
 call another 16%.
 
+## The decoded program
+
+[#208](https://github.com/mw2000/eevm/issues/208) took the rest of the dispatch cost out
+of the loop. `EEVM.Interpreter.InstructionTable.decode/3` turns a contract's code into
+a program once per transaction: a tuple with one instruction per code byte, PUSH values
+already read, PUSH data marked so jumps cannot land in it, and PUSH+JUMP(I) pairs fused
+into one instruction. The loop fetches `elem(program, pc)`, checks gas and stack bounds
+from the instruction, and dispatches on its opcode. Traced runs decode a program whose
+instructions are wrapped for the tracer, so untraced runs make no tracer check.
+
+Two details of the loop's shape carried most of the gain, both measured on loopMul:
+matching the instruction in a `case` inside `loop/6` rather than in a separate function
+head (a 3x difference), and giving `step/8` the loop's own arguments first so the calls
+between them move no registers (12%). Fusing PUSH+JUMP(I) adds 2-5%.
+
+`mix bench interpreter`, `d0164ce` against the series, run alternately twice each on the
+same orb, `MIX_ENV=prod`. Mgas/s is the mean of the two runs. The baseline's ERC-20 and
+keccak rows are lower than in the table above because Keccak-256 and ECDSA became pure
+Elixir in between.
+
+| Scenario | Mgas/s before | Mgas/s after | Speedup | Memory/run |
+|---|---:|---:|---:|---:|
+| compute: arithmetic loop (50k) | 54.6 | 152 | 2.8x | 88.1 → 11.5 MB |
+| compute: jump loop (100k) | 64.7 | 202 | 3.1x | 67.1 → 7.63 MB |
+| memory: MSTORE/MLOAD 32 KiB | 20.5 | 27.4 | 1.3x | 4.94 → 3.37 MB |
+| memory: 1k MSTOREs over 1 MiB | 814 | 1,065 | 1.3x | 3.11 → 2.06 MB |
+| memory: CALLDATACOPY+MCOPY+RETURN 32 KiB | 1,251 | 1,236 | 1.0x | 17.1 → 17.7 KB |
+| keccak: 5k x 32 B | 6.26 | 6.45 | 1.0x | 27.4 → 21.3 MB |
+| keccak: 64 KiB | 6.01 | 6.00 | 1.0x | 0.23 → 0.23 MB |
+| storage: SSTORE/SLOAD 500 slots | 5,132 | 6,069 | 1.2x | 2.81 → 2.30 MB |
+| calls: STATICCALL loop (2k) | 28.8 | 33.7 | 1.2x | 27.4 → 24.3 MB |
+| erc20: transfer via Handler | 33.9 | 34.7 | 1.0x | 110 → 110 KB |
+
+The compute loops now allocate about two words per opcode, the stack's new cons cell,
+down from about 110 bytes.
+
+loopMul's heaviest case (`loopMul@prague:d1g0v0`) takes 36 s on its own in
+`mix eevm.state_tests --jobs 1`, down from 142 s, and 38 s in the full GeneralStateTests
+run, so it is off the skip list.
+
+Decoding is not free. A program for 24 KB of code takes about 0.5 ms to build, and the
+garbage collector copies the new tuple until it is promoted, where #187's JUMPDEST
+analysis took about 0.3 ms on a frame's first jump. A contract that loops pays that back
+quickly, but a short run of a large contract now costs up to about 0.9 ms more per
+transaction ([#210](https://github.com/mw2000/eevm/issues/210)). Times for
+`EEVM.Interpreter.run/2` on loopMul's contract, alone and copied to 24 KB,
+`MIX_ENV=prod`, median of 51 runs, averaged over separate runs:
+
+| Run | d0164ce | after |
+|---|---:|---:|
+| 1 KB contract, 1 loop iteration | 66 µs | 62 µs |
+| 1 KB contract, 100 loop iterations | 1,266 µs | 443 µs |
+| 24 KB contract, 1 loop iteration | 359 µs | 1,225 µs |
+| 24 KB contract that STOPs at once | 6 µs | 557 µs |
+
 ## Pure-Elixir BLS12-381, KZG, and ModExp
 
 [#199](https://github.com/mw2000/eevm/issues/199) replaced the last native code in the

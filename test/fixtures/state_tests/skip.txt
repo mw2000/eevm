@@ -9,13 +9,9 @@
 # - test/fixtures/state_tests/ethereum-tests/GeneralStateTests/some/path/file.json#test_name
 # - test_name
 
-# Too slow to finish: each case below runs past the 60 s per-case timeout
-# (a 10M-iteration Solidity loop, max-round BLAKE2F). They are speed problems,
-# not known wrong results. Running them costs most of the suite's wall time and
-# makes CI timing-dependent, so they are not run. Re-enable as the interpreter
-# gets faster; `mix bench state_fixtures` times loopMul (142 s after #193,
-# https://github.com/mw2000/eevm/issues/208).
-test/fixtures/state_tests/ethereum-tests/GeneralStateTests/VMTests/vmPerformance/loopMul.json
+# Too slow to finish: max-round BLAKE2F runs past the per-case timeout. It is
+# a speed problem, not a known wrong result, and running it would make CI
+# timing-dependent, so it is not run. Re-enable as the precompile gets faster.
 test/fixtures/state_tests/ethereum-tests/GeneralStateTests/stTimeConsuming/CALLBlake2f_MaxRounds.json
 
 # Too slow on CI since SHA-256 became pure Elixir (#194): 50,000 STATICCALLs
