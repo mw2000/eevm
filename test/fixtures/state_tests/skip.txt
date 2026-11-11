@@ -13,3 +13,9 @@
 # a speed problem, not a known wrong result, and running it would make CI
 # timing-dependent, so it is not run. Re-enable as the precompile gets faster.
 test/fixtures/state_tests/ethereum-tests/GeneralStateTests/stTimeConsuming/CALLBlake2f_MaxRounds.json
+
+# Too slow on CI: 50,000 STATICCALLs that each SHA-256 50,000 bytes take
+# 169-170 s per case on CI against the 180 s timeout, though 53-58 s on an
+# orb. Re-enable when a case takes under half the timeout on CI:
+# https://github.com/mw2000/eevm/issues/201
+test/fixtures/state_tests/ethereum-tests/GeneralStateTests/stTimeConsuming/static_Call50000_sha256.json
