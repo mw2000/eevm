@@ -15,6 +15,29 @@ defmodule EEVM.Transaction do
   storage keys are integers too; `EEVM.Transaction.Envelope` converts at the
   wire edge. A 20-byte binary address or 32-byte binary storage key is still
   accepted for one minor version, but is deprecated.
+
+  ## Fields
+
+  Each type's page lists the fields it has. Amounts are in wei.
+
+  | Field | Types | Description |
+  |-------|-------|-------------|
+  | `chain_id` | typed | Chain the transaction is valid on; `Signer.sign/3` fills in a `nil` one from the config |
+  | `nonce` | all | The sender's account nonce |
+  | `gas_price` | legacy, access list | Price per unit of gas |
+  | `max_fee_per_gas` | fee market, blob, set code | Most the sender pays per unit of gas, base fee included (EIP-1559) |
+  | `max_priority_fee_per_gas` | fee market, blob, set code | Most of that the block producer receives as a tip (EIP-1559) |
+  | `gas_limit` | all | Gas available to the transaction, intrinsic gas included |
+  | `to` | all | Recipient address; `nil` creates a contract (not allowed for blob and set-code transactions) |
+  | `value` | all | Wei sent to `to` or to the new contract |
+  | `data` | all | Calldata, or initcode when `to` is `nil` |
+  | `access_list` | typed | `[{address, [storage_key]}]` warmed before execution (EIP-2930) |
+  | `max_fee_per_blob_gas` | blob | Most the sender pays per unit of blob gas (EIP-4844) |
+  | `blob_versioned_hashes` | blob | 32-byte versioned hashes of the blobs (EIP-4844) |
+  | `authorization_list` | set code | `EEVM.Transaction.Authorization` tuples to apply (EIP-7702) |
+  | `v` | legacy | Signature recovery value: 27/28, or `chain_id * 2 + 35/36` with EIP-155 |
+  | `y_parity` | typed | Signature recovery bit, 0 or 1 |
+  | `r`, `s` | all | The secp256k1 signature |
   """
 
   @type address :: non_neg_integer()
@@ -54,7 +77,16 @@ defmodule EEVM.Transaction do
 
   defmodule Authorization do
     @moduledoc """
-    EIP-7702 authorization tuple.
+    EIP-7702 authorization tuple: the account that signs it (its authority,
+    see `EEVM.Transaction.Signer.recover_authority/1`) lets `address`'s code
+    run as its own.
+
+    | Field | Description |
+    |-------|-------------|
+    | `chain_id` | Chain the authorization is valid on; 0 for any chain |
+    | `address` | Address whose code the authority delegates to |
+    | `nonce` | The authority's account nonce |
+    | `y_parity`, `r`, `s` | The authority's secp256k1 signature |
 
     `y_parity` is a full byte on the wire; values other than 0 or 1 make the
     authorization unrecoverable, so it is skipped rather than rejected.
@@ -73,7 +105,11 @@ defmodule EEVM.Transaction do
   end
 
   defmodule Legacy do
-    @moduledoc "Legacy transaction (type 0)."
+    @moduledoc """
+    Legacy transaction (type 0): `nonce`, `gas_price`, `gas_limit`, `to`,
+    `value`, `data`, and the signature `v`, `r`, `s`. `EEVM.Transaction`
+    describes each field.
+    """
 
     @type t :: %__MODULE__{
             nonce: non_neg_integer(),
@@ -91,7 +127,11 @@ defmodule EEVM.Transaction do
   end
 
   defmodule AccessList do
-    @moduledoc "EIP-2930 access list transaction (type 1)."
+    @moduledoc """
+    EIP-2930 access list transaction (type 1): `chain_id`, `nonce`,
+    `gas_price`, `gas_limit`, `to`, `value`, `data`, `access_list`, and the
+    signature `y_parity`, `r`, `s`. `EEVM.Transaction` describes each field.
+    """
 
     @type t :: %__MODULE__{
             chain_id: non_neg_integer(),
@@ -123,7 +163,12 @@ defmodule EEVM.Transaction do
   end
 
   defmodule FeeMarket do
-    @moduledoc "EIP-1559 fee market transaction (type 2)."
+    @moduledoc """
+    EIP-1559 fee market transaction (type 2): `chain_id`, `nonce`,
+    `max_priority_fee_per_gas`, `max_fee_per_gas`, `gas_limit`, `to`,
+    `value`, `data`, `access_list`, and the signature `y_parity`, `r`, `s`.
+    `EEVM.Transaction` describes each field.
+    """
 
     @type t :: %__MODULE__{
             chain_id: non_neg_integer(),
@@ -157,7 +202,13 @@ defmodule EEVM.Transaction do
   end
 
   defmodule Blob do
-    @moduledoc "EIP-4844 blob transaction (type 3)."
+    @moduledoc """
+    EIP-4844 blob transaction (type 3): `chain_id`, `nonce`,
+    `max_priority_fee_per_gas`, `max_fee_per_gas`, `gas_limit`, `to`,
+    `value`, `data`, `access_list`, `max_fee_per_blob_gas`,
+    `blob_versioned_hashes`, and the signature `y_parity`, `r`, `s`.
+    `EEVM.Transaction` describes each field.
+    """
 
     @type t :: %__MODULE__{
             chain_id: non_neg_integer(),
@@ -195,7 +246,12 @@ defmodule EEVM.Transaction do
   end
 
   defmodule SetCode do
-    @moduledoc "EIP-7702 set-code transaction (type 4)."
+    @moduledoc """
+    EIP-7702 set-code transaction (type 4): `chain_id`, `nonce`,
+    `max_priority_fee_per_gas`, `max_fee_per_gas`, `gas_limit`, `to`,
+    `value`, `data`, `access_list`, `authorization_list`, and the signature
+    `y_parity`, `r`, `s`. `EEVM.Transaction` describes each field.
+    """
 
     @type t :: %__MODULE__{
             chain_id: non_neg_integer(),

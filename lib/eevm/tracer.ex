@@ -2,25 +2,44 @@ defmodule EEVM.Tracer do
   @moduledoc """
   Opt-in opcode-level execution tracer.
 
-  A tracer is attached to a `MachineState` (via `MachineState.new/2` with
-  `tracer: EEVM.Tracer.new()`). When present, the executor records one
-  `TraceStep` per opcode with pre-execution PC, stack, memory size, and
-  depth plus the actual gas cost charged by that step.
+  Pass `tracer: true` to `EEVM.run/2`, `EEVM.transact/4`, or
+  `EEVM.Block.execute/4` and the result's `trace` holds a tracer with one
+  `EEVM.Tracer.TraceStep` per executed opcode, in every call frame. Read the
+  steps with `steps/1`, or render them with `to_json/1` in the EIP-3155
+  format that `geth evm --json` and revm emit, so traces can be diffed
+  against theirs.
 
-  Output is compatible with the `evm --json` format defined by EIP-3155,
-  so traces can be diffed against geth/revm reference runs.
+      iex> {:ok, result} = EEVM.run(<<0x60, 1, 0x60, 2, 0x01, 0x00>>, tracer: true)
+      iex> for step <- EEVM.Tracer.steps(result.trace), do: {step.pc, step.op, step.stack}
+      [{0, :PUSH1, []}, {2, :PUSH1, [1]}, {4, :ADD, [2, 1]}, {5, :STOP, [3]}]
 
   ## Performance
 
-  When the `tracer` field is `nil` (default), the executor skips all trace
-  bookkeeping — no snapshot is taken and the tracer branch is a single
-  pattern-match-and-return. Trace capture is opt-in at the call site.
+  Without `:tracer`, the interpreter skips all trace bookkeeping: no
+  snapshot is taken and the tracer branch is a single pattern match.
   """
 
   alias EEVM.Interpreter.Instructions.Registry
 
   defmodule TraceStep do
-    @moduledoc "A single recorded step: one opcode execution in the trace."
+    @moduledoc """
+    A single recorded step: one opcode execution in the trace. Every field
+    except `error` describes the machine *before* the opcode runs.
+
+    | Field | Description |
+    |-------|-------------|
+    | `pc` | Program counter of the opcode in its frame's code |
+    | `op` | Opcode name as an atom, such as `:SSTORE`; `:UNKNOWN` for an undefined byte |
+    | `op_byte` | The opcode byte |
+    | `gas_remaining` | Gas left in the frame |
+    | `gas_cost` | The opcode's gas cost. For now this is the static cost only: memory expansion, cold access, SSTORE, and other dynamic costs are missing (#213). INVALID reports all remaining gas |
+    | `stack` | The stack, **top first** (`to_json/1` writes it bottom first, as EIP-3155 does) |
+    | `memory_size` | Memory size in bytes |
+    | `depth` | Call depth, 0 for the top-level frame (`to_json/1` writes it 1-based, as EIP-3155 does) |
+    | `refund` | The gas refund counter |
+    | `return_data` | The return-data buffer: the output of the frame's last sub-call |
+    | `error` | The halt reason (an `t:EEVM.Error.halt_reason/0`) when this opcode halted the frame, else `nil` |
+    """
 
     @type t :: %__MODULE__{
             pc: non_neg_integer(),
@@ -66,15 +85,19 @@ defmodule EEVM.Tracer do
 
   defstruct steps: []
 
+  @doc "Returns an empty tracer. `tracer: true` is shorthand for `tracer: EEVM.Tracer.new()`."
   @spec new() :: t()
   def new, do: %__MODULE__{}
 
+  @doc false
+  # Called by the interpreter for each step.
   @spec record(t(), TraceStep.t()) :: t()
   def record(%__MODULE__{steps: steps} = tracer, %TraceStep{} = step) do
     %{tracer | steps: [step | steps]}
   end
 
-  @doc "Marks the most recently recorded step with an error reason."
+  @doc false
+  # Called by the interpreter: marks the most recently recorded step with an error reason.
   @spec set_last_error(t(), atom()) :: t()
   def set_last_error(%__MODULE__{steps: []} = tracer, _reason), do: tracer
 

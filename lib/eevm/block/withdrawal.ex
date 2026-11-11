@@ -3,9 +3,16 @@ defmodule EEVM.Block.Withdrawal do
   EIP-4895 beacon-chain withdrawal: a credit applied to an execution-layer
   account at the start of a block.
 
+  | Field | Description |
+  |-------|-------------|
+  | `index` | The withdrawal's index, counting every withdrawal since Shanghai |
+  | `validator_index` | Index of the validator withdrawing |
+  | `address` | Execution-layer address credited |
+  | `amount` | Amount in **gwei** |
+
   The wire `amount` is denominated in gwei; the EVM works in wei, so the
   balance bump is `amount * 1_000_000_000`. Withdrawals are applied between
-  the transaction fold and the state-root commitment in `Block.Processor`.
+  the transactions and the state-root commitment.
   """
 
   @type t :: %__MODULE__{

@@ -7,7 +7,7 @@ defmodule EEVM.CallResult do
   |-------|-------------|
   | `status` | `:success`, `:revert`, or `{:halt, reason}` (see `t:status/0`) |
   | `return_data` | Bytes from RETURN or REVERT (see `EEVM.revert_reason/1`); empty after a halt |
-  | `gas_used` | Gas consumed, after the refund |
+  | `gas_used` | Gas the code consumed, after the refund. A message call has no transaction, so unlike `EEVM.TransactionResult.gas_used` this excludes the intrinsic gas (21,000 plus calldata) |
   | `gas_left` | Gas remaining from the `:gas` limit |
   | `logs` | Logs emitted, in order; empty unless `status` is `:success` |
   | `db` | The `EEVM.Database` after the call, writes still in its overlay; unchanged unless `status` is `:success` |

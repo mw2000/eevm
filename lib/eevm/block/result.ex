@@ -1,7 +1,9 @@
 defmodule EEVM.Block.Result do
   @moduledoc """
   The outcome of executing a block — the post-state database plus every
-  commitment derived from it. Returned by `EEVM.Block.Processor.process_block/4`.
+  commitment derived from it. Returned by `EEVM.Block.execute/4` and
+  `EEVM.Block.build/4`, and by the lower-level
+  `EEVM.Block.Processor.process_block/4`.
 
   ### Fields
 

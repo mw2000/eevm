@@ -1,23 +1,34 @@
 defmodule EEVM.TxEnv do
   @moduledoc """
   The transaction environment code executes in: the signed transaction as
-  the EVM sees it. `EEVM.Handler.execute/4` builds one from the wire
-  transaction; set it yourself only to run raw bytecode with `EEVM.execute/2`.
+  the EVM sees it. `EEVM.transact/4` builds one from the wire transaction;
+  set it yourself only to give bytecode run with `EEVM.run/2` a transaction
+  context, through its `:tx` option.
 
   ### Fields
 
   | Field | Opcode | Description |
   |-------|--------|-------------|
+  | `type` | — | `:legacy`, `:eip2930`, `:eip1559`, `:eip4844`, or `:eip7702` |
   | `origin` | ORIGIN (0x32) | The externally owned account (EOA) that signed the tx |
   | `gas_price` | GASPRICE (0x3A) | Effective gas price in wei the sender pays |
+  | `nonce` | — | The sender's nonce |
+  | `gas_limit` | — | The transaction's gas limit |
+  | `to` | — | The recipient address, or `nil` for a contract creation |
+  | `value` | — | Wei sent with the call |
+  | `data` | — | Calldata, or initcode for a creation |
+  | `max_fee_per_gas`, `max_priority_fee_per_gas` | — | EIP-1559 fee caps in wei |
+  | `max_fee_per_blob_gas` | — | EIP-4844 blob fee cap in wei |
   | `blob_hashes` | BLOBHASH (0x49) | List of blob versioned hashes from EIP-4844 transaction payload |
+  | `access_list` | — | EIP-2930 `[{address, [slot]}]` warmed before execution |
   | `authorization_list` | — | EIP-7702 authorizations applied before execution |
 
   ### Origin vs Caller
 
   `origin` is always the EOA that signed the transaction — it never changes,
-  even through nested contract calls. `caller` (in `EEVM.Context.Contract`) is the
-  *direct* caller of the current frame and changes with each CALL.
+  even through nested contract calls. The caller (CALLER, and `EEVM.run/2`'s
+  `:caller` option) is the *direct* caller of the current frame and changes
+  with each CALL.
   """
 
   @type t :: %__MODULE__{

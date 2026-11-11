@@ -4,6 +4,13 @@ defmodule EEVM.Block do
   withdrawals — and the public path to build, encode, validate, and execute
   one.
 
+  | Field | Description |
+  |-------|-------------|
+  | `header` | The `EEVM.Block.Header` |
+  | `transactions` | Signed transactions (see `EEVM.Transaction`), in order |
+  | `ommers` | Uncle headers; always empty after the Merge |
+  | `withdrawals` | `EEVM.Block.Withdrawal`s from Shanghai on, `nil` before |
+
   - `decode/1` and `encode/1` convert to and from canonical RLP.
   - `validate/3` runs every check that needs no state: the EIP-7934 size
     limit, `EEVM.Block.HeaderValidator` against the parent, and the body
@@ -146,7 +153,8 @@ defmodule EEVM.Block do
 
   1. From Osaka, the encoded block is at most `max_rlp_block_size/0` bytes
      (EIP-7934), else `:rlp_block_size_exceeded`.
-  2. `EEVM.Block.HeaderValidator.validate/3`.
+  2. The header is a valid child of `parent` (`EEVM.Block.HeaderValidator`;
+     the checks and their errors are listed in `EEVM.Error`).
   3. The body matches the header: `ommers_hash`, `transactions_root`,
      `withdrawals_root` (withdrawals are present exactly from Shanghai), and
      from Cancun the total blob gas of the transactions equals

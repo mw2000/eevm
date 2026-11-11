@@ -6,6 +6,12 @@ defmodule EEVM.Config do
   Every entry point takes a config as its `:config` option, or the shorthand
   `:hardfork` (a fork atom) for a mainnet config of that fork.
 
+  | Field | Description |
+  |-------|-------------|
+  | `hardfork` | The fork's rules; `config.hardfork.spec_id` is the fork atom, such as `:prague`. Ask `enabled?/2` whether a rule applies |
+  | `chain_id` | The chain id, for EIP-155 signatures, EIP-7702 authorizations, and CHAINID |
+  | `precompiles` | Custom precompiles by address, added with `register_precompile/3` |
+
   ## Example
 
       iex> config = EEVM.Config.new(:prague, chain_id: 11_155_111)

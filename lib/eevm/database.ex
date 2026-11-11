@@ -59,7 +59,11 @@ defmodule EEVM.Database do
   alias EEVM.{StateChanges, StateRoot}
 
   defmodule ReadError do
-    @moduledoc "Raised when a database backend returns `{:error, reason}` from a read."
+    @moduledoc """
+    Raised when a database backend returns `{:error, reason}` from a read
+    and you called an `EEVM.Database` function directly; `reason` is that
+    reason. The entry points return `{:error, {:database, reason}}` instead.
+    """
     defexception [:reason]
 
     @impl true

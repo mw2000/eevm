@@ -66,9 +66,9 @@ defmodule EEVM.Error do
 
   ## Transaction Validation Errors
 
-  Returned by `EEVM.Transaction.Validator.validate/4` (and so by
-  `EEVM.Handler.execute/4`) before any state changes. Checks run in the order
-  listed and the first failure wins.
+  Returned by `EEVM.transact/4` (and `EEVM.Handler.execute/4`) before any
+  state changes; `EEVM.Transaction.Validator` runs the checks. They run in
+  the order listed and the first failure wins.
 
   | Error | Meaning |
   |-------|---------|
@@ -96,9 +96,9 @@ defmodule EEVM.Error do
 
   ## Block Header Validation Errors
 
-  Returned by `EEVM.Block.HeaderValidator.validate/3` when a header is not a
-  valid successor of its parent. Checks run in the order listed and the first
-  failure wins.
+  Returned by `EEVM.Block.validate/3`, `execute/4`, and `build/4` when a
+  header is not a valid successor of its parent; `EEVM.Block.HeaderValidator`
+  runs the checks. They run in the order listed and the first failure wins.
 
   | Error | Meaning |
   |-------|---------|
@@ -139,6 +139,16 @@ defmodule EEVM.Error do
   | `:system_contract_empty` | The EIP-7002 or EIP-7251 request contract has no code (from Prague) |
   | `:system_contract_call_failed` | The end-of-block call to the EIP-7002 or EIP-7251 request contract failed (from Prague) |
   | `:invalid_requests_hash` | `requests_hash` differs from the EIP-7685 hash of the block's requests (from Prague) |
+
+  ## State Errors
+
+  A backend callback that returns `{:error, reason}` aborts `EEVM.run/2`,
+  `EEVM.transact/4`, and `EEVM.Block.execute/4` and `build/4` with
+  `{:error, {:database, reason}}`; see `EEVM.Database`.
+
+  | Error | Source | Meaning |
+  |-------|--------|---------|
+  | `:commit_not_supported` | `EEVM.Database.commit/1` | The backend's `commit/2` returned `{:error, :unsupported}`; apply `changes/1` yourself |
 
   ## Registry Errors
 
@@ -257,6 +267,7 @@ defmodule EEVM.Error do
           execution_error()
           | precompile_error()
           | :unknown_opcode
+          | :commit_not_supported
           | decode_error()
           | transaction_validation_error()
           | block_error()
@@ -335,6 +346,7 @@ defmodule EEVM.Error do
     system_contract_empty: "request system contract has no code",
     system_contract_call_failed: "request system contract call failed",
     invalid_requests_hash: "wrong requests hash",
+    commit_not_supported: "the database backend does not support commit",
     gas_allowance_exceeded: "transaction gas limit above the gas left in the block"
   }
 
