@@ -112,6 +112,20 @@ defmodule EEVM.Interpreter.Instructions.ControlFlowTest do
       assert run_code(code, gas: push0_gas + 5).status == {:error, :stack_overflow}
       assert run_code(code, gas: push0_gas + 2).status == :out_of_gas
     end
+
+    # With gas for the PUSH but not the jump, the PUSH runs and the jump runs
+    # out of gas (it once reported a stack overflow).
+    test "PUSH+JUMP(I) with gas for the PUSH alone runs out of gas at the jump" do
+      # PUSH1 4, JUMP, INVALID, JUMPDEST, STOP
+      jump = <<0x60, 4, 0x56, 0xFE, 0x5B, 0x00>>
+      # PUSH1 1, PUSH1 6, JUMPI, INVALID, JUMPDEST (pc 6), STOP
+      jumpi = <<0x60, 1, 0x60, 6, 0x57, 0xFE, 0x5B, 0x00>>
+
+      # PUSH1 = 3, JUMP = 8, JUMPI = 10, JUMPDEST = 1 (Yellow Paper Appendix G)
+      assert run_code(jump, gas: 3 + 7).status == :out_of_gas
+      assert run_code(jumpi, gas: 3 + 3 + 9).status == :out_of_gas
+      assert run_code(jumpi, gas: 3 + 3 + 10 + 1).status == :stopped
+    end
   end
 
   describe "PUSH0 (EIP-3855)" do

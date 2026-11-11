@@ -251,7 +251,26 @@ defmodule EEVM.Interpreter do
   # Traced programs wrap each instruction: record the step, then run it.
   defp execute({:trace, byte, instruction}, state, program, pc, gas, stack, depth) do
     state = trace_opcode(state, byte, instruction, pc, gas, stack)
+    run(instruction, state, program, pc, gas, stack, depth)
+  end
 
+  # A fused PUSH+JUMP(I) that cannot run whole runs its PUSH alone, then its
+  # JUMP(I) from the program, so a failure is reported where it happens.
+  defp execute({fused, _cost, _min, _max, arg}, state, program, pc, gas, stack, depth)
+       when fused in [:jump_to, :jumpi_to],
+       do: run(elem(arg, 0), state, program, pc, gas, stack, depth)
+
+  defp execute({_op, cost, min_depth, _max, _arg}, state, _program, pc, gas, stack, depth) do
+    cond do
+      cost > gas -> out_of_gas(state, pc, gas, stack, depth)
+      depth < min_depth -> halt(state, :stack_underflow, pc, gas, stack, depth)
+      true -> halt(state, :stack_overflow, pc, gas, stack, depth)
+    end
+  end
+
+  # Runs one instruction as `loop/6` does, for the instructions `execute/7`
+  # unwraps.
+  defp run(instruction, state, program, pc, gas, stack, depth) do
     case instruction do
       {op, cost, min_depth, max_depth, arg}
       when runnable(cost, min_depth, max_depth, gas, depth) ->
@@ -259,20 +278,6 @@ defmodule EEVM.Interpreter do
 
       instruction ->
         execute(instruction, state, program, pc, gas, stack, depth)
-    end
-  end
-
-  # A fused PUSH+JUMP(I) that cannot run whole runs its PUSH alone, then its
-  # JUMP(I) from the program, so a failure is reported where it happens.
-  defp execute({fused, _cost, _min, _max, arg}, state, program, pc, gas, stack, depth)
-       when fused in [:jump_to, :jumpi_to],
-       do: execute(elem(arg, 0), state, program, pc, gas, stack, depth)
-
-  defp execute({_op, cost, min_depth, _max, _arg}, state, _program, pc, gas, stack, depth) do
-    cond do
-      cost > gas -> out_of_gas(state, pc, gas, stack, depth)
-      depth < min_depth -> halt(state, :stack_underflow, pc, gas, stack, depth)
-      true -> halt(state, :stack_overflow, pc, gas, stack, depth)
     end
   end
 
