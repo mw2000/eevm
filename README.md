@@ -300,7 +300,7 @@ they abort the VM or cannot finish within the per-case timeout.
 
 ## Examples
 
-[`examples/devx`](https://github.com/mw2000/eevm/tree/main/examples/devx) is a Mix project that depends on eevm by
+[`examples/devx`](examples/devx) is a Mix project that depends on eevm by
 path and does seven everyday tasks with the public API only: run bytecode,
 deploy and call a solc-compiled ERC-20, sign and send legacy and EIP-1559
 transactions, trace, back the state with ETS, build and execute a block, and
