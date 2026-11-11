@@ -106,7 +106,11 @@ database, use `call/4`.
 `EEVM.transact/4` runs a signed transaction end to end: decode, recover the
 sender, validate, charge gas, execute, refund, and pay the coinbase. It returns
 `{:ok, %EEVM.TransactionResult{}}` for any transaction that passes validation,
-including reverted and halted ones, and `{:error, reason}` otherwise.
+including reverted and halted ones, and `{:error, reason}` otherwise. Pass
+`details: true` to get `{:error, %EEVM.TransactionError{}}` instead, which
+carries the values the rule compared, such as both nonces, and renders them
+with `Exception.message/1`. `EEVM.BlockEnv.new/0` has a 30,000,000 gas limit,
+so a transaction fits in a default block.
 
 ```elixir
 alias EEVM.{BlockEnv, Config, Database}

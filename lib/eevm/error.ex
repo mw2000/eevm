@@ -363,9 +363,14 @@ defmodule EEVM.Error do
       "nonce too low"
       iex> EEVM.Error.message({:tx_failed, 2, :intrinsic_gas_too_low})
       "transaction 2 failed: gas limit below the intrinsic gas"
+      iex> EEVM.Error.message({:database, :econnrefused})
+      "database read failed: :econnrefused"
   """
-  @spec message(reason() | :gas_allowance_exceeded | term()) :: String.t()
+  @spec message(reason() | :gas_allowance_exceeded | EEVM.TransactionError.t() | term()) ::
+          String.t()
   def message({:tx_failed, index, reason}), do: "transaction #{index} failed: #{message(reason)}"
+  def message({:database, reason}), do: "database read failed: #{inspect(reason)}"
+  def message(%EEVM.TransactionError{} = error), do: Exception.message(error)
   def message(reason) when is_map_key(@messages, reason), do: Map.fetch!(@messages, reason)
   def message(reason), do: inspect(reason)
 end

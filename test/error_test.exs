@@ -20,6 +20,13 @@ defmodule EEVM.ErrorTest do
   end
 
   test "an unknown reason falls back to inspect" do
-    assert EEVM.Error.message({:database, :timeout}) == "{:database, :timeout}"
+    assert EEVM.Error.message({:no_such_reason, 1}) == "{:no_such_reason, 1}"
+  end
+
+  test "database failures, also inside a block's {:tx_failed, ...}, render" do
+    assert EEVM.Error.message({:database, :timeout}) == "database read failed: :timeout"
+
+    assert EEVM.Error.message({:tx_failed, 0, {:database, :econnrefused}}) ==
+             "transaction 0 failed: database read failed: :econnrefused"
   end
 end

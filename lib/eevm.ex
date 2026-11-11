@@ -340,14 +340,28 @@ defmodule EEVM do
 
   `tx` is a transaction struct (see `EEVM.Transaction`) or its raw signed
   bytes. Options are `:config` (or the `:hardfork` shorthand) and `:tracer`,
-  as for `run/2`.
+  as for `run/2`, and `details: true`, which returns a rejection as
+  `{:error, %EEVM.TransactionError{}}` with the values involved, such as
+  the transaction's and the account's nonce.
 
   Returns `{:ok, %EEVM.TransactionResult{}}` for any transaction that passes
   validation, including reverted and halted ones, or `{:error, reason}` with
   a reason from `EEVM.Error`, leaving `db` unchanged.
+
+  ## Example
+
+      iex> tx = %EEVM.Transaction.Legacy{nonce: 5, gas_price: 10, gas_limit: 21_000, to: 0xB0B}
+      iex> {:ok, tx} = EEVM.Transaction.Signer.sign(tx, <<0x46::256>>, EEVM.Config.new(:cancun))
+      iex> db = EEVM.Database.InMemory.new()
+      iex> EEVM.transact(tx, EEVM.BlockEnv.new(), db)
+      {:error, :nonce_too_high}
+      iex> {:error, error} = EEVM.transact(tx, EEVM.BlockEnv.new(), db, details: true)
+      iex> {error.reason, error.details.tx_nonce, error.details.state_nonce}
+      {:nonce_too_high, 5, 0}
   """
   @spec transact(Handler.wire_tx(), BlockEnv.t(), Database.t(), Handler.opts()) ::
-          {:ok, TransactionResult.t()} | {:error, EEVM.Error.reason()}
+          {:ok, TransactionResult.t()}
+          | {:error, EEVM.Error.reason() | EEVM.TransactionError.t()}
   defdelegate transact(tx, block, db, opts \\ []), to: Handler, as: :execute
 
   @doc """

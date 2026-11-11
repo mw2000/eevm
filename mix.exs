@@ -114,6 +114,7 @@ defmodule EEVM.MixProject do
         Transactions: [
           EEVM.Handler,
           EEVM.TransactionResult,
+          EEVM.TransactionError,
           ~r/^EEVM\.Transaction\.(Legacy|AccessList|FeeMarket|Blob|SetCode|Authorization)$/,
           EEVM.Transaction,
           EEVM.Transaction.Envelope,

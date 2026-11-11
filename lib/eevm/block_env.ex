@@ -12,7 +12,7 @@ defmodule EEVM.BlockEnv do
   | `number` | NUMBER (0x43) | Current block number |
   | `timestamp` | TIMESTAMP (0x42) | Block timestamp (seconds since epoch) |
   | `coinbase` | COINBASE (0x41) | Address of the block producer |
-  | `gas_limit` | GASLIMIT (0x45) | Block gas limit |
+  | `gas_limit` | GASLIMIT (0x45) | Block gas limit; defaults to 30,000,000, a mainnet-sized block, so transactions fit |
   | `prev_randao` | PREVRANDAO (0x44) | RANDAO mix from the beacon chain (DIFFICULTY before the Merge) |
   | `base_fee` | BASEFEE (0x48) | Block base fee (EIP-1559) |
   | `blob_base_fee` | BLOBBASEFEE (0x4A) | Block blob base fee (EIP-4844, EIP-7516) |
@@ -40,7 +40,7 @@ defmodule EEVM.BlockEnv do
   defstruct number: 0,
             timestamp: 0,
             coinbase: 0,
-            gas_limit: 0,
+            gas_limit: 30_000_000,
             prev_randao: 0,
             base_fee: 0,
             blob_base_fee: 0,
@@ -89,7 +89,13 @@ defmodule EEVM.BlockEnv do
     }
   end
 
-  @doc "Creates a new block environment with default values."
+  @doc """
+  Creates a new block environment with default values: block 0 with no base
+  fee, and a 30,000,000 gas limit so a transaction can run in it.
+
+      iex> EEVM.BlockEnv.new().gas_limit
+      30000000
+  """
   @spec new() :: t()
   def new, do: %__MODULE__{}
 

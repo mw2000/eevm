@@ -97,6 +97,65 @@ defmodule EEVM.HandlerTest do
       assert {:error, :insufficient_balance} = run(tx, db_with_sender(balance: 100))
     end
 
+    test "details: true returns the values each rule compared" do
+      detailed = fn tx, db, block ->
+        Handler.execute(tx, block, db,
+          config: Config.new(:cancun, chain_id: @chain_id),
+          details: true
+        )
+      end
+
+      sender = sender_address()
+
+      # Nonce: the account is at 3, the transaction says 5.
+      assert {:error, %EEVM.TransactionError{reason: :nonce_too_high, details: nonce}} =
+               detailed.(
+                 legacy_value_transfer(nonce: 5),
+                 db_with_sender(nonce: 3),
+                 simple_block()
+               )
+
+      assert nonce == %{sender: sender, tx_nonce: 5, state_nonce: 3}
+
+      # Balance: 21_000 gas at 2 wei plus 1_000 wei of value is 43_000.
+      tx = legacy_value_transfer(gas_price: 2, value: 1_000)
+
+      assert {:error, %{reason: :insufficient_balance, details: balance}} =
+               detailed.(tx, db_with_sender(balance: 42_999), simple_block())
+
+      assert balance == %{sender: sender, balance: 42_999, required: 43_000}
+
+      assert {:error, %{reason: :max_fee_below_basefee, details: %{gas_price: 2, base_fee: 3}}} =
+               detailed.(tx, db_with_sender(), simple_block(base_fee: 3))
+
+      assert {:error, %{reason: :intrinsic_gas_too_low} = error} =
+               detailed.(
+                 legacy_value_transfer(gas_limit: 20_999),
+                 db_with_sender(),
+                 simple_block()
+               )
+
+      assert error.details == %{gas_limit: 20_999, intrinsic_gas: 21_000}
+      assert Exception.message(error) =~ "gas_limit 20999, intrinsic_gas 21000"
+
+      assert {:error, %{reason: :gas_limit_exceeds_block, details: limits}} =
+               detailed.(
+                 legacy_value_transfer([]),
+                 db_with_sender(),
+                 simple_block(gas_limit: 20_999)
+               )
+
+      assert limits == %{gas_limit: 21_000, block_gas_limit: 20_999}
+
+      # A rule with nothing to compare still comes back as a struct.
+      assert {:error, %EEVM.TransactionError{reason: :invalid_rlp, details: %{}}} =
+               detailed.(<<0xC1, 0xFF>>, db_with_sender(), simple_block())
+
+      # Without the option the reason stays a bare atom.
+      assert run(legacy_value_transfer(nonce: 5), db_with_sender(nonce: 3)) ==
+               {:error, :nonce_too_high}
+    end
+
     test "rejects an unsigned transaction" do
       unsigned = %Legacy{
         nonce: 0,

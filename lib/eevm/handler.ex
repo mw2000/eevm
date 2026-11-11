@@ -16,8 +16,9 @@ defmodule EEVM.Handler do
   phase independently testable.
   """
 
-  alias EEVM.{BlockEnv, Config, Database, TransactionResult}
+  alias EEVM.{BlockEnv, Config, Database, TransactionError, TransactionResult}
   alias EEVM.Handler.{Execution, PostExecution, PreExecution, Validation}
+  alias EEVM.Transaction.Validator
 
   @type wire_tx :: Validation.wire_tx()
 
@@ -26,6 +27,7 @@ defmodule EEVM.Handler do
           config: Config.t(),
           tracer: boolean() | EEVM.Tracer.t(),
           commit: boolean(),
+          details: boolean(),
           chain_id: non_neg_integer()
         ]
 
@@ -48,6 +50,10 @@ defmodule EEVM.Handler do
     skip `result.changes`; `EEVM.Block` does this to commit once per block.
     By default the writes are committed when the backend implements
     `c:EEVM.Database.commit/2`.
+  - `:details` — `true` to return each rejection as
+    `{:error, %EEVM.TransactionError{}}`, which carries the values the rule
+    compared (the nonces, balance and cost, fees, gas limits) next to the
+    reason. Default `false`: `{:error, reason}` with the bare atom.
   - `:chain_id` — deprecated; set it with `EEVM.Config.new/2`. Overrides the
     config's chain id when given.
 
@@ -61,13 +67,22 @@ defmodule EEVM.Handler do
     backend fails a read or commit. The database is unchanged in each case.
   """
   @spec execute(wire_tx(), BlockEnv.t(), Database.t(), opts()) ::
-          {:ok, TransactionResult.t()} | {:error, EEVM.Error.reason()}
+          {:ok, TransactionResult.t()} | {:error, EEVM.Error.reason() | TransactionError.t()}
   def execute(tx_or_bytes, %BlockEnv{} = block, %Database{} = db, opts \\ []) do
     Database.catch_read_errors(fn ->
       with {:ok, result} <- run(tx_or_bytes, block, db, opts) do
         finish(result, Keyword.get(opts, :commit, true))
+      else
+        {:error, reason, details} -> rejected(reason, details, opts)
+        {:error, reason} -> rejected(reason, %{}, opts)
       end
     end)
+  end
+
+  defp rejected(reason, details, opts) do
+    if Keyword.get(opts, :details, false),
+      do: {:error, %TransactionError{reason: reason, details: details}},
+      else: {:error, reason}
   end
 
   defp run(tx_or_bytes, block, db, opts) do
@@ -77,7 +92,7 @@ defmodule EEVM.Handler do
     with {:ok, wire_tx} <- Validation.ensure_decoded(tx_or_bytes),
          {:ok, sender} <- Validation.recover_sender(wire_tx, chain_id),
          {:ok, tx_ctx} <- Validation.build_tx_context(wire_tx, sender),
-         :ok <- Validation.validate(tx_ctx, db, block, config.hardfork),
+         :ok <- Validator.check(tx_ctx, db, block, config.hardfork),
          # GASPRICE (0x3A) reads the price per gas the sender pays (EIP-1559).
          tx_ctx = %{tx_ctx | gas_price: PreExecution.effective_gas_price(tx_ctx, block)},
          {:ok, db_after_upfront} <- PreExecution.charge_upfront(db, tx_ctx, block),

@@ -39,12 +39,21 @@ defmodule EEVM.Transaction.Validator do
   """
   @spec validate(TxEnv.t(), Database.t(), BlockEnv.t(), HardforkConfig.t()) ::
           :ok | {:error, Error.transaction_validation_error()}
-  def validate(
-        %TxEnv{} = tx,
-        %Database{} = db,
-        %BlockEnv{} = block,
-        %HardforkConfig{} = hardfork
-      ) do
+  def validate(%TxEnv{} = tx, %Database{} = db, %BlockEnv{} = block, %HardforkConfig{} = hardfork) do
+    case check(tx, db, block, hardfork) do
+      :ok -> :ok
+      {:error, reason, _details} -> {:error, reason}
+    end
+  end
+
+  @doc """
+  Like `validate/4`, but a failure also carries the values the rule
+  compared, as `{:error, reason, details}`; `EEVM.TransactionError` lists
+  them per reason.
+  """
+  @spec check(TxEnv.t(), Database.t(), BlockEnv.t(), HardforkConfig.t()) ::
+          :ok | {:error, Error.transaction_validation_error(), map()}
+  def check(%TxEnv{} = tx, %Database{} = db, %BlockEnv{} = block, %HardforkConfig{} = hardfork) do
     with :ok <- validate_tx_type(tx, hardfork),
          :ok <- validate_set_code_tx(tx),
          :ok <- validate_intrinsic_gas(tx, hardfork),
@@ -66,7 +75,9 @@ defmodule EEVM.Transaction.Validator do
   defp validate_tx_type(%TxEnv{type: type}, %HardforkConfig{} = hardfork) do
     case @tx_type_eips do
       %{^type => eip} ->
-        if HardforkConfig.enabled?(hardfork, eip), do: :ok, else: {:error, :tx_type_not_supported}
+        if HardforkConfig.enabled?(hardfork, eip),
+          do: :ok,
+          else: {:error, :tx_type_not_supported, %{type: type, hardfork: hardfork.spec_id}}
 
       _legacy ->
         :ok
@@ -75,10 +86,17 @@ defmodule EEVM.Transaction.Validator do
 
   defp validate_set_code_tx(%TxEnv{type: :eip7702} = tx) do
     cond do
-      tx.to == nil -> {:error, :set_code_tx_no_creation}
-      tx.authorization_list == [] -> {:error, :empty_authorization_list}
-      Enum.all?(tx.authorization_list, &authorization_in_range?/1) -> :ok
-      true -> {:error, :invalid_authorization}
+      tx.to == nil ->
+        {:error, :set_code_tx_no_creation, %{}}
+
+      tx.authorization_list == [] ->
+        {:error, :empty_authorization_list, %{}}
+
+      true ->
+        case Enum.find_index(tx.authorization_list, &(not authorization_in_range?(&1))) do
+          nil -> :ok
+          index -> {:error, :invalid_authorization, %{index: index}}
+        end
     end
   end
 
@@ -92,31 +110,36 @@ defmodule EEVM.Transaction.Validator do
   end
 
   defp validate_intrinsic_gas(%TxEnv{} = tx, %HardforkConfig{} = hardfork) do
-    if tx.gas_limit >= IntrinsicGas.minimum_gas_limit(tx, hardfork),
+    minimum = IntrinsicGas.minimum_gas_limit(tx, hardfork)
+
+    if tx.gas_limit >= minimum,
       do: :ok,
-      else: {:error, :intrinsic_gas_too_low}
+      else: {:error, :intrinsic_gas_too_low, %{gas_limit: tx.gas_limit, intrinsic_gas: minimum}}
   end
 
   defp validate_gas_limit_cap(%TxEnv{} = tx, %HardforkConfig{} = hardfork) do
     if tx.gas_limit > @max_tx_gas_limit and HardforkConfig.enabled?(hardfork, :eip_7825),
-      do: {:error, :gas_limit_exceeds_cap},
+      do: {:error, :gas_limit_exceeds_cap, %{gas_limit: tx.gas_limit, cap: @max_tx_gas_limit}},
       else: :ok
   end
 
   defp validate_gas_limit_vs_block(%TxEnv{} = tx, %BlockEnv{} = block) do
     if tx.gas_limit <= block.gas_limit,
       do: :ok,
-      else: {:error, :gas_limit_exceeds_block}
+      else:
+        {:error, :gas_limit_exceeds_block,
+         %{gas_limit: tx.gas_limit, block_gas_limit: block.gas_limit}}
   end
 
   defp validate_nonce(%TxEnv{} = tx, %Database{} = db) do
     account_nonce = Database.get_nonce(db, tx.origin)
+    details = %{sender: tx.origin, tx_nonce: tx.nonce, state_nonce: account_nonce}
 
     cond do
-      account_nonce > tx.nonce -> {:error, :nonce_too_low}
-      account_nonce < tx.nonce -> {:error, :nonce_too_high}
+      account_nonce > tx.nonce -> {:error, :nonce_too_low, details}
+      account_nonce < tx.nonce -> {:error, :nonce_too_high, details}
       # EIP-2681: the sender's nonce could not be incremented.
-      tx.nonce >= @max_uint64 -> {:error, :nonce_is_max}
+      tx.nonce >= @max_uint64 -> {:error, :nonce_is_max, details}
       true -> :ok
     end
   end
@@ -125,10 +148,15 @@ defmodule EEVM.Transaction.Validator do
        when type in [:eip1559, :eip4844, :eip7702] do
     cond do
       tx.max_fee_per_gas < tx.max_priority_fee_per_gas ->
-        {:error, :priority_fee_above_max_fee}
+        {:error, :priority_fee_above_max_fee,
+         %{
+           max_priority_fee_per_gas: tx.max_priority_fee_per_gas,
+           max_fee_per_gas: tx.max_fee_per_gas
+         }}
 
       tx.max_fee_per_gas < block.base_fee ->
-        {:error, :max_fee_below_basefee}
+        {:error, :max_fee_below_basefee,
+         %{max_fee_per_gas: tx.max_fee_per_gas, base_fee: block.base_fee}}
 
       true ->
         :ok
@@ -139,7 +167,7 @@ defmodule EEVM.Transaction.Validator do
   # base fee too (execution-specs London `check_transaction`).
   defp validate_eip1559_fees(%TxEnv{} = tx, %BlockEnv{} = block, %HardforkConfig{} = hardfork) do
     if HardforkConfig.enabled?(hardfork, :eip_1559) and tx.gas_price < block.base_fee,
-      do: {:error, :max_fee_below_basefee},
+      do: {:error, :max_fee_below_basefee, %{gas_price: tx.gas_price, base_fee: block.base_fee}},
       else: :ok
   end
 
@@ -149,7 +177,9 @@ defmodule EEVM.Transaction.Validator do
 
     if sender_balance >= required_balance,
       do: :ok,
-      else: {:error, :insufficient_balance}
+      else:
+        {:error, :insufficient_balance,
+         %{sender: tx.origin, balance: sender_balance, required: required_balance}}
   end
 
   # EIP-3607, relaxed by EIP-7702: an EOA that delegated its code may still send.
@@ -158,31 +188,36 @@ defmodule EEVM.Transaction.Validator do
 
     if code == <<>> or Delegation.designator?(code),
       do: :ok,
-      else: {:error, :sender_not_eoa}
+      else: {:error, :sender_not_eoa, %{sender: tx.origin}}
   end
 
   # EIP-4844 and EIP-7594 rules from execution-specs `check_transaction`.
   defp validate_blob_tx(%TxEnv{type: :eip4844} = tx, %BlockEnv{} = block, hardfork) do
     blob_count = length(tx.blob_hashes)
+    block_max = div(Blob.max_blob_gas_per_block(hardfork), @blob_gas_per_blob)
+
+    # EIP-7594 also caps each transaction, below the block maximum.
+    max_blobs =
+      if HardforkConfig.enabled?(hardfork, :eip_7594),
+        do: min(block_max, @max_blobs_per_tx),
+        else: block_max
 
     cond do
       tx.to == nil ->
-        {:error, :blob_tx_no_creation}
+        {:error, :blob_tx_no_creation, %{}}
 
       blob_count == 0 ->
-        {:error, :no_blob_data}
+        {:error, :no_blob_data, %{}}
 
-      blob_count * @blob_gas_per_blob > Blob.max_blob_gas_per_block(hardfork) ->
-        {:error, :too_many_blobs}
+      blob_count > max_blobs ->
+        {:error, :too_many_blobs, %{blobs: blob_count, max_blobs: max_blobs}}
 
-      HardforkConfig.enabled?(hardfork, :eip_7594) and blob_count > @max_blobs_per_tx ->
-        {:error, :too_many_blobs}
-
-      not Enum.all?(tx.blob_hashes, &(&1 >>> 248 == @versioned_hash_version_kzg)) ->
-        {:error, :invalid_versioned_hash}
+      bad_hash = Enum.find_index(tx.blob_hashes, &(&1 >>> 248 != @versioned_hash_version_kzg)) ->
+        {:error, :invalid_versioned_hash, %{index: bad_hash}}
 
       tx.max_fee_per_blob_gas < block.blob_base_fee ->
-        {:error, :blob_fee_too_low}
+        {:error, :blob_fee_too_low,
+         %{max_fee_per_blob_gas: tx.max_fee_per_blob_gas, blob_base_fee: block.blob_base_fee}}
 
       true ->
         :ok
@@ -194,7 +229,7 @@ defmodule EEVM.Transaction.Validator do
   defp validate_initcode_size(%TxEnv{to: nil, data: data}) do
     if byte_size(data) <= @max_initcode_size,
       do: :ok,
-      else: {:error, :initcode_too_large}
+      else: {:error, :initcode_too_large, %{size: byte_size(data), max_size: @max_initcode_size}}
   end
 
   defp validate_initcode_size(%TxEnv{}), do: :ok
