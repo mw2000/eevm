@@ -89,6 +89,29 @@ defmodule EEVM.Interpreter.Instructions.ControlFlowTest do
       result = run_code(code)
       assert stack_values(result) == [42]
     end
+
+    # The interpreter runs PUSH+JUMPI to a JUMPDEST as one instruction (#208);
+    # it must charge and fall through exactly like the two opcodes.
+    test "JUMPI to a valid JUMPDEST, not taken, falls through after the JUMPI" do
+      # PUSH1 0, PUSH1 8, JUMPI, PUSH1 42, STOP, JUMPDEST (pc 8), PUSH1 7, STOP
+      code = <<0x60, 0, 0x60, 8, 0x57, 0x60, 42, 0x00, 0x5B, 0x60, 7, 0x00>>
+      result = run_code(code, gas: 1000)
+      assert stack_values(result) == [42]
+      # PUSH1 + PUSH1 + JUMPI + PUSH1 (Yellow Paper Appendix G)
+      assert result.frame.gas == 1000 - (3 + 3 + 10 + 3)
+    end
+
+    # Yellow Paper §9.4.2 checks each opcode on its own: with 1024 items and
+    # gas for the PUSH but not the JUMP, the PUSH overflows the stack; with
+    # gas for neither, the PUSH runs out of gas.
+    test "PUSH+JUMP fails at the PUSH like the two opcodes would" do
+      # 1024 x PUSH0, PUSH2 1028, JUMP, JUMPDEST (pc 1028), STOP
+      code = :binary.copy(<<0x5F>>, 1024) <> <<0x61, 1028::16, 0x56, 0x5B, 0x00>>
+      push0_gas = 1024 * 2
+
+      assert run_code(code, gas: push0_gas + 5).status == {:error, :stack_overflow}
+      assert run_code(code, gas: push0_gas + 2).status == :out_of_gas
+    end
   end
 
   describe "PUSH0 (EIP-3855)" do

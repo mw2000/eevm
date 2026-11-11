@@ -194,12 +194,13 @@ defmodule EEVM.Interpreter do
   #
   # The program is the code decoded once per transaction
   # (`EEVM.Interpreter.InstructionTable.decode/3`): `elem(program, pc)` is the
-  # instruction at `pc`, with PUSH data already read (#208). Each instruction
-  # carries its checks, made once before it runs: static gas, then the stack
-  # bounds. Fewer items than its minimum depth is a stack underflow; above its
-  # maximum depth the opcode would end with more than 1024 items, a stack
-  # overflow (Yellow Paper §9.4.2). Opcodes can therefore assume their inputs
-  # are there and push freely.
+  # instruction at `pc`, with PUSH data already read and PUSH+JUMP(I) pairs
+  # fused into one instruction (#208). Each instruction carries its checks,
+  # made once before it runs: static gas, then the stack bounds. Fewer items
+  # than its minimum depth is a stack underflow; above its maximum depth the
+  # opcode would end with more than 1024 items, a stack overflow (Yellow Paper
+  # §9.4.2). Opcodes can therefore assume their inputs are there and push
+  # freely.
 
   # Loads the frame's program: from the transaction's cache when this code ran
   # before, else decoded and cached. Traced runs decode a traced program; the
@@ -261,6 +262,12 @@ defmodule EEVM.Interpreter do
     end
   end
 
+  # A fused PUSH+JUMP(I) that cannot run whole runs its PUSH alone, then its
+  # JUMP(I) from the program, so a failure is reported where it happens.
+  defp execute({fused, _cost, _min, _max, arg}, state, program, pc, gas, stack, depth)
+       when fused in [:jump_to, :jumpi_to],
+       do: execute(elem(arg, 0), state, program, pc, gas, stack, depth)
+
   defp execute({_op, cost, min_depth, _max, _arg}, state, _program, pc, gas, stack, depth) do
     cond do
       cost > gas -> out_of_gas(state, pc, gas, stack, depth)
@@ -311,6 +318,17 @@ defmodule EEVM.Interpreter do
 
   defp step(state, program, pc, gas, stack, depth, 0x5B, _arg),
     do: loop(state, program, pc + 1, gas, stack, depth)
+
+  # Fused PUSH+JUMP and PUSH+JUMPI: the pushed destination never reaches the
+  # stack. It is checked like any other, so an invalid one halts at the jump.
+  defp step(state, program, pc, gas, stack, depth, :jump_to, {_push, dest}),
+    do: jump(state, program, pc, gas, stack, depth, dest)
+
+  defp step(state, program, _pc, gas, [0 | stack], depth, :jumpi_to, {_push, _dest, next_pc}),
+    do: loop(state, program, next_pc, gas, stack, depth - 1)
+
+  defp step(state, program, pc, gas, [_ | stack], depth, :jumpi_to, {_push, dest, _next}),
+    do: jump(state, program, pc, gas, stack, depth - 1, dest)
 
   # State opcodes run on the whole machine state; the loop then resumes from
   # the frame they return.

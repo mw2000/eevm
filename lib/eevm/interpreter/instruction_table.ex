@@ -11,7 +11,8 @@ defmodule EEVM.Interpreter.InstructionTable do
     `EEVM.Gas.Static` for that hardfork
   - `min_depth` / `max_depth` — the stack depths the opcode can run at: it
     pops the Registry's `:inputs`, and must not leave more than 1024 items
-  - `arg` — `nil` in the table; a decoded program puts PUSH data here
+  - `arg` — `nil` in the table; a decoded program puts PUSH data and jump
+    targets here
 
   Bytes the hardfork does not define — unassigned bytes, and opcodes whose
   activating EIP (the Registry's `:eip` field) is not yet enabled — get the
@@ -31,8 +32,10 @@ defmodule EEVM.Interpreter.InstructionTable do
   alias EEVM.Interpreter.Instructions.Registry
   alias EEVM.Interpreter.Stack
 
+  @typedoc "An opcode, or one of the fused PUSH+JUMP(I) instructions of a program."
+  @type opcode :: non_neg_integer() | :jump_to | :jumpi_to
   @type instruction ::
-          {non_neg_integer(), non_neg_integer(), non_neg_integer(), non_neg_integer(), term()}
+          {opcode(), non_neg_integer(), non_neg_integer(), non_neg_integer(), term()}
   @type t :: tuple()
 
   @typedoc """
@@ -42,6 +45,8 @@ defmodule EEVM.Interpreter.InstructionTable do
   @type program :: tuple()
 
   @invalid 0xFE
+  @jump 0x56
+  @jumpi 0x57
 
   # A PUSH32 in the last code byte moves the pc 32 bytes past the end, so a
   # program ends with 33 `:end` entries rather than checking the pc's bound on
@@ -90,7 +95,15 @@ defmodule EEVM.Interpreter.InstructionTable do
   jump can land only on a real JUMPDEST (Yellow Paper §9.4.3). A PUSH cut
   short by the end of the code reads the missing bytes as zeros.
 
-  With `tracing?`, each instruction is wrapped as `{:trace, byte, instruction}`: the
+  Without `tracing?`, a PUSH directly followed by JUMP or JUMPI becomes one
+  instruction, `:jump_to` or `:jumpi_to`, which charges both opcodes' gas and
+  never puts the destination on the stack: Solidity emits that pair for nearly
+  every branch and internal call. Its `arg` keeps the PUSH, which the
+  interpreter runs on its own when the pair cannot run whole, so a failure is
+  reported at the opcode that fails.
+
+  With `tracing?`, nothing is fused, so the tracer sees every opcode, and
+  each instruction is wrapped as `{:trace, byte, instruction}`: the
   interpreter records a trace step for the wrapper, then runs the
   instruction. Untraced programs carry no tracing cost at all.
 
@@ -99,7 +112,7 @@ defmodule EEVM.Interpreter.InstructionTable do
       iex> code = <<0x60, 0x03, 0x56, 0x5B>>
       iex> program = InstructionTable.decode(code, table, false)
       iex> elem(program, 0)
-      {0x60, 3, 0, 1023, 3}
+      {:jump_to, 11, 0, 1023, {{0x60, 3, 0, 1023, 3}, 3}}
       iex> {elem(program, 1), elem(program, 4)}
       {:push_data, :end}
       iex> InstructionTable.decode(code, table, true) |> elem(0)
@@ -124,7 +137,12 @@ defmodule EEVM.Interpreter.InstructionTable do
 
     case rest do
       <<value::size(n)-unit(8), rest::binary>> ->
-        push = table |> elem(byte) |> with_value(value)
+        push =
+          table
+          |> elem(byte)
+          |> with_value(value)
+          |> fuse_jump(rest, pc + n + 1, table)
+
         decode(rest, pc + n + 1, table, push_data([push | acc], n))
 
       _truncated ->
@@ -143,4 +161,26 @@ defmodule EEVM.Interpreter.InstructionTable do
 
   defp push_data(acc, 0), do: acc
   defp push_data(acc, n), do: push_data([:push_data | acc], n - 1)
+
+  # `jump_pc` is the position of the JUMP or JUMPI after the PUSH. A fused
+  # JUMPI that falls through continues after it. Traced tables wrap their
+  # instructions, so their PUSHes never match here and nothing is fused.
+  defp fuse_jump(
+         {push_op, push_cost, _, push_max, dest} = push,
+         <<op, _::binary>>,
+         jump_pc,
+         table
+       )
+       when push_op in 0x60..0x7F and op in [@jump, @jumpi] do
+    {_, jump_cost, jump_min, _, _} = elem(table, op)
+    cost = push_cost + jump_cost
+    # The jump pops the pushed destination, so it needs one item less below it.
+    min_depth = jump_min - 1
+
+    if op == @jump,
+      do: {:jump_to, cost, min_depth, push_max, {push, dest}},
+      else: {:jumpi_to, cost, min_depth, push_max, {push, dest, jump_pc + 1}}
+  end
+
+  defp fuse_jump(push, _rest, _jump_pc, _table), do: push
 end
