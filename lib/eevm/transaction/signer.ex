@@ -155,14 +155,36 @@ defmodule EEVM.Transaction.Signer do
     Keccak.hash_256(<<0x04>> <> ExRLP.encode(payload))
   end
 
-  @doc "Recover the sender address, as an integer, from a signed transaction."
+  @doc """
+  Recover the sender address, as an integer, from a transaction signed for
+  chain `chain_id`.
+
+  A transaction signed for another chain fails with
+  `{:error, :invalid_chain_id}`, so it can't be replayed across chains: a
+  typed transaction's `chain_id`, or the chain id an EIP-155 legacy `v`
+  encodes, must equal `chain_id`. A pre-EIP-155 legacy transaction (`v` of
+  27 or 28) names no chain and is valid on any. Other legacy `v` values
+  fail with `{:error, :invalid_v}`.
+  """
   @spec recover_sender(Transaction.t(), non_neg_integer()) ::
           {:ok, Transaction.address()} | {:error, atom()}
   def recover_sender(tx, chain_id) do
-    with {:ok, y_parity, r, s} <- extract_signature(tx, chain_id) do
+    with :ok <- check_chain_id(tx, chain_id),
+         {:ok, y_parity, r, s} <- extract_signature(tx, chain_id) do
       recover(signing_hash(tx, chain_id), y_parity, r, s)
     end
   end
+
+  # execution-specs `check_transaction` raises WrongChainIdError when the
+  # transaction's chain id differs from the chain's, before recovering the
+  # sender. An EIP-155 `v` is chain_id * 2 + 35 + y_parity.
+  defp check_chain_id(%Legacy{v: v}, chain_id) when is_integer(v) and v >= 35 do
+    if div(v - 35, 2) == chain_id, do: :ok, else: {:error, :invalid_chain_id}
+  end
+
+  defp check_chain_id(%Legacy{}, _chain_id), do: :ok
+  defp check_chain_id(%{chain_id: chain_id}, chain_id), do: :ok
+  defp check_chain_id(_typed_tx, _chain_id), do: {:error, :invalid_chain_id}
 
   @doc """
   Recover the authority (signer) of an EIP-7702 authorization tuple.

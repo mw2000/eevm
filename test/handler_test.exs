@@ -5,7 +5,17 @@ defmodule EEVM.HandlerTest do
   alias EEVM.{BlockEnv, Config, Database, Delegation, Handler, Tracer, TransactionResult}
   alias EEVM.Crypto.{ECDSA, Keccak}
   alias EEVM.Database.InMemory
-  alias EEVM.Transaction.{Authorization, Blob, Envelope, FeeMarket, Legacy, SetCode, Signer}
+
+  alias EEVM.Transaction.{
+    AccessList,
+    Authorization,
+    Blob,
+    Envelope,
+    FeeMarket,
+    Legacy,
+    SetCode,
+    Signer
+  }
 
   doctest EEVM.Handler.PreExecution
   doctest EEVM.Handler.PostExecution
@@ -191,25 +201,86 @@ defmodule EEVM.HandlerTest do
     end
   end
 
+  # A transaction signed for one chain must not replay on another (#211):
+  # execution-specs check_transaction raises WrongChainIdError when the
+  # transaction's chain id differs from the chain's.
   describe "execute/4 — chain id" do
-    test "comes from the config and must match an EIP-155 signature" do
+    test "an EIP-155 legacy transaction runs only on the chain its v encodes" do
       {:ok, tx} =
         Signer.sign(
           %Legacy{gas_price: 1, gas_limit: 21_000, to: @recipient},
           @priv_key,
-          Config.new(:cancun, chain_id: 5)
+          Config.new(:cancun, chain_id: 1337)
         )
 
-      db = db_with_sender(balance: 1_000_000)
+      # v = 1337 * 2 + 35 + y_parity; chains 1336 and 1338 sit on either side.
+      assert tx.v in [2709, 2710]
+      assert {:ok, %TransactionResult{status: :success}} = run_on(tx, db_with_sender(), 1337)
 
-      assert {:ok, %TransactionResult{status: :success}} =
-               Handler.execute(tx, simple_block(), db, config: Config.new(:cancun, chain_id: 5))
-
-      assert {:error, :invalid_v} =
-               Handler.execute(tx, simple_block(), db, config: Config.new(:cancun, chain_id: 1))
+      for chain_id <- [1, 1336, 1338] do
+        assert {:error, :invalid_chain_id} = run_on(tx, db_with_sender(), chain_id)
+      end
 
       # The deprecated :chain_id option still overrides the config's.
-      assert {:ok, _} = Handler.execute(tx, simple_block(), db, config: Config.new(), chain_id: 5)
+      assert {:ok, _} =
+               Handler.execute(tx, simple_block(), db_with_sender(),
+                 config: Config.new(),
+                 chain_id: 1337
+               )
+    end
+
+    test "a pre-EIP-155 legacy transaction runs on any chain; a v below 35 otherwise is invalid" do
+      tx = pre_eip155_legacy(to: @recipient, gas_limit: 21_000)
+
+      for chain_id <- [1, 1337] do
+        assert {:ok, %TransactionResult{status: :success}} =
+                 run_on(tx, db_with_sender(), chain_id)
+      end
+
+      assert {:error, :invalid_v} = run_on(%{tx | v: 34}, db_with_sender(), 0)
+    end
+
+    test "a typed transaction runs only on the chain it names" do
+      fees = [max_fee_per_gas: 1, max_priority_fee_per_gas: 0, gas_limit: 100_000, to: @recipient]
+
+      txs = [
+        %AccessList{gas_price: 1, gas_limit: 100_000, to: @recipient},
+        struct!(FeeMarket, fees),
+        struct!(Blob, fees ++ [max_fee_per_blob_gas: 1, blob_versioned_hashes: [<<1, 1::248>>]]),
+        struct!(SetCode, fees ++ [authorization_list: [authorize(@delegate, 0)]])
+      ]
+
+      for tx <- txs do
+        {:ok, signed} = Signer.sign(tx, @priv_key, Config.new(:prague, chain_id: 1337))
+
+        assert {:ok, %TransactionResult{status: :success}} =
+                 run_on(signed, db_with_sender(), 1337)
+
+        for chain_id <- [1, 1338] do
+          assert {:error, :invalid_chain_id} = run_on(signed, db_with_sender(), chain_id),
+                 "#{inspect(tx.__struct__)} signed for chain 1337 ran on chain #{chain_id}"
+        end
+      end
+    end
+
+    # EIP-7702: a tuple for another chain is skipped; the transaction stays valid.
+    test "an authorization applies only for the chain it names, or for chain 0" do
+      authority = authority_address()
+      db = Database.put_code(db_with_sender(), @delegate, <<0x00>>)
+
+      for {auth_chain_id, tx_chain_id, delegated?} <- [
+            {1337, 1337, true},
+            {0, 1337, true},
+            {1337, 1, false}
+          ] do
+        tx = set_code_tx([authorize(@delegate, 0, auth_chain_id)], chain_id: tx_chain_id)
+
+        assert {:ok, %TransactionResult{status: :success} = result} =
+                 run_on(tx, db, tx_chain_id)
+
+        expected = if delegated?, do: Delegation.designator(@delegate), else: <<>>
+        assert Database.get_code(result.db, authority) == expected
+      end
     end
   end
 
@@ -716,13 +787,15 @@ defmodule EEVM.HandlerTest do
     Handler.execute(tx, simple_block(), db, config: Config.new(fork, chain_id: @chain_id))
   end
 
-  defp run_prague(tx, db) do
-    Handler.execute(tx, simple_block(), db, config: Config.new(:prague, chain_id: @chain_id))
+  defp run_prague(tx, db), do: run_on(tx, db, @chain_id)
+
+  defp run_on(tx, db, chain_id) do
+    Handler.execute(tx, simple_block(), db, config: Config.new(:prague, chain_id: chain_id))
   end
 
   defp set_code_tx(authorizations, opts \\ []) do
     tx = %SetCode{
-      chain_id: @chain_id,
+      chain_id: Keyword.get(opts, :chain_id, @chain_id),
       nonce: Keyword.get(opts, :nonce, 0),
       max_priority_fee_per_gas: 0,
       max_fee_per_gas: 1,

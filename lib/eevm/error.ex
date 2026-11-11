@@ -59,7 +59,8 @@ defmodule EEVM.Error do
   | `:invalid_rlp` | The payload isn't valid RLP |
   | `:invalid_rlp_integer` | An integer field has leading zero bytes (non-canonical RLP) |
   | `:invalid_fields` | The RLP list has the wrong number or shape of fields for its type |
-  | `:invalid_v` | A legacy `v` is neither 27/28 nor a valid EIP-155 value for the chain |
+  | `:invalid_v` | A legacy `v` is neither 27/28 nor an EIP-155 value (35 or more) |
+  | `:invalid_chain_id` | The transaction was signed for another chain: a typed transaction's `chain_id`, or the chain id in an EIP-155 legacy `v`, differs from the config's |
   | `:invalid_signature` | `r`, `s`, or `y_parity` is out of range (including high `s`, EIP-2), or no key recovers |
   | `:invalid_private_key` | `EEVM.Transaction.Signer.sign/3` got a key that is zero or not below the curve order |
 
@@ -188,6 +189,7 @@ defmodule EEVM.Error do
           | :invalid_rlp_integer
           | :invalid_fields
           | :invalid_v
+          | :invalid_chain_id
           | :invalid_signature
           | :invalid_private_key
 
@@ -286,6 +288,7 @@ defmodule EEVM.Error do
     invalid_rlp_integer: "non-canonical RLP integer",
     invalid_fields: "wrong transaction fields for its type",
     invalid_v: "invalid signature v value",
+    invalid_chain_id: "transaction signed for another chain id",
     invalid_signature: "invalid signature",
     invalid_private_key: "invalid private key",
     tx_type_not_supported: "transaction type not supported by this hardfork",
