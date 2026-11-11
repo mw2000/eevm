@@ -1,0 +1,4 @@
+%{
+  "ex_rlp": {:hex, :ex_rlp, "0.6.0", "985391d2356a7cb8712a4a9a2deb93f19f2fbca0323f5c1203fcaf64d077e31e", [:mix], [], "hexpm", "7135db93b861d9e76821039b60b00a6a22d2c4e751bf8c444bffe7a042f1abaf"},
+  "jason": {:hex, :jason, "1.4.5", "2e3a008590b0b8d7388c20293e9dcc9cf3e5d642fd2a114e4cbbb52e595d940a", [:mix], [{:decimal, "~> 1.0 or ~> 2.0 or ~> 3.0", [hex: :decimal, repo: "hexpm", optional: true]}], "hexpm", "b0c823996102bcd0239b3c2444eb00409b72f6a140c1950bc8b457d836b30684"},
+}

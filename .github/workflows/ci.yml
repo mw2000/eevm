@@ -237,6 +237,36 @@ jobs:
         name: eest-${{ matrix.release }}-${{ matrix.suite }}-tests-report
         path: eest_${{ matrix.release }}_${{ matrix.suite }}_tests.json
 
+  examples:
+    name: Examples (examples/devx)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: examples/devx
+
+    # A library user's project: the everyday tasks, using only eevm's public API.
+    steps:
+    - uses: actions/checkout@v4
+    - name: Set up Elixir
+      uses: erlef/setup-beam@v1
+      with:
+        elixir-version: '1.18.3'
+        otp-version: '27.0'
+    - name: Restore dependencies and build cache
+      uses: actions/cache@v4
+      with:
+        path: |
+          examples/devx/deps
+          examples/devx/_build
+        key: ${{ runner.os }}-examples-${{ hashFiles('mix.lock', 'examples/devx/mix.lock') }}
+        restore-keys: ${{ runner.os }}-examples-
+    - name: Install dependencies
+      run: mix deps.get
+    - name: Check formatting
+      run: mix format --check-formatted
+    - name: Run the examples (warnings as errors)
+      run: mix test --warnings-as-errors
+
   docs:
     name: Docs
     runs-on: ubuntu-latest

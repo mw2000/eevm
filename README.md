@@ -286,6 +286,15 @@ fails. After fixing failures, regenerate a list with the command in its header.
 `test/fixtures/*/skip.txt` lists the few fixtures that are not run at all because
 they abort the VM or cannot finish within the per-case timeout.
 
+## Examples
+
+[`examples/devx`](examples/devx) is a Mix project that depends on eevm by
+path and does seven everyday tasks with the public API only: run bytecode,
+deploy and call a solc-compiled ERC-20, sign and send legacy and EIP-1559
+transactions, trace, back the state with ETS, build and execute a block, and
+handle reverts and invalid transactions. Its tests assert every result, and CI
+runs them.
+
 ## Performance
 
 `mix bench` runs a Benchee suite of interpreter workloads (compute loops, memory,
