@@ -17,6 +17,7 @@ defmodule Devx.BlocksTest do
     assert result.state_root == block.header.state_root
 
     <<_::96, token::160>> = EEVM.keccak256(<<0xD6, 0x94, Devx.sender()::160, 0x80>>)
+    assert Enum.map(result.receipts, & &1.contract_address) == [token, nil]
     assert Devx.Erc20.balance_of(result.db, token, Devx.sender()) == 500
     assert EEVM.Database.get_balance(result.db, 0xB0B) == 5
   end

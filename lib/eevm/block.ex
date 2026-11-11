@@ -323,6 +323,7 @@ defmodule EEVM.Block do
              logs: result.logs,
              db: result.db,
              tx_type: result.receipt.tx_type,
+             contract_address: result.contract_address,
              trace: result.trace
            }
            |> put_receipt_state_root(config.hardfork)}

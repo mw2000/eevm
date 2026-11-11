@@ -25,8 +25,10 @@ defmodule EEVM.Block.Processor do
     `:gas_used`, `:logs`, and `:db`, plus an optional `:tx_type` (default
     `:legacy`) that selects the EIP-2718 receipt encoding, an optional
     `:state_root` that the receipt carries in place of its status (before
-    Byzantium, EIP-658), and an optional `:trace` (an `EEVM.Tracer`); when
-    any transaction returns one, `result.trace` lists them in order.
+    Byzantium, EIP-658), an optional `:contract_address` that the receipt
+    carries for a contract creation, and an optional `:trace` (an
+    `EEVM.Tracer`); when any transaction returns one, `result.trace` lists
+    them in order.
   - `:system_calls` — list of hooks, each `(%Database{}, %EEVM.BlockEnv{})
     -> %Database{}`. Executed in order, strictly before any transaction.
     The default is `[]`.
@@ -66,6 +68,7 @@ defmodule EEVM.Block.Processor do
           required(:db) => Database.t(),
           optional(:tx_type) => Receipt.tx_type(),
           optional(:state_root) => binary(),
+          optional(:contract_address) => non_neg_integer() | nil,
           optional(:trace) => EEVM.Tracer.t() | nil
         }
 
@@ -179,7 +182,8 @@ defmodule EEVM.Block.Processor do
               state_root: Map.get(tx_result, :state_root),
               cumulative_gas_used: new_cumulative,
               logs: logs,
-              logs_bloom: Bloom.from_logs(logs)
+              logs_bloom: Bloom.from_logs(logs),
+              contract_address: Map.get(tx_result, :contract_address)
             }
 
             trace = Map.get(tx_result, :trace)

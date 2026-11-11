@@ -79,6 +79,45 @@ defmodule EEVM.BlockTest do
       assert {:ok, _} = Block.execute(block, parent, db(), hardfork: :shanghai)
     end
 
+    # The CREATE address is keccak256(rlp([sender, nonce]))[12..] (Yellow
+    # Paper eq. 88); a reverted creation deploys nothing, so it has none.
+    test "receipts carry the address each successful creation deployed" do
+      deploy =
+        signed_transfer(
+          nonce: 0,
+          to: nil,
+          value: 0,
+          gas_limit: 100_000,
+          data: return_bytes(<<0xAA>>)
+        )
+
+      transfer = signed_transfer(nonce: 1)
+
+      reverted =
+        signed_transfer(
+          nonce: 2,
+          to: nil,
+          value: 0,
+          gas_limit: 100_000,
+          data: <<0x5F, 0x5F, 0xFD>>
+        )
+
+      {:ok, block, built} = build([deploy, transfer, reverted])
+
+      <<_::96, created::160>> = Keccak.hash_256(<<0xD6, 0x94, sender()::160, 0x80>>)
+
+      assert Enum.map(built.receipts, &{&1.status, &1.contract_address}) == [
+               {1, created},
+               {1, nil},
+               {0, nil}
+             ]
+
+      assert Database.get_code(built.db, created) == <<0xAA>>
+
+      {:ok, result} = Block.execute(block, parent(), db())
+      assert Enum.map(result.receipts, & &1.contract_address) == [created, nil, nil]
+    end
+
     test "a built block executes to the same commitments" do
       {:ok, block, built} = build([signed_transfer()])
 

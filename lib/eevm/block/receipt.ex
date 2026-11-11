@@ -18,6 +18,10 @@ defmodule EEVM.Block.Receipt do
   - `logs_bloom` — the 2048-bit bloom filter over this receipt's logs
     (`EEVM.Block.Bloom.from_logs(logs)`); stored pre-computed so block-level
     aggregation is a fast bytewise OR.
+  - `contract_address` — the address a successful contract-creation
+    transaction deployed to, as in `EEVM.TransactionResult`; `nil` for calls
+    and failed creations. Like geth's `contractAddress` it is derived data,
+    not part of the receipt's encoding or `receipts_root`.
 
   ## Wire encoding (EIP-2718)
 
@@ -43,7 +47,8 @@ defmodule EEVM.Block.Receipt do
           state_root: binary() | nil,
           cumulative_gas_used: non_neg_integer(),
           logs: [log()],
-          logs_bloom: Bloom.t()
+          logs_bloom: Bloom.t(),
+          contract_address: non_neg_integer() | nil
         }
 
   defstruct tx_type: :legacy,
@@ -51,7 +56,8 @@ defmodule EEVM.Block.Receipt do
             state_root: nil,
             cumulative_gas_used: 0,
             logs: [],
-            logs_bloom: <<0::2048>>
+            logs_bloom: <<0::2048>>,
+            contract_address: nil
 
   @type_access_list 0x01
   @type_fee_market 0x02

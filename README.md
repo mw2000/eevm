@@ -214,6 +214,10 @@ iex> {result.gas_used, EEVM.Database.get_balance(result.db, 0xB0B)}
 {21000, 1000}
 ```
 
+Each of `result.receipts` is an `EEVM.Block.Receipt`; for a successful
+contract creation its `contract_address` is the deployed address, as in
+`EEVM.TransactionResult`.
+
 `EEVM.Block.Processor.process_block/4` is the lower-level engine underneath; use
 it directly to plug in your own transaction executor.
 

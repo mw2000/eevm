@@ -61,13 +61,15 @@ defmodule EEVM.Handler.PostExecution do
 
     status = status(final_state.status)
     logs = if status == :success, do: Enum.reverse(final_state.substate.logs), else: []
+    contract_address = if status == :success, do: contract_address
 
     receipt =
       Receipt.new(
         tx_type: tx.type,
         status: if(status == :success, do: 1, else: 0),
         cumulative_gas_used: gas_used,
-        logs: logs
+        logs: logs,
+        contract_address: contract_address
       )
 
     {:ok,
@@ -76,7 +78,7 @@ defmodule EEVM.Handler.PostExecution do
        gas_used: gas_used,
        gas_refunded: max(final_state.frame.gas, 0),
        sender: sender,
-       contract_address: if(status == :success, do: contract_address, else: nil),
+       contract_address: contract_address,
        return_data:
          if(status in [:success, :revert], do: final_state.frame.return_data, else: <<>>),
        logs: logs,

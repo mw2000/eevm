@@ -11,7 +11,8 @@ defmodule EEVM.Block.Result do
     withdrawals, and the request system calls have been applied in order.
     `post_state_db` is a deprecated copy, kept for one minor version.
   - `receipts` — the per-transaction receipts, already carrying their
-    `cumulative_gas_used` figures.
+    `cumulative_gas_used` figures, and for each successful contract
+    creation the deployed `contract_address`.
   - `state_root` — post-execution world-state MPT root.
   - `receipts_root` — MPT root of `{rlp(index) => rlp(receipt)}`.
   - `transactions_root` — MPT root of `{rlp(index) => rlp(transaction)}`.
