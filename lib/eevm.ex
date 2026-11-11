@@ -41,6 +41,14 @@ defmodule EEVM do
   and `EEVM.SystemContracts` (genesis setup). Modules grouped under
   "Internals" in the docs are implementation details and may change in any
   release.
+
+  ## Errors
+
+  A mistake in the arguments your own code passes, such as a hex string
+  where `run/2`, `call/4`, or `create/3` take bytes, raises `ArgumentError`,
+  while anything that can arrive from outside, such as the raw signed bytes
+  `transact/4` takes, a block, or a database read, returns
+  `{:error, reason}` with a reason listed in `EEVM.Error`.
   """
 
   alias EEVM.Block.Bloom

@@ -28,8 +28,10 @@ minor version) before removing anything (#150).
   diagnostics), never on hot paths.
 - Public functions return `{:ok, value}` / `{:error, reason}`; opcode handlers
   return `{:ok, state}` or `{:error, reason, state}`. Chain fallible steps with
-  `with`. Raise only for programmer errors. Catalogue new error atoms, with a
-  message, in `EEVM.Error`.
+  `with`. Raise `ArgumentError` for mistakes in the caller's own arguments (a
+  hex string passed to `run/2`); return `{:error, reason}` for data that can
+  come from outside (raw transactions, blocks, backend reads). Catalogue new
+  error atoms, with a message, in `EEVM.Error`.
 - Give every public function `@spec` and `@doc` and every module `@moduledoc`,
   adding missing ones where you touch. Prefer doctests for small examples.
 - Cite the EIP or Yellow Paper section for non-obvious rules.
@@ -74,9 +76,8 @@ minor version) before removing anything (#150).
 
 Gate every fork-dependent rule on an `:eip_NNNN` flag in `@eip_activation`;
 never compare fork names directly. The `developing-eevm` skill
-(`.agents/skills/developing-eevm/`) has the steps for adding an opcode,
-precompile, or EIP, running and regenerating the conformance lists, and
-benchmarking.
+(`.agents/skills/developing-eevm/`) has the steps for opcodes, precompiles,
+EIPs, conformance lists, and benchmarking.
 
 ## Checks
 
@@ -110,12 +111,10 @@ commit's CI run passes.
   submodule is the legacy suite. CI's Conformance jobs fail on any failure a
   `known_failures*.txt` list doesn't cover; commit regenerated lists with the
   fix that changes them.
-- `test/docs/` runs the docs a user copies from: every `iex>` example in the
-  README, guides, and public modules, and every other ```` ```elixir ```` block
-  in the README and guides, in order, where a `#=> value` line asserts a match.
-  Mark a block that can't run alone with `<!-- docs-check: skip -->`. It also
-  lints that public pages never call Internals functions or use deprecated API,
-  and that public structs document every field.
+- `test/docs/` runs every README, guide, and public-module example (a
+  `#=> value` line asserts a match; skip a block with
+  `<!-- docs-check: skip -->`) and lints that public docs avoid Internals and
+  deprecated API and document every struct field.
 - Don't claim conformance the suites don't show.
 
 ## Workflow
