@@ -6,7 +6,7 @@ defmodule EEVM.CallResult do
   | Field | Description |
   |-------|-------------|
   | `status` | `:success`, `:revert`, or `{:halt, reason}` (see `t:status/0`) |
-  | `return_data` | Bytes from RETURN or REVERT; empty after a halt |
+  | `return_data` | Bytes from RETURN or REVERT (see `EEVM.revert_reason/1`); empty after a halt |
   | `gas_used` | Gas consumed, after the refund |
   | `gas_left` | Gas remaining from the `:gas` limit |
   | `logs` | Logs emitted, in order; empty unless `status` is `:success` |

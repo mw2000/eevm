@@ -77,7 +77,8 @@ defmodule EEVM.Handler.PostExecution do
        gas_refunded: max(final_state.frame.gas, 0),
        sender: sender,
        contract_address: if(status == :success, do: contract_address, else: nil),
-       return_data: if(status == :success, do: final_state.frame.return_data, else: <<>>),
+       return_data:
+         if(status in [:success, :revert], do: final_state.frame.return_data, else: <<>>),
        logs: logs,
        receipt: receipt,
        db: coinbase_credited_db,

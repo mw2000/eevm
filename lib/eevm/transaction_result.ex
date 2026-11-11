@@ -11,7 +11,7 @@ defmodule EEVM.TransactionResult do
   | `gas_refunded` | Gas left unused by execution |
   | `sender` | The recovered sender address |
   | `contract_address` | The deployed contract's address, for a successful creation |
-  | `return_data` | The top-level RETURN data on success, else empty |
+  | `return_data` | The top-level RETURN data, or the REVERT data when `status` is `:revert` (see `EEVM.revert_reason/1`); empty after a halt |
   | `logs` | Logs emitted, in order; empty unless `status` is `:success` |
   | `receipt` | The `EEVM.Block.Receipt`, with `cumulative_gas_used` equal to `gas_used` |
   | `db` | The `EEVM.Database` after the transaction, fees and refunds included; committed when the backend implements `c:EEVM.Database.commit/2` |

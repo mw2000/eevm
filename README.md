@@ -138,6 +138,21 @@ EEVM.StateRoot.compute_state_root(result.db) |> Base.encode16(case: :lower)
 #=> "7b838becc60c5d28adc4a332cd44cf603b4ef0e590f50a268de2457cbc78fa09"
 ```
 
+A reverted transaction keeps its REVERT data in `result.return_data`, as a
+reverted call does, and `EEVM.revert_reason/1` decodes Solidity's
+`Error(string)` and `Panic(uint256)` payloads, or returns a custom error's
+selector and arguments:
+
+```elixir
+# Revert with Panic(0x11), Solidity's arithmetic overflow: store the selector
+# and the code in memory, then REVERT with those 36 bytes.
+iex> code = <<0x63, 0x4E, 0x48, 0x7B, 0x71, 0x60, 224, 0x1B, 0x60, 0, 0x52,
+...>   0x60, 0x11, 0x60, 4, 0x52, 0x60, 36, 0x60, 0, 0xFD>>
+iex> {:ok, result} = EEVM.run(code)
+iex> {result.status, EEVM.revert_reason(result)}
+{:revert, {:panic, 0x11}}
+```
+
 Addresses are integers everywhere, transaction `to` included (`nil` creates a
 contract), and hashes and roots are 32-byte binaries. `EEVM.address/1` and
 `EEVM.hex/1` convert hex strings and binaries at the edges. `EEVM.transact/4`

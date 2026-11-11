@@ -187,6 +187,53 @@ defmodule EEVMTest do
     end
   end
 
+  describe "revert_reason/1" do
+    # The Error(string) example in the Solidity docs ("Panic via assert and
+    # Error via require"), for revert("Not enough Ether provided.").
+    @not_enough_ether Base.decode16!(
+                        "08c379a0" <>
+                          "0000000000000000000000000000000000000000000000000000000000000020" <>
+                          "000000000000000000000000000000000000000000000000000000000000001a" <>
+                          "4e6f7420656e6f7567682045746865722070726f76696465642e000000000000",
+                        case: :lower
+                      )
+
+    test "decodes Error(string) and Panic(uint256)" do
+      assert EEVM.revert_reason(@not_enough_ether) ==
+               {:error_string, "Not enough Ether provided."}
+
+      assert EEVM.revert_reason(<<0x4E487B71::32, 0x01::256>>) == {:panic, 0x01}
+    end
+
+    test "malformed or unknown payloads come back as custom or raw" do
+      custom = <<0xDEADBEEF::32, 7::256>>
+      assert EEVM.revert_reason(custom) == {:custom, <<0xDEADBEEF::32>>, <<7::256>>}
+
+      # Error(string) whose offset points past the data, and one whose length
+      # runs past it: one byte short of the 26 the vector declares.
+      bad_offset = <<0x08C379A0::32, 64::256, 0::256>>
+      assert {:custom, <<0x08C379A0::32>>, _} = EEVM.revert_reason(bad_offset)
+      truncated = binary_part(@not_enough_ether, 0, 4 + 64 + 25)
+      assert {:custom, <<0x08C379A0::32>>, _} = EEVM.revert_reason(truncated)
+
+      # Panic carries exactly one word.
+      assert {:custom, <<0x4E487B71::32>>, _} = EEVM.revert_reason(<<0x4E487B71::32, 1::256, 0>>)
+
+      assert EEVM.revert_reason(<<0xAB, 0xCD>>) == {:raw, <<0xAB, 0xCD>>}
+      assert EEVM.revert_reason(<<>>) == nil
+    end
+
+    test "reads a result's data only when it reverted" do
+      # PUSH1 1 PUSH1 0 RETURN: one byte of RETURN data, not a revert.
+      {:ok, returned} = EEVM.run(<<0x60, 1, 0x60, 0, 0xF3>>)
+      assert returned.return_data == <<0>>
+      assert EEVM.revert_reason(returned) == nil
+
+      reverted = %EEVM.TransactionResult{status: :revert, return_data: @not_enough_ether}
+      assert EEVM.revert_reason(reverted) == {:error_string, "Not enough Ether provided."}
+    end
+  end
+
   describe "address/1 and hex/1" do
     test "convert between hex, 20-byte binaries, and integer addresses" do
       address = 0x9D8A62F656A8D1615C1294FD71E9CFB3E4855A4F

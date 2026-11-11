@@ -80,6 +80,10 @@ defmodule EEVM do
     debug: false
   ]
 
+  # Solidity's built-in revert payloads: Error(string) and Panic(uint256).
+  @error_string_selector <<0x08, 0xC3, 0x79, 0xA0>>
+  @panic_selector <<0x4E, 0x48, 0x7B, 0x71>>
+
   # EIP-3860 (Shanghai): the most initcode a contract creation may carry.
   @max_initcode_size 49_152
 
@@ -316,6 +320,78 @@ defmodule EEVM do
   @spec transact(Handler.wire_tx(), BlockEnv.t(), Database.t(), Handler.opts()) ::
           {:ok, TransactionResult.t()} | {:error, EEVM.Error.reason()}
   defdelegate transact(tx, block, db, opts \\ []), to: Handler, as: :execute
+
+  @doc """
+  Decodes why a call reverted, from its REVERT data or from an
+  `EEVM.CallResult` or `EEVM.TransactionResult`.
+
+  Returns:
+
+    - `{:error_string, message}` for Solidity's `Error(string)`
+      (selector `0x08c379a0`), what `require(cond, "message")` and
+      `revert("message")` produce
+    - `{:panic, code}` for `Panic(uint256)` (selector `0x4e487b71`), such
+      as `0x01` for a failed `assert`, `0x11` for arithmetic overflow, and
+      `0x12` for division by zero
+    - `{:custom, selector, args}` for any other payload of four bytes or
+      more, such as a Solidity custom error or a malformed `Error(string)`
+    - `{:raw, data}` for one to three bytes
+    - `nil` for no data, or for a result whose `status` isn't `:revert`
+
+  ## Examples
+
+      iex> data = <<0x08C379A0::32, 32::256, 5::256, "nope!", 0::27*8>>
+      iex> EEVM.revert_reason(data)
+      {:error_string, "nope!"}
+
+      iex> EEVM.revert_reason(<<0x4E487B71::32, 0x12::256>>)
+      {:panic, 0x12}
+
+      iex> {:ok, result} = EEVM.run(<<0x60, 0, 0x60, 0, 0xFD>>)
+      iex> {result.status, EEVM.revert_reason(result)}
+      {:revert, nil}
+  """
+  @spec revert_reason(binary() | CallResult.t() | TransactionResult.t()) ::
+          {:error_string, String.t()}
+          | {:panic, non_neg_integer()}
+          | {:custom, <<_::32>>, binary()}
+          | {:raw, binary()}
+          | nil
+  def revert_reason(%CallResult{status: :revert, return_data: data}), do: revert_reason(data)
+
+  def revert_reason(%TransactionResult{status: :revert, return_data: data}),
+    do: revert_reason(data)
+
+  def revert_reason(%CallResult{}), do: nil
+  def revert_reason(%TransactionResult{}), do: nil
+  def revert_reason(<<>>), do: nil
+  def revert_reason(<<@panic_selector, code::256>>), do: {:panic, code}
+
+  def revert_reason(<<@error_string_selector, args::binary>> = data) do
+    case abi_bytes(args) do
+      {:ok, message} -> {:error_string, message}
+      :error -> revert_reason_custom(data)
+    end
+  end
+
+  def revert_reason(data) when is_binary(data), do: revert_reason_custom(data)
+
+  defp revert_reason_custom(<<selector::binary-size(4), args::binary>>),
+    do: {:custom, selector, args}
+
+  defp revert_reason_custom(data), do: {:raw, data}
+
+  # The ABI encoding of a lone `string`/`bytes` argument: a head word with
+  # the offset of the tail, then the length and the bytes (Solidity ABI spec).
+  defp abi_bytes(<<offset::256, _::binary>> = args) when offset <= byte_size(args) - 32 do
+    <<_::binary-size(offset), length::256, tail::binary>> = args
+
+    if length <= byte_size(tail),
+      do: {:ok, binary_part(tail, 0, length)},
+      else: :error
+  end
+
+  defp abi_bytes(_args), do: :error
 
   @doc """
   Returns an address as the integer eevm uses everywhere: from a hex string

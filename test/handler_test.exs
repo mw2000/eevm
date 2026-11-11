@@ -607,9 +607,12 @@ defmodule EEVM.HandlerTest do
   end
 
   describe "execute/4 — REVERT" do
-    test "marks status :revert and emits no logs" do
-      # PUSH1 0 PUSH1 0 REVERT
-      revert_code = <<0x60, 0x00, 0x60, 0x00, 0xFD>>
+    test "marks status :revert, emits no logs, and keeps the REVERT data" do
+      # Revert with Panic(0x11): PUSH4 0x4e487b71 PUSH1 224 SHL PUSH1 0 MSTORE
+      # PUSH1 0x11 PUSH1 4 MSTORE PUSH1 36 PUSH1 0 REVERT
+      revert_code =
+        <<0x63, 0x4E, 0x48, 0x7B, 0x71, 0x60, 224, 0x1B, 0x60, 0, 0x52, 0x60, 0x11, 0x60, 4, 0x52,
+          0x60, 36, 0x60, 0, 0xFD>>
 
       db =
         db_with_sender(balance: 10_000_000)
@@ -620,7 +623,8 @@ defmodule EEVM.HandlerTest do
       assert {:ok, result} = run(tx, db)
       assert result.status == :revert
       assert result.logs == []
-      assert result.return_data == <<>>
+      assert result.return_data == <<0x4E487B71::32, 0x11::256>>
+      assert EEVM.revert_reason(result) == {:panic, 0x11}
       # Sender's nonce was still bumped despite the revert.
       assert Database.get_nonce(result.db, sender_address()) == 1
     end
