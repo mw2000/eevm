@@ -46,7 +46,6 @@ defmodule Devx.TracingTest do
     assert {_trace, 22_160} = Tracing.run(@straight_line)
   end
 
-  @tag skip: "gas_cost is static only until #213"
   test "step costs add up to the gas used" do
     {trace, gas_used} = Tracing.run(@straight_line)
     assert Tracing.total_step_cost(trace) == gas_used

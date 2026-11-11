@@ -13,6 +13,31 @@ defmodule EEVM.Tracer do
       iex> for step <- EEVM.Tracer.steps(result.trace), do: {step.pc, step.op, step.stack}
       [{0, :PUSH1, []}, {2, :PUSH1, [1]}, {4, :ADD, [2, 1]}, {5, :STOP, [3]}]
 
+  ## Gas cost
+
+  A step's `gas_cost` is what geth's structLog reports as `gasCost`: the
+  static and dynamic gas the opcode charges, memory expansion included.
+
+  - CALL, CALLCODE, DELEGATECALL, and STATICCALL count the gas they forward
+    to the callee, as geth does. The callee's own steps spend it, and what
+    the callee leaves comes back to the caller, so the caller's next step
+    shows it in `gas_remaining`.
+  - CREATE and CREATE2 do not count the gas they forward to the init code,
+    as in geth, where the forwarding happens inside the opcode.
+  - A step that fails reports the cost it attempted, not the remaining gas
+    the failure burns: its static cost when its static gas or stack check
+    fails, and what it charged, failing charge included, when it runs out of
+    gas while running. INVALID costs 0.
+
+  So when no frame halts exceptionally and nothing is created, a
+  transaction's `gas_used` is its intrinsic gas plus the cost of all its
+  steps, less the gas each call forwards (the callee's steps count it again),
+  less the refund.
+
+  These are the semantics of geth's `core/vm/interpreter.go`, which reports
+  the constant gas plus the dynamic gas function's result, and of its
+  `makeCallVariantGasCost`, whose dynamic gas includes the forwarded gas.
+
   ## Performance
 
   Without `:tracer`, the interpreter skips all trace bookkeeping: no
@@ -32,7 +57,7 @@ defmodule EEVM.Tracer do
     | `op` | Opcode name as an atom, such as `:SSTORE`; `:UNKNOWN` for an undefined byte |
     | `op_byte` | The opcode byte |
     | `gas_remaining` | Gas left in the frame |
-    | `gas_cost` | The opcode's gas cost. For now this is the static cost only: memory expansion, cold access, SSTORE, and other dynamic costs are missing (#213). INVALID reports all remaining gas |
+    | `gas_cost` | The gas the opcode charged, static and dynamic, as geth's `gasCost` reports it: a CALL counts the gas it forwards, a CREATE does not (see "Gas cost" in `EEVM.Tracer`) |
     | `stack` | The stack, **top first** (`to_json/1` writes it bottom first, as EIP-3155 does) |
     | `memory_size` | Memory size in bytes |
     | `depth` | Call depth, 0 for the top-level frame (`to_json/1` writes it 1-based, as EIP-3155 does) |
@@ -81,20 +106,87 @@ defmodule EEVM.Tracer do
           refund: integer()
         }
 
-  @type t :: %__MODULE__{steps: [TraceStep.t()]}
+  # A step's cost is known only once the step is over, when its frame reaches
+  # its next step or ends. Until then the step is open: `open` holds one
+  # `{depth, index, gas_before, settled?}` per frame with an open step,
+  # innermost first, where `index` is the step's position in the trace.
+  # `settle/3` fixes a cost earlier, before gas that does not count toward it
+  # moves (see the moduledoc). `steps` holds the steps newest first; a step's
+  # cost goes into it directly while the step is the newest, and into `costs`,
+  # by index, once its callee's steps follow it.
+  @type t :: %__MODULE__{
+          steps: [TraceStep.t()],
+          count: non_neg_integer(),
+          open: [{non_neg_integer(), non_neg_integer(), non_neg_integer(), boolean()}],
+          costs: %{non_neg_integer() => non_neg_integer()}
+        }
 
-  defstruct steps: []
+  defstruct steps: [], count: 0, open: [], costs: %{}
 
   @doc "Returns an empty tracer. `tracer: true` is shorthand for `tracer: EEVM.Tracer.new()`."
   @spec new() :: t()
   def new, do: %__MODULE__{}
 
   @doc false
-  # Called by the interpreter for each step.
+  # Called by the interpreter for each step: records the step about to run.
+  # The previous step of the same frame is then over, and costs the gas the
+  # frame lost between the two steps, unless `settle/3` fixed its cost.
   @spec record(t(), TraceStep.t()) :: t()
-  def record(%__MODULE__{steps: steps} = tracer, %TraceStep{} = step) do
-    %{tracer | steps: [step | steps]}
+  def record(%__MODULE__{} = tracer, %TraceStep{depth: depth, gas_remaining: gas} = step) do
+    {tracer, outer} =
+      case tracer.open do
+        [{^depth, _index, _gas_before, _settled?} = entry | outer] ->
+          {finish(tracer, entry, gas), outer}
+
+        open ->
+          {tracer, open}
+      end
+
+    %{
+      tracer
+      | steps: [step | tracer.steps],
+        count: tracer.count + 1,
+        open: [{depth, tracer.count, gas, false} | outer]
+    }
   end
+
+  # The interpreter's hooks: `EEVM.Interpreter.MachineState.settle_trace_cost/1`
+  # and `EEVM.Interpreter.run_loop/1` call these.
+
+  # Fixes the cost of the open step of the frame at `depth` as the gas it has
+  # charged when `gas` is left. Later changes to the frame's gas, such as gas a
+  # callee hands back or the gas an exceptional halt burns, do not change it.
+  # Only the first call for a step counts.
+  @doc false
+  @spec settle(t(), non_neg_integer(), integer()) :: t()
+  def settle(%__MODULE__{open: [{depth, index, gas_before, false} | outer]} = tracer, depth, gas) do
+    tracer = put_cost(tracer, index, gas_before - gas)
+    %{tracer | open: [{depth, index, gas_before, true} | outer]}
+  end
+
+  def settle(%__MODULE__{} = tracer, _depth, _gas), do: tracer
+
+  # Ends the frame at `depth`, which has `gas` left: its last step costs the
+  # gas the frame lost since that step began, unless `settle/3` fixed it.
+  @doc false
+  @spec close_frame(t(), non_neg_integer(), non_neg_integer()) :: t()
+  def close_frame(%__MODULE__{open: [{depth, _, _, _} = entry | outer]} = tracer, depth, gas),
+    do: %{finish(tracer, entry, gas) | open: outer}
+
+  # A frame that recorded no step, such as an empty account's, has none open.
+  def close_frame(%__MODULE__{} = tracer, _depth, _gas), do: tracer
+
+  defp finish(tracer, {_depth, _index, _gas_before, true}, _gas_after), do: tracer
+
+  defp finish(tracer, {_depth, index, gas_before, false}, gas_after),
+    do: put_cost(tracer, index, gas_before - gas_after)
+
+  defp put_cost(%__MODULE__{count: count, steps: [last | rest]} = tracer, index, cost)
+       when index == count - 1,
+       do: %{tracer | steps: [%{last | gas_cost: cost} | rest]}
+
+  defp put_cost(%__MODULE__{costs: costs} = tracer, index, cost),
+    do: %{tracer | costs: Map.put(costs, index, cost)}
 
   @doc false
   # Called by the interpreter: marks the most recently recorded step with an error reason.
@@ -107,7 +199,18 @@ defmodule EEVM.Tracer do
 
   @doc "Returns the recorded steps in execution order."
   @spec steps(t()) :: [TraceStep.t()]
-  def steps(%__MODULE__{steps: steps}), do: Enum.reverse(steps)
+  def steps(%__MODULE__{steps: steps, costs: costs}) when costs == %{}, do: Enum.reverse(steps)
+
+  def steps(%__MODULE__{steps: steps, costs: costs}) do
+    steps
+    |> Enum.reverse()
+    |> Enum.with_index(fn step, index ->
+      case costs do
+        %{^index => cost} -> %{step | gas_cost: cost}
+        _ -> step
+      end
+    end)
+  end
 
   @doc """
   Returns the opcode name atom for a byte, or `:UNKNOWN` for an undefined one.

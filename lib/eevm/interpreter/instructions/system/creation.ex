@@ -110,7 +110,11 @@ defmodule EEVM.Interpreter.Instructions.System.Creation do
             else: 0
 
         case MachineState.consume_gas(state_after_cost, initcode_cost) do
-          {:ok, state_after_initcode_cost} ->
+          {:ok, state_after_charges} ->
+            # A trace does not count the gas forwarded to the init code in the
+            # CREATE's cost, as geth's gasCost does not.
+            state_after_initcode_cost = MachineState.settle_trace_cost(state_after_charges)
+
             # EIP-150: the init code gets all but 1/64 of the remaining gas
             # (all of it before Tangerine Whistle).
             available_gas = state_after_initcode_cost.frame.gas

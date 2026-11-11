@@ -206,18 +206,20 @@ defmodule EEVM.Interpreter.Instructions.System.Calls do
           state_after_cost.env.config.hardfork
         )
 
-      case MachineState.consume_gas(
-             MachineState.update_frame(state_after_cost, &%{&1 | memory: memory_after_read}),
-             forwarded_gas
-           ) do
+      # A trace counts the forwarded gas in the CALL's cost, as geth's gasCost
+      # does; unused gas then comes back after the cost is fixed.
+      case state_after_cost
+           |> MachineState.update_frame(&%{&1 | memory: memory_after_read})
+           |> MachineState.consume_gas(forwarded_gas)
+           |> settle_trace_cost() do
         # The depth limit is checked only after access, memory, and value costs
         # are charged; the forwarded gas comes back unused, plus the stipend
         # (execution-specs `call`: `evm.gas_left += message_call_gas.sub_call`).
-        {:ok, _state_after_forward} when depth >= @max_call_depth ->
+        {:ok, state_after_forward} when depth >= @max_call_depth ->
           call_failed(
             MachineState.update_frame(
-              state_after_cost,
-              &%{&1 | memory: memory_after_read, gas: &1.gas + Dynamic.call_stipend(value)}
+              state_after_forward,
+              &%{&1 | gas: &1.gas + forwarded_gas + Dynamic.call_stipend(value)}
             ),
             stack,
             ret_offset,
@@ -346,21 +348,20 @@ defmodule EEVM.Interpreter.Instructions.System.Calls do
       # forwarded gas and the stipend come back.
       {:error, :insufficient_balance} ->
         {_calldata, memory} = Memory.read_bytes(state.frame.memory, args_offset, args_size)
+        gas_after_cost = state.frame.gas - call_cost
 
-        call_failed(
-          MachineState.update_frame(
-            state,
-            &%{
-              &1
-              | stack: stack,
-                memory: memory,
-                gas: &1.gas - call_cost + Dynamic.call_stipend(value)
-            }
-          ),
-          stack,
-          ret_offset,
-          ret_size
+        forwarded_gas =
+          Dynamic.call_forwarded_gas(gas_after_cost, gas_requested, state.env.config.hardfork)
+
+        state
+        |> MachineState.update_frame(
+          &%{&1 | stack: stack, memory: memory, gas: gas_after_cost - forwarded_gas}
         )
+        |> MachineState.settle_trace_cost()
+        |> MachineState.update_frame(
+          &%{&1 | gas: &1.gas + forwarded_gas + Dynamic.call_stipend(value)}
+        )
+        |> call_failed(stack, ret_offset, ret_size)
 
       {:error, :out_of_gas, halted_state} ->
         {:error, :out_of_gas, halted_state}
@@ -414,19 +415,21 @@ defmodule EEVM.Interpreter.Instructions.System.Calls do
           state_after_cost.env.config.hardfork
         )
 
-      case MachineState.consume_gas(
-             MachineState.update_frame(state_after_cost, &%{&1 | memory: memory_after_read}),
-             forwarded_gas
-           ) do
+      # A trace counts the forwarded gas in the CALL's cost, as geth's gasCost
+      # does; unused gas then comes back after the cost is fixed.
+      case state_after_cost
+           |> MachineState.update_frame(&%{&1 | memory: memory_after_read})
+           |> MachineState.consume_gas(forwarded_gas)
+           |> settle_trace_cost() do
         # The depth limit and CALLCODE's balance check come only after access,
         # memory, and value costs are charged; the forwarded gas comes back
         # unused, plus the stipend (execution-specs `callcode`).
-        {:ok, _state_after_forward}
+        {:ok, state_after_forward}
         when depth >= @max_call_depth or (charge_value_cost? and insufficient_balance?) ->
           call_failed(
             MachineState.update_frame(
-              state_after_cost,
-              &%{&1 | memory: memory_after_read, gas: &1.gas + stipend}
+              state_after_forward,
+              &%{&1 | gas: &1.gas + forwarded_gas + stipend}
             ),
             stack,
             ret_offset,
@@ -548,6 +551,9 @@ defmodule EEVM.Interpreter.Instructions.System.Calls do
         {:error, :out_of_gas, halted_state}
     end
   end
+
+  defp settle_trace_cost({:ok, state}), do: {:ok, MachineState.settle_trace_cost(state)}
+  defp settle_trace_cost(error), do: error
 
   # Only STOP/RETURN and REVERT hand unused gas back to the caller; an exceptional
   # halt consumes everything forwarded to the child.

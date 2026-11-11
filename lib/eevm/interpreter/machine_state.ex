@@ -169,8 +169,9 @@ defmodule EEVM.Interpreter.MachineState do
     {:ok, %{state | frame: %{frame | gas: gas - cost}}}
   end
 
-  def consume_gas(state, _cost) do
-    {:error, :out_of_gas, halt(state, :out_of_gas)}
+  # A trace reports the failing charge as attempted (see `EEVM.Tracer`).
+  def consume_gas(%__MODULE__{frame: %Frame{gas: gas}} = state, cost) do
+    {:error, :out_of_gas, state |> settle_trace(gas - cost) |> halt(:out_of_gas)}
   end
 
   @doc "Returns the gas remaining."
@@ -203,9 +204,25 @@ defmodule EEVM.Interpreter.MachineState do
     %{state | status: status}
   end
 
-  def halt(state, status) do
-    %{update_frame(state, &%{&1 | gas: 0, return_data: <<>>}) | status: status}
+  def halt(%__MODULE__{frame: frame} = state, status) do
+    state = settle_trace(state, frame.gas)
+    %{state | frame: %{frame | gas: 0, return_data: <<>>}, status: status}
   end
+
+  @doc """
+  Fixes the trace cost of the opcode running now at the gas it has charged so
+  far, so later changes to the frame's gas do not count toward it. CALL
+  settles once it has charged the gas it forwards, and CREATE before it
+  forwards any, as geth's gasCost counts them (see `EEVM.Tracer`). Does
+  nothing when the state has no tracer.
+  """
+  @spec settle_trace_cost(t()) :: t()
+  def settle_trace_cost(%__MODULE__{frame: frame} = state), do: settle_trace(state, frame.gas)
+
+  defp settle_trace(%__MODULE__{tracer: nil} = state, _gas), do: state
+
+  defp settle_trace(%__MODULE__{tracer: tracer, frame: frame} = state, gas),
+    do: %{state | tracer: Tracer.settle(tracer, frame.depth, gas)}
 
   @doc "Marks an address as touched for EIP-161 post-transaction cleanup."
   @spec touch_address(t(), non_neg_integer()) :: t()

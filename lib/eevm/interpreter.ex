@@ -33,7 +33,7 @@ defmodule EEVM.Interpreter do
   # larger integer lives on the heap, so subtracting each opcode's cost from it
   # would allocate on every opcode, and state tests routinely give a
   # transaction 2^63 - 1 gas (loopMul ran 1.65x slower). The register is
-  # refilled from `frame.gas` when it runs out (`out_of_gas/5`), so opcodes
+  # refilled from `frame.gas` when it runs out (`execute/7`), so opcodes
   # never see the window.
   @gas_window (1 <<< 59) - 1
 
@@ -97,10 +97,14 @@ defmodule EEVM.Interpreter do
   transaction handler; it is not part of the public API — use `run/2`.
   """
   @spec run_loop(MachineState.t()) :: MachineState.t()
-  def run_loop(%MachineState{status: :running, frame: %{program: nil}} = state),
-    do: state |> load_program() |> run_loop()
+  def run_loop(%MachineState{} = state), do: state |> resume() |> close_trace()
 
-  def run_loop(%MachineState{status: :running, frame: frame} = state) do
+  # Runs the frame from its pc until it halts. State opcodes leave the loop
+  # (`sync/5`) and come back through here.
+  defp resume(%MachineState{status: :running, frame: %{program: nil}} = state),
+    do: state |> load_program() |> resume()
+
+  defp resume(%MachineState{status: :running, frame: frame} = state) do
     %Stack{elements: stack, size: depth} = frame.stack
     gas = min(frame.gas, @gas_window)
     state = %{state | frame: %{frame | gas: frame.gas - gas}}
@@ -115,7 +119,13 @@ defmodule EEVM.Interpreter do
     loop(state, program, frame.pc, gas, stack, depth)
   end
 
-  def run_loop(state), do: state
+  defp resume(state), do: state
+
+  # The frame's last step costs what the frame lost since it began.
+  defp close_trace(%MachineState{tracer: nil} = state), do: state
+
+  defp close_trace(%MachineState{tracer: tracer, frame: frame} = state),
+    do: %{state | tracer: Tracer.close_frame(tracer, frame.depth, frame.gas)}
 
   # Settles the transaction's refund counter (Prague `process_transaction`):
   # the EIP-7702 authorization refund always counts, the execution refund only
@@ -332,11 +342,37 @@ defmodule EEVM.Interpreter do
        when fused in [:jump_to, :jumpi_to],
        do: run(elem(arg, 0), state, program, pc, gas, stack, depth)
 
-  defp execute({_op, cost, min_depth, _max, _arg}, state, _program, pc, gas, stack, depth) do
+  # An instruction that fails its checks. When the register cannot pay for it,
+  # it is refilled from the gas held back above `@gas_window` and the
+  # instruction retried; with none held back, or on a stack check, the frame
+  # halts. A trace reports the static cost the failing step attempted, as
+  # geth does (see `EEVM.Tracer`), so the halt starts from the register less
+  # that cost.
+  defp execute(
+         {_op, cost, min_depth, _max, _arg} = instruction,
+         state,
+         program,
+         pc,
+         gas,
+         stack,
+         depth
+       ) do
+    held_back = state.frame.gas
+
     cond do
-      cost > gas -> out_of_gas(state, pc, gas, stack, depth)
-      depth < min_depth -> halt(state, :stack_underflow, pc, gas, stack, depth)
-      true -> halt(state, :stack_overflow, pc, gas, stack, depth)
+      cost > gas and held_back > 0 ->
+        refill = min(held_back, @gas_window - gas)
+        state = MachineState.update_frame(state, &%{&1 | gas: held_back - refill})
+        run(instruction, state, program, pc, gas + refill, stack, depth)
+
+      cost > gas ->
+        halt(state, :out_of_gas, pc, gas - cost, stack, depth)
+
+      depth < min_depth ->
+        halt(state, :stack_underflow, pc, gas - cost, stack, depth)
+
+      true ->
+        halt(state, :stack_overflow, pc, gas - cost, stack, depth)
     end
   end
 
@@ -455,7 +491,7 @@ defmodule EEVM.Interpreter do
     end
   end
 
-  defp state_op_result({:ok, state}), do: run_loop(state)
+  defp state_op_result({:ok, state}), do: resume(state)
   defp state_op_result({:error, :out_of_gas, state}), do: annotate_last_error(state, :out_of_gas)
 
   defp state_op_result({:error, reason, state}),
@@ -467,15 +503,8 @@ defmodule EEVM.Interpreter do
     %{state | frame: %{frame | pc: pc, gas: frame.gas + gas, stack: stack}}
   end
 
-  # The register cannot pay for the opcode: refill it from the gas held back
-  # above `@gas_window` and retry, or halt when there is none.
-  defp out_of_gas(%MachineState{frame: %{gas: 0}} = state, pc, gas, stack, depth),
-    do: halt(state, :out_of_gas, pc, gas, stack, depth)
-
-  defp out_of_gas(state, pc, gas, stack, depth),
-    do: state |> sync(pc, gas, stack, depth) |> run_loop()
-
   # An exceptional halt: `MachineState.halt/2` burns the frame's remaining gas.
+  # `gas` may be below zero by the cost of the failed instruction.
   defp halt(state, reason, pc, gas, stack, depth) do
     state
     |> sync(pc, gas, stack, depth)
@@ -503,8 +532,8 @@ defmodule EEVM.Interpreter do
       op: Tracer.op_name(byte),
       op_byte: byte,
       gas_remaining: frame.gas + gas,
-      # INVALID consumes all remaining gas.
-      gas_cost: if(byte == 0xFE, do: frame.gas + gas, else: cost),
+      # The static cost until the step is over (see `EEVM.Tracer`).
+      gas_cost: cost,
       stack: stack,
       memory_size: Memory.size(frame.memory),
       depth: frame.depth,

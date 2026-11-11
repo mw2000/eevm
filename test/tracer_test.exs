@@ -110,6 +110,175 @@ defmodule EEVM.TracerTest do
     end
   end
 
+  describe "gas cost" do
+    alias EEVM.BlockEnv
+    alias EEVM.Crypto.{ECDSA, Keccak}
+    alias EEVM.Database.InMemory
+    alias EEVM.Transaction.{Legacy, Signer}
+
+    @private_key <<0x46::256>>
+    @block BlockEnv.new(gas_limit: 30_000_000, base_fee: 0, coinbase: 0xC0F0)
+
+    test "counts dynamic gas: storage, memory expansion, and hashed words" do
+      # The snippet from #213: PUSH1 5 PUSH1 0 SSTORE; PUSH1 1 PUSH1 0 MSTORE;
+      # PUSH1 32 PUSH1 0 KECCAK256; STOP.
+      code = <<0x60, 5, 0x60, 0, 0x55, 0x60, 1, 0x60, 0, 0x52, 0x60, 0x20, 0x60, 0, 0x20, 0x00>>
+      {:ok, result} = EEVM.run(code, tracer: true)
+      steps = Tracer.steps(result.trace)
+
+      # EIP-2929 cold slot 2,100 + EIP-2200 set 20,000; MSTORE 3 + one new
+      # memory word 3; KECCAK256 30 + 6 per word (Yellow Paper Appendix G).
+      assert Enum.map(steps, &{&1.op, &1.gas_cost}) ==
+               [PUSH1: 3, PUSH1: 3, SSTORE: 22_100, PUSH1: 3, PUSH1: 3, MSTORE: 6] ++
+                 [PUSH1: 3, PUSH1: 3, KECCAK256: 36, STOP: 0]
+
+      assert total_cost(steps) == result.gas_used
+    end
+
+    test "an ERC-20 transfer reconciles with intrinsic gas and the refund" do
+      sender = address_of(@private_key)
+      token = 0x70CE
+      recipient = 0xB0B
+      sender_slot = balance_slot(sender)
+
+      # The whole balance moves, so the sender's slot is cleared.
+      db =
+        InMemory.new(
+          accounts: %{sender => %{balance: 10 ** 18}, token => %{nonce: 1, code: erc20()}},
+          storage: %{token => %{sender_slot => 1_000}}
+        )
+
+      data = <<0xA9059CBB::32, recipient::256, 1_000::256>>
+
+      {:ok, result} =
+        EEVM.transact(signed_tx(token, data), @block, db, hardfork: :cancun, tracer: true)
+
+      assert result.status == :success
+      steps = Tracer.steps(result.trace)
+
+      # EIP-3529: clearing a slot set before the transaction refunds 4,800.
+      assert total_cost(steps) + intrinsic_gas(data) - 4_800 == result.gas_used
+      assert result.gas_used == 45_674
+    end
+
+    test "CALL counts the gas it forwards, and a nested call reconciles" do
+      callee = 0xB
+      # Callee: SSTORE 1 into a fresh slot, then RETURN nothing.
+      callee_code = <<0x60, 1, 0x60, 0, 0x55, 0x60, 0, 0x60, 0, 0xF3>>
+
+      # CALL(0xFFFF, callee, 0, 0, 0, 0, 0); POP; clear slot 0; STOP.
+      caller_code =
+        <<0x60, 0, 0x60, 0, 0x60, 0, 0x60, 0, 0x60, 0, 0x60, callee, 0x61, 0xFF, 0xFF, 0xF1>> <>
+          <<0x50, 0x60, 0, 0x60, 0, 0x55, 0x00>>
+
+      sender = address_of(@private_key)
+
+      db =
+        InMemory.new(
+          accounts: %{
+            sender => %{balance: 10 ** 18},
+            0xA => %{code: caller_code},
+            callee => %{code: callee_code}
+          },
+          storage: %{0xA => %{0 => 7}}
+        )
+
+      {:ok, result} =
+        EEVM.transact(signed_tx(0xA, <<>>), @block, db, hardfork: :cancun, tracer: true)
+
+      assert result.status == :success
+      steps = Tracer.steps(result.trace)
+
+      call = Enum.find(steps, &(&1.op == :CALL))
+      [callee_first | _] = callee_steps = Enum.filter(steps, &(&1.depth == 1))
+      assert Enum.map(callee_steps, & &1.op) == [:PUSH1, :PUSH1, :SSTORE, :PUSH1, :PUSH1, :RETURN]
+
+      # As in geth: EIP-2929 cold account access 2,600 plus the 0xFFFF forwarded,
+      # which is less than all but 1/64 of the gas left (EIP-150).
+      forwarded = 0xFFFF
+      assert callee_first.gas_remaining == forwarded
+      assert call.gas_cost == 2_600 + forwarded
+
+      # The callee's own steps spend the forwarded gas, so it counts once.
+      assert total_cost(steps) - forwarded + 21_000 - 4_800 == result.gas_used
+    end
+
+    test "CREATE does not count the gas it forwards to the init code" do
+      # Init code: RETURN nothing (5 bytes), stored at memory 27..31, then
+      # CREATE(0, 27, 5); STOP.
+      code =
+        <<0x64, 0x60, 0, 0x60, 0, 0xF3, 0x60, 0, 0x52>> <>
+          <<0x60, 5, 0x60, 27, 0x60, 0, 0xF0, 0x00>>
+
+      {_state, tracer} = trace_code(code, hardfork: :cancun)
+      steps = Tracer.steps(tracer)
+
+      # 32,000, plus EIP-3860's 2 per init code word; memory is already paid.
+      assert Enum.find(steps, &(&1.op == :CREATE)).gas_cost == 32_002
+
+      assert steps |> Enum.filter(&(&1.depth == 1)) |> Enum.map(& &1.op) == [
+               :PUSH1,
+               :PUSH1,
+               :RETURN
+             ]
+    end
+
+    test "a step that runs out of gas reports the cost it attempted" do
+      # PUSH1 1, PUSH3 0xFFFFFF, MSTORE: memory would grow to 0xFFFFFF + 32
+      # bytes, 524,289 words.
+      {state, tracer} = trace_code(<<0x60, 1, 0x62, 0xFF, 0xFF, 0xFF, 0x52>>, gas: 10_000)
+      assert state.status == :out_of_gas
+      mstore = List.last(Tracer.steps(tracer))
+
+      # 3 + memory cost 3 * w + w^2 / 512 for w = 524,289 (Yellow Paper eq. 326).
+      assert {mstore.op, mstore.error, mstore.gas_cost} ==
+               {:MSTORE, :out_of_gas, 3 + 3 * 524_289 + div(524_289 * 524_289, 512)}
+    end
+
+    test "a step that fails its stack check reports its static cost" do
+      {_state, tracer} = trace_code(<<0x01>>)
+      assert [%TraceStep{op: :ADD, gas_cost: 3, error: :stack_underflow}] = Tracer.steps(tracer)
+    end
+
+    defp total_cost(steps), do: steps |> Enum.map(& &1.gas_cost) |> Enum.sum()
+
+    # EIP-2028 calldata cost on top of the 21,000 base.
+    defp intrinsic_gas(data) do
+      for <<byte <- data>>, reduce: 21_000 do
+        gas -> gas + if(byte == 0, do: 4, else: 16)
+      end
+    end
+
+    defp address_of(key) do
+      {:ok, {x, y}} = ECDSA.public_key(:secp256k1, key)
+      <<_::binary-12, address::160>> = Keccak.hash_256(<<x::256, y::256>>)
+      address
+    end
+
+    defp signed_tx(to, data) do
+      tx = %Legacy{nonce: 0, gas_price: 1, gas_limit: 200_000, to: to, value: 0, data: data}
+
+      {:ok, {r, s, recovery_id}} =
+        ECDSA.sign(:secp256k1, Signer.signing_hash(tx, 1), @private_key)
+
+      %{tx | v: 37 + recovery_id, r: r, s: s}
+    end
+
+    defp balance_slot(owner), do: :binary.decode_unsigned(Keccak.hash_256(<<owner::256, 0::256>>))
+
+    # transfer(to, amount) with balances at keccak256(owner . 0); emits
+    # Transfer(from, to, amount) and returns true: the `erc20` program of
+    # bench/interpreter_bench.exs.
+    defp erc20 do
+      Base.decode16!(
+        "60003560E01C63A9059CBB146100155760006000FD5B336000526040600020805460243580821061" <>
+          "0079578091039091556004356000526040600020805482019055600052600435337FDDF252AD1BE2" <>
+          "C89B69C2B068FC378DAA952BA7F163C4A11628F55A4DF523B3EF60206000A3600160005260206000" <>
+          "F35B60006000FD"
+      )
+    end
+  end
+
   describe "nested calls track depth" do
     test "STATICCALL into a contract bumps depth in the child's trace" do
       alias EEVM.Context.Contract
