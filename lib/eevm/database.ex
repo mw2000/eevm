@@ -2,6 +2,11 @@ defmodule EEVM.Database do
   @moduledoc """
   World state: a read-only backend plus eevm's own write overlay.
 
+  It inspects as its backend and a count of pending writes, such as
+  `#EEVM.Database<EEVM.Database.InMemory, pending writes to 2 accounts and 1 storage slot>`;
+  read state with this module's functions, list the writes with
+  `changes/1`, or pass `structs: false` to `inspect/2` to see every field.
+
   A backend implements this behaviour's read callbacks, `c:account/2`,
   `c:code/2`, `c:storage/3`, and `c:block_hash/2`. eevm never writes to it
   during execution: every balance, nonce, code, and storage write lands in
@@ -104,6 +109,38 @@ defmodule EEVM.Database do
   # `tries` caches the hashed state tries for `EEVM.StateRoot`; nil until a
   # state root is computed.
   defstruct [:impl, :state, :tries, accounts: %{}, storage: %{}, destroyed: MapSet.new()]
+
+  # Results carry a database, so inspecting one would otherwise print the
+  # whole backend state and the cached tries. `inspect(db, structs: false)`
+  # shows everything.
+  defimpl Inspect do
+    import Inspect.Algebra
+
+    def inspect(%EEVM.Database{} = db, opts) do
+      addresses =
+        db.accounts
+        |> Map.keys()
+        |> Enum.concat(Map.keys(db.storage))
+        |> Enum.concat(db.destroyed)
+        |> Enum.uniq()
+
+      slots = db.storage |> Map.values() |> Enum.map(&map_size/1) |> Enum.sum()
+
+      writes =
+        case {length(addresses), slots} do
+          {0, _} ->
+            "no pending writes"
+
+          {accounts, slots} ->
+            "pending writes to #{plural(accounts, "account")} and #{plural(slots, "storage slot")}"
+        end
+
+      concat(["#EEVM.Database<", to_doc(db.impl, opts), ", ", writes, ">"])
+    end
+
+    defp plural(1, noun), do: "1 #{noun}"
+    defp plural(n, noun), do: "#{n} #{noun}s"
+  end
 
   # ---------------------------------------------------------------------------
   # Callbacks

@@ -43,6 +43,8 @@ defmodule EEVM.Block.Result do
           post_state_db: Database.t()
         }
 
+  # The deprecated copy would print the database twice.
+  @derive {Inspect, except: [:post_state_db]}
   defstruct [
     :db,
     :receipts,

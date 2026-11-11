@@ -47,6 +47,8 @@ defmodule EEVM.TransactionResult do
           logs_bloom: Bloom.t()
         }
 
+  # The deprecated copies would print the database and the bloom twice.
+  @derive {Inspect, except: [:post_state_db, :logs_bloom]}
   defstruct [
     :status,
     :gas_used,

@@ -525,5 +525,27 @@ defmodule EEVM.DatabaseTest do
       assert {:ok, %Database{}} = Database.transfer(db, 1, 2, 0)
       assert %Database{} = Database.storage_store(db, 1, 0, 0)
     end
+
+    test "inspects as its backend and its pending writes, never the backend state" do
+      db = InMemory.new(accounts: %{0xBEEF => %{balance: 123_456_789}})
+      assert inspect(db) == "#EEVM.Database<EEVM.Database.InMemory, no pending writes>"
+
+      db = db |> Database.set_balance(0xA, 1) |> Database.storage_store(0xB, 7, 9)
+
+      assert inspect(db) ==
+               "#EEVM.Database<EEVM.Database.InMemory, pending writes to 2 accounts and 1 storage slot>"
+
+      # A result shows its database the same way, and once: the deprecated copy is hidden.
+      {:ok, result} =
+        EEVM.transact(
+          transfer_tx(),
+          block(),
+          InMemory.new(accounts: %{sender() => %{balance: 10 ** 18}})
+        )
+
+      printed = inspect(result, limit: :infinity)
+      assert printed =~ "db: #EEVM.Database<EEVM.Database.InMemory, no pending writes>"
+      refute printed =~ "post_state_db"
+    end
   end
 end
