@@ -4,9 +4,12 @@ defmodule EEVM.Transaction.Validator do
 
   Performs envelope and sender checks in deterministic order against current
   state and block context, returning `:ok` or the first `{:error, reason}`.
+
+  Given an `EEVM.Config` instead of a bare `EEVM.HardforkConfig`, the checks
+  honour its simulation switches (see `EEVM.Config`).
   """
 
-  alias EEVM.{BlockEnv, Database, Delegation, TxEnv}
+  alias EEVM.{BlockEnv, Config, Database, Delegation, TxEnv}
   alias EEVM.Error
   alias EEVM.Gas.Blob
   alias EEVM.HardforkConfig
@@ -37,10 +40,10 @@ defmodule EEVM.Transaction.Validator do
   Run the pre-execution checks in order and return the first failure.
   Error reasons are listed in `EEVM.Error`.
   """
-  @spec validate(TxEnv.t(), Database.t(), BlockEnv.t(), HardforkConfig.t()) ::
+  @spec validate(TxEnv.t(), Database.t(), BlockEnv.t(), HardforkConfig.t() | Config.t()) ::
           :ok | {:error, Error.transaction_validation_error()}
-  def validate(%TxEnv{} = tx, %Database{} = db, %BlockEnv{} = block, %HardforkConfig{} = hardfork) do
-    case check(tx, db, block, hardfork) do
+  def validate(%TxEnv{} = tx, %Database{} = db, %BlockEnv{} = block, config) do
+    case check(tx, db, block, config) do
       :ok -> :ok
       {:error, reason, _details} -> {:error, reason}
     end
@@ -51,18 +54,23 @@ defmodule EEVM.Transaction.Validator do
   compared, as `{:error, reason, details}`; `EEVM.TransactionError` lists
   them per reason.
   """
-  @spec check(TxEnv.t(), Database.t(), BlockEnv.t(), HardforkConfig.t()) ::
+  @spec check(TxEnv.t(), Database.t(), BlockEnv.t(), HardforkConfig.t() | Config.t()) ::
           :ok | {:error, Error.transaction_validation_error(), map()}
-  def check(%TxEnv{} = tx, %Database{} = db, %BlockEnv{} = block, %HardforkConfig{} = hardfork) do
+  def check(%TxEnv{} = tx, %Database{} = db, %BlockEnv{} = block, %HardforkConfig{} = hardfork),
+    do: check(tx, db, block, %Config{hardfork: hardfork})
+
+  def check(%TxEnv{} = tx, %Database{} = db, %BlockEnv{} = block, %Config{} = config) do
+    hardfork = config.hardfork
+
     with :ok <- validate_tx_type(tx, hardfork),
          :ok <- validate_set_code_tx(tx),
          :ok <- validate_intrinsic_gas(tx, hardfork),
          :ok <- validate_gas_limit_cap(tx, hardfork),
-         :ok <- validate_gas_limit_vs_block(tx, block),
-         :ok <- validate_nonce(tx, db),
-         :ok <- validate_eip1559_fees(tx, block, hardfork),
-         :ok <- validate_balance(tx, db),
-         :ok <- validate_sender_is_eoa(tx, db),
+         :ok <- validate_gas_limit_vs_block(tx, block, config),
+         :ok <- validate_nonce(tx, db, config),
+         :ok <- validate_eip1559_fees(tx, block, config),
+         :ok <- validate_balance(tx, db, config),
+         :ok <- validate_sender_is_eoa(tx, db, config),
          :ok <- validate_blob_tx(tx, block, hardfork) do
       validate_initcode_size(tx)
     end
@@ -123,7 +131,10 @@ defmodule EEVM.Transaction.Validator do
       else: :ok
   end
 
-  defp validate_gas_limit_vs_block(%TxEnv{} = tx, %BlockEnv{} = block) do
+  # The simulation switches (EEVM.Config) each skip one rule below.
+  defp validate_gas_limit_vs_block(_tx, _block, %Config{disable_block_gas_limit: true}), do: :ok
+
+  defp validate_gas_limit_vs_block(%TxEnv{} = tx, %BlockEnv{} = block, _config) do
     if tx.gas_limit <= block.gas_limit,
       do: :ok,
       else:
@@ -131,7 +142,9 @@ defmodule EEVM.Transaction.Validator do
          %{gas_limit: tx.gas_limit, block_gas_limit: block.gas_limit}}
   end
 
-  defp validate_nonce(%TxEnv{} = tx, %Database{} = db) do
+  defp validate_nonce(_tx, _db, %Config{disable_nonce_check: true}), do: :ok
+
+  defp validate_nonce(%TxEnv{} = tx, %Database{} = db, _config) do
     account_nonce = Database.get_nonce(db, tx.origin)
     details = %{sender: tx.origin, tx_nonce: tx.nonce, state_nonce: account_nonce}
 
@@ -144,7 +157,7 @@ defmodule EEVM.Transaction.Validator do
     end
   end
 
-  defp validate_eip1559_fees(%TxEnv{type: type} = tx, %BlockEnv{} = block, _hardfork)
+  defp validate_eip1559_fees(%TxEnv{type: type} = tx, %BlockEnv{} = block, %Config{} = config)
        when type in [:eip1559, :eip4844, :eip7702] do
     cond do
       tx.max_fee_per_gas < tx.max_priority_fee_per_gas ->
@@ -154,7 +167,7 @@ defmodule EEVM.Transaction.Validator do
            max_fee_per_gas: tx.max_fee_per_gas
          }}
 
-      tx.max_fee_per_gas < block.base_fee ->
+      tx.max_fee_per_gas < block.base_fee and not config.disable_base_fee ->
         {:error, :max_fee_below_basefee,
          %{max_fee_per_gas: tx.max_fee_per_gas, base_fee: block.base_fee}}
 
@@ -165,13 +178,17 @@ defmodule EEVM.Transaction.Validator do
 
   # From London, a legacy or EIP-2930 transaction's gas price must cover the
   # base fee too (execution-specs London `check_transaction`).
-  defp validate_eip1559_fees(%TxEnv{} = tx, %BlockEnv{} = block, %HardforkConfig{} = hardfork) do
-    if HardforkConfig.enabled?(hardfork, :eip_1559) and tx.gas_price < block.base_fee,
+  defp validate_eip1559_fees(_tx, _block, %Config{disable_base_fee: true}), do: :ok
+
+  defp validate_eip1559_fees(%TxEnv{} = tx, %BlockEnv{} = block, %Config{} = config) do
+    if HardforkConfig.enabled?(config.hardfork, :eip_1559) and tx.gas_price < block.base_fee,
       do: {:error, :max_fee_below_basefee, %{gas_price: tx.gas_price, base_fee: block.base_fee}},
       else: :ok
   end
 
-  defp validate_balance(%TxEnv{} = tx, %Database{} = db) do
+  defp validate_balance(_tx, _db, %Config{disable_balance_check: true}), do: :ok
+
+  defp validate_balance(%TxEnv{} = tx, %Database{} = db, _config) do
     sender_balance = Database.get_balance(db, tx.origin)
     required_balance = max_gas_cost(tx) + tx.value
 
@@ -183,7 +200,9 @@ defmodule EEVM.Transaction.Validator do
   end
 
   # EIP-3607, relaxed by EIP-7702: an EOA that delegated its code may still send.
-  defp validate_sender_is_eoa(%TxEnv{} = tx, %Database{} = db) do
+  defp validate_sender_is_eoa(_tx, _db, %Config{disable_eip3607: true}), do: :ok
+
+  defp validate_sender_is_eoa(%TxEnv{} = tx, %Database{} = db, _config) do
     code = Database.get_code(db, tx.origin)
 
     if code == <<>> or Delegation.designator?(code),

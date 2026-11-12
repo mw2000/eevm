@@ -364,6 +364,13 @@ defmodule EEVM do
   `{:error, %EEVM.TransactionError{}}` with the values involved, such as
   the transaction's and the account's nonce.
 
+  For simulation, `tx` may instead be an unsigned `EEVM.TxEnv`, which
+  impersonates its `origin`: no signature is needed or recovered, and every
+  other rule applies, so a wrong nonce or a sender that can't pay is still
+  rejected. The config's simulation switches (see `EEVM.Config`) relax
+  those rules for tooling; never use either for consensus. Signed
+  transactions are unaffected.
+
   Returns `{:ok, %EEVM.TransactionResult{}}` for any transaction that passes
   validation, including reverted and halted ones, or `{:error, reason}` with
   a reason from `EEVM.Error`, leaving `db` unchanged.
@@ -378,6 +385,16 @@ defmodule EEVM do
       iex> {:error, error} = EEVM.transact(tx, EEVM.BlockEnv.new(), db, details: true)
       iex> {error.reason, error.details.tx_nonce, error.details.state_nonce}
       {:nonce_too_high, 5, 0}
+
+  Impersonating 0xA11CE with an unsigned `EEVM.TxEnv`:
+
+      iex> db = EEVM.Database.InMemory.new(accounts: %{0xA11CE => %{balance: 10 ** 18}})
+      iex> tx = %EEVM.TxEnv{origin: 0xA11CE, to: 0xB0B, value: 1_000, gas_limit: 21_000, gas_price: 10}
+      iex> {:ok, result} = EEVM.transact(tx, EEVM.BlockEnv.new(), db)
+      iex> {result.status, result.sender, EEVM.Database.get_balance(result.db, 0xB0B)}
+      {:success, 0xA11CE, 1000}
+      iex> EEVM.transact(%{tx | nonce: 1}, EEVM.BlockEnv.new(), db)
+      {:error, :nonce_too_high}
   """
   @spec transact(Handler.wire_tx(), BlockEnv.t(), Database.t(), Handler.opts()) ::
           {:ok, TransactionResult.t()}

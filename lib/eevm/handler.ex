@@ -16,11 +16,15 @@ defmodule EEVM.Handler do
   phase independently testable.
   """
 
-  alias EEVM.{BlockEnv, Config, Database, TransactionError, TransactionResult}
+  alias EEVM.{BlockEnv, Config, Database, TransactionError, TransactionResult, TxEnv}
   alias EEVM.Handler.{Execution, PostExecution, PreExecution, Validation}
   alias EEVM.Transaction.Validator
 
-  @type wire_tx :: Validation.wire_tx()
+  @typedoc """
+  A transaction: raw signed bytes, a signed `EEVM.Transaction` struct, or,
+  for simulation, an unsigned `EEVM.TxEnv` whose `origin` is the sender.
+  """
+  @type wire_tx :: Validation.wire_tx() | TxEnv.t()
 
   @type opts :: [
           hardfork: EEVM.HardforkConfig.spec_id(),
@@ -36,12 +40,16 @@ defmodule EEVM.Handler do
   call that instead.
 
   `tx_or_bytes` may be either raw wire bytes (legacy RLP or a typed envelope
-  prefix + RLP) or one of the typed `EEVM.Transaction.*` structs.
+  prefix + RLP) or one of the typed `EEVM.Transaction.*` structs. For
+  simulation it may also be an unsigned `EEVM.TxEnv`: its `origin` is the
+  sender, with no signature to recover, and every other rule applies unless
+  a simulation switch in the config turns it off.
 
   ## Options
 
   - `:config` — the `EEVM.Config`: hardfork, chain id (used to recover the
-    sender and check EIP-7702 authorizations), and custom precompiles.
+    sender and check EIP-7702 authorizations), custom precompiles, and the
+    simulation switches, which are never for consensus.
   - `:hardfork` — shorthand for `config: EEVM.Config.new(hardfork)` (default
     `:cancun`). `:config` takes precedence when both are given.
   - `:tracer` — `true` or an `EEVM.Tracer` to record an EIP-3155 trace,
@@ -89,13 +97,11 @@ defmodule EEVM.Handler do
     config = Validation.resolve_config(opts)
     chain_id = config.chain_id
 
-    with {:ok, wire_tx} <- Validation.ensure_decoded(tx_or_bytes),
-         {:ok, sender} <- Validation.recover_sender(wire_tx, chain_id),
-         {:ok, tx_ctx} <- Validation.build_tx_context(wire_tx, sender),
-         :ok <- Validator.check(tx_ctx, db, block, config.hardfork),
+    with {:ok, tx_ctx} <- tx_env(tx_or_bytes, chain_id),
+         :ok <- Validator.check(tx_ctx, db, block, config),
          # GASPRICE (0x3A) reads the price per gas the sender pays (EIP-1559).
          tx_ctx = %{tx_ctx | gas_price: PreExecution.effective_gas_price(tx_ctx, block)},
-         {:ok, db_after_upfront} <- PreExecution.charge_upfront(db, tx_ctx, block),
+         {:ok, db_after_upfront} <- PreExecution.charge_upfront(db, tx_ctx, block, config),
          {:ok, db_nonce_bumped, execution_gas} <-
            PreExecution.prepare_execution(db_after_upfront, tx_ctx, config.hardfork) do
       {db_authorized, authorization} =
@@ -112,9 +118,44 @@ defmodule EEVM.Handler do
           Validation.resolve_tracer(opts)
         )
 
-      PostExecution.finalize(final_state, contract_address, tx_ctx, sender, db_authorized, block)
+      PostExecution.finalize(
+        final_state,
+        contract_address,
+        tx_ctx,
+        tx_ctx.origin,
+        db_authorized,
+        block
+      )
     end
   end
+
+  # An unsigned TxEnv is impersonation: its origin is the sender as given.
+  defp tx_env(%TxEnv{} = tx, _chain_id) do
+    cond do
+      not is_binary(tx.data) or EEVM.hex_string?(tx.data) ->
+        raise ArgumentError,
+              "TxEnv :data must be bytes (decode hex with EEVM.bytes/1), got: " <>
+                inspect(tx.data, printable_limit: 40)
+
+      not address?(tx.origin) or not (tx.to == nil or address?(tx.to)) ->
+        raise ArgumentError,
+              "TxEnv :origin and :to must be integer addresses, :to may be nil " <>
+                "(convert a hex address with EEVM.address/1), got: " <>
+                "origin #{inspect(tx.origin)}, to #{inspect(tx.to)}"
+
+      true ->
+        {:ok, tx}
+    end
+  end
+
+  defp tx_env(tx_or_bytes, chain_id) do
+    with {:ok, wire_tx} <- Validation.ensure_decoded(tx_or_bytes),
+         {:ok, sender} <- Validation.recover_sender(wire_tx, chain_id) do
+      Validation.build_tx_context(wire_tx, sender)
+    end
+  end
+
+  defp address?(address), do: is_integer(address) and address >= 0 and address < 2 ** 160
 
   defp finish(%TransactionResult{} = result, false), do: {:ok, result}
 

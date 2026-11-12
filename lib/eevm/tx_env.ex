@@ -1,16 +1,19 @@
 defmodule EEVM.TxEnv do
   @moduledoc """
   The transaction environment code executes in: the signed transaction as
-  the EVM sees it. `EEVM.transact/4` builds one from the wire transaction;
-  set it yourself only to give bytecode run with `EEVM.run/2` a transaction
-  context, through its `:tx` option.
+  the EVM sees it. `EEVM.transact/4` builds one from the wire transaction.
+  Set it yourself to give bytecode run with `EEVM.run/2` a transaction
+  context, through its `:tx` option, or to simulate a transaction from any
+  address: `EEVM.transact/4` also takes an unsigned `TxEnv` and treats its
+  `origin` as the sender, without a signature. Set `gas_price` for a
+  legacy or EIP-2930 `type`, and the `max_*` fee fields for the others.
 
   ### Fields
 
   | Field | Opcode | Description |
   |-------|--------|-------------|
   | `type` | — | `:legacy`, `:eip2930`, `:eip1559`, `:eip4844`, or `:eip7702` |
-  | `origin` | ORIGIN (0x32) | The externally owned account (EOA) that signed the tx |
+  | `origin` | ORIGIN (0x32) | The externally owned account (EOA) that signed the tx, or the impersonated sender |
   | `gas_price` | GASPRICE (0x3A) | Effective gas price in wei the sender pays |
   | `nonce` | — | The sender's nonce |
   | `gas_limit` | — | The transaction's gas limit |

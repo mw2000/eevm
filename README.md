@@ -193,6 +193,30 @@ iex> EEVM.ABI.decode_log("Transfer(address indexed from, address indexed to, uin
 `EEVM.keccak256/1`, `EEVM.selector/1`, and `EEVM.event_topic/1` give the
 hashes underneath, for matching logs or selectors yourself.
 
+### Simulate a transaction from any address
+
+Tools such as `eth_call`-style RPC, gas estimation, and fork tests need a
+transaction's full effects without its key. `EEVM.transact/4` also takes an
+unsigned `EEVM.TxEnv`, whose `origin` is the sender, and still applies every
+transaction rule. `EEVM.Config`'s simulation switches, `disable_nonce_check`,
+`disable_balance_check`, `disable_base_fee`, `disable_block_gas_limit`, and
+`disable_eip3607`, relax them one at a time, as revm's `CfgEnv` does. They
+default to off, and are for simulation only: never set them to validate or
+build real blocks.
+
+```elixir
+# Send 1,000 wei from a contract, such as a multisig, whose key nobody holds.
+iex> multisig = 0x5AFE
+iex> db = EEVM.Database.InMemory.new(accounts: %{multisig => %{balance: 10 ** 18, code: <<0x00>>}})
+iex> tx = %EEVM.TxEnv{origin: multisig, to: 0xB0B, value: 1_000, gas_limit: 21_000, gas_price: 10}
+iex> EEVM.transact(tx, EEVM.BlockEnv.new(), db)
+{:error, :sender_not_eoa}
+iex> config = EEVM.Config.new(:cancun, disable_eip3607: true)
+iex> {:ok, result} = EEVM.transact(tx, EEVM.BlockEnv.new(), db, config: config)
+iex> {result.status, EEVM.Database.get_balance(result.db, 0xB0B)}
+{:success, 1000}
+```
+
 ### Build, encode, and execute a block
 
 `EEVM.Block` handles whole blocks. `build/4` produces a child of a parent

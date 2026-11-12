@@ -58,6 +58,7 @@ defmodule EEVM.HandlerTest do
   @chain_id 1
   @coinbase 0xC0F0
   @recipient 0xB0B
+  @impersonated 0xA11CE
 
   @authority_key :crypto.hash(:sha256, "eip-7702 authority")
   @delegate 0xDE1E
@@ -170,6 +171,121 @@ defmodule EEVM.HandlerTest do
       }
 
       assert {:error, _} = run(unsigned, db_with_sender())
+    end
+  end
+
+  describe "execute/4 — unsigned TxEnv and simulation switches" do
+    test "an unsigned TxEnv runs as its origin under every transaction rule" do
+      assert {:ok, result} = simulate(unsigned(), impersonated_db())
+
+      assert {result.status, result.sender, result.gas_used} == {:success, @impersonated, 21_000}
+      assert Database.get_balance(result.db, @recipient) == 1_000
+      assert Database.get_balance(result.db, @impersonated) == 10 ** 18 - 1_000 - 21_000 * 10
+      assert Database.get_balance(result.db, @coinbase) == 21_000 * 10
+      assert Database.get_nonce(result.db, @impersonated) == 1
+
+      assert simulate(unsigned(nonce: 1), impersonated_db()) == {:error, :nonce_too_high}
+      assert simulate(unsigned(), impersonated_db(balance: 0)) == {:error, :insufficient_balance}
+      assert simulate(unsigned(), impersonated_db(code: <<0>>)) == {:error, :sender_not_eoa}
+
+      assert simulate(unsigned(gas_limit: 20_999), impersonated_db()) ==
+               {:error, :intrinsic_gas_too_low}
+    end
+
+    test "an unsigned TxEnv with hex data or a hex address raises ArgumentError" do
+      assert_raise ArgumentError, ~r/:data must be bytes.*EEVM.bytes/, fn ->
+        simulate(unsigned(data: "0x6001"), impersonated_db())
+      end
+
+      assert_raise ArgumentError, ~r/must be integer addresses.*EEVM.address/, fn ->
+        simulate(unsigned(to: "0x0000000000000000000000000000000000000b0b"), impersonated_db())
+      end
+    end
+
+    test "disable_nonce_check accepts any nonce and still increments the account's" do
+      tx = unsigned(nonce: 7)
+      assert simulate(tx, impersonated_db()) == {:error, :nonce_too_high}
+      assert simulate(tx, impersonated_db(nonce: 9)) == {:error, :nonce_too_low}
+
+      assert {:ok, result} =
+               simulate(tx, impersonated_db(nonce: 9), simple_block(), disable_nonce_check: true)
+
+      assert result.status == :success
+      assert Database.get_nonce(result.db, @impersonated) == 10
+    end
+
+    test "disable_balance_check charges what the sender can pay, keeping the value (revm CfgEnv)" do
+      # Upfront: 30,000 gas at 10 wei plus 100,000 wei of value = 400,000 > 300,000.
+      tx = unsigned(gas_limit: 30_000, value: 100_000)
+      db = impersonated_db(balance: 300_000)
+      assert simulate(tx, db) == {:error, :insufficient_balance}
+
+      assert {:ok, result} = simulate(tx, db, simple_block(), disable_balance_check: true)
+      # max(300,000 - 300,000, 100,000) = 100,000 after the gas charge; the value
+      # leaves, then the 9,000 unused gas is refunded at 10 wei.
+      assert result.status == :success
+      assert Database.get_balance(result.db, @recipient) == 100_000
+      assert Database.get_balance(result.db, @impersonated) == 90_000
+    end
+
+    test "disable_base_fee accepts a fee cap below the base fee; the coinbase gets no tip" do
+      block = simple_block(base_fee: 100)
+
+      for tx <- [
+            unsigned(type: :eip1559, max_fee_per_gas: 50, max_priority_fee_per_gas: 1),
+            unsigned(gas_price: 50)
+          ] do
+        assert simulate(tx, impersonated_db(), block) == {:error, :max_fee_below_basefee}
+
+        assert {:ok, result} = simulate(tx, impersonated_db(), block, disable_base_fee: true)
+        assert result.status == :success
+        assert Database.get_balance(result.db, @impersonated) == 10 ** 18 - 1_000 - 21_000 * 50
+        assert Database.get_balance(result.db, @coinbase) == 0
+      end
+
+      # The priority fee still may not exceed the fee cap.
+      tx = unsigned(type: :eip1559, max_fee_per_gas: 50, max_priority_fee_per_gas: 51)
+
+      assert simulate(tx, impersonated_db(), block, disable_base_fee: true) ==
+               {:error, :priority_fee_above_max_fee}
+    end
+
+    test "disable_block_gas_limit lifts the block limit but not EIP-7825's cap" do
+      block = simple_block(gas_limit: 25_000)
+      tx = unsigned(gas_limit: 25_001)
+      assert simulate(tx, impersonated_db(), block) == {:error, :gas_limit_exceeds_block}
+
+      assert {:ok, %{status: :success, gas_used: 21_000}} =
+               simulate(tx, impersonated_db(), block, disable_block_gas_limit: true)
+
+      osaka = Config.new(:osaka, disable_block_gas_limit: true)
+      big = unsigned(gas_limit: 2 ** 24 + 1)
+
+      assert Handler.execute(big, block, impersonated_db(), config: osaka) ==
+               {:error, :gas_limit_exceeds_cap}
+
+      assert {:ok, %{status: :success}} =
+               Handler.execute(%{big | gas_limit: 2 ** 24}, block, impersonated_db(),
+                 config: osaka
+               )
+    end
+
+    test "disable_eip3607 lets a sender with code send" do
+      db = impersonated_db(code: <<0x00>>)
+      assert simulate(unsigned(), db) == {:error, :sender_not_eoa}
+
+      assert {:ok, %{status: :success}} =
+               simulate(unsigned(), db, simple_block(), disable_eip3607: true)
+    end
+
+    test "the switches relax signed transactions too, and are off by default" do
+      tx = legacy_value_transfer(nonce: 3)
+      assert run(tx, db_with_sender()) == {:error, :nonce_too_high}
+
+      config = Config.new(:cancun, chain_id: @chain_id, disable_nonce_check: true)
+
+      assert {:ok, %{status: :success}} =
+               Handler.execute(tx, simple_block(), db_with_sender(), config: config)
     end
   end
 
@@ -840,6 +956,24 @@ defmodule EEVM.HandlerTest do
       assert Enum.map(Tracer.steps(trace), & &1.op) == [:PUSH1, :PUSH1, :SSTORE, :STOP]
       assert {:ok, %{trace: nil}} = run(tx, db)
     end
+  end
+
+  # An unsigned transaction from @impersonated, which no key signs.
+  defp unsigned(overrides \\ []) do
+    struct!(
+      %EEVM.TxEnv{origin: @impersonated, to: @recipient, value: 1_000, gas_limit: 21_000},
+      Keyword.merge([gas_price: 10], overrides)
+    )
+  end
+
+  defp impersonated_db(account \\ []) do
+    InMemory.new(
+      accounts: %{@impersonated => Map.new(Keyword.merge([balance: 10 ** 18], account))}
+    )
+  end
+
+  defp simulate(tx, db, block \\ simple_block(), switches \\ []) do
+    Handler.execute(tx, block, db, config: Config.new(:cancun, switches))
   end
 
   defp run(tx, db, block \\ simple_block()) do

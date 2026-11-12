@@ -32,6 +32,27 @@ defmodule Devx.TransactionsTest do
              10 ** 18 - (10 ** 15 + 21_000 * 2 * @gwei) - (1 + 21_000 * 3 * @gwei)
   end
 
+  test "an unsigned TxEnv impersonates a sender; switches relax the rules for simulation" do
+    # Impersonating the funded account costs what its signed EIP-1559 transfer does.
+    {:ok, result} = Transactions.impersonate(Devx.funded_db(), Devx.sender(), @recipient, 5)
+    assert {result.status, result.sender} == {:success, Devx.sender()}
+    assert Transactions.balance(result.db, Devx.sender()) == 10 ** 18 - 5 - 21_000 * 3 * @gwei
+
+    # An empty account can't pay, unless the balance check is off.
+    whale = 0xDEAD
+
+    assert Transactions.impersonate(Devx.funded_db(), whale, @recipient, 5) ==
+             {:error, :insufficient_balance}
+
+    {:ok, result} =
+      Transactions.impersonate(Devx.funded_db(), whale, @recipient, 5,
+        disable_balance_check: true
+      )
+
+    assert result.status == :success
+    assert Transactions.balance(result.db, @recipient) == 5
+  end
+
   test "raw bytes decode to the signed transaction" do
     {:ok, tx} = Transactions.eip1559(0, @recipient, 1)
     assert <<0x02, _::binary>> = raw = Transactions.raw(tx)

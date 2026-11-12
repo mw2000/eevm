@@ -37,6 +37,26 @@ defmodule Devx.Transactions do
     {first, second}
   end
 
+  @doc """
+  Sends `value` from `from` to `to` without `from`'s key: an unsigned
+  `EEVM.TxEnv`, run under every transaction rule except those `switches`
+  (such as `disable_balance_check: true`) turn off. Simulation only.
+  """
+  def impersonate(db, from, to, value, switches \\ []) do
+    tx = %EEVM.TxEnv{
+      type: :eip1559,
+      origin: from,
+      to: to,
+      value: value,
+      gas_limit: 21_000,
+      max_fee_per_gas: 3 * Devx.gwei(),
+      max_priority_fee_per_gas: 2 * Devx.gwei()
+    }
+
+    config = EEVM.Config.new(:cancun, [chain_id: 1] ++ switches)
+    EEVM.transact(tx, Devx.block_env(), db, config: config)
+  end
+
   @doc "Reads a balance."
   def balance(db, address), do: EEVM.Database.get_balance(db, address)
 end

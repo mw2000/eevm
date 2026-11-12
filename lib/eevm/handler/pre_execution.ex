@@ -21,7 +21,7 @@ defmodule EEVM.Handler.PreExecution do
   shares, and `blob_gas_fee/2` for runners that settle fees themselves.
   """
 
-  alias EEVM.{BlockEnv, Database, Delegation, HardforkConfig, Precompiles, TxEnv}
+  alias EEVM.{BlockEnv, Config, Database, Delegation, HardforkConfig, Precompiles, TxEnv}
   alias EEVM.Context.Contract
   alias EEVM.Gas.Blob
   alias EEVM.HardforkConfig
@@ -51,22 +51,30 @@ defmodule EEVM.Handler.PreExecution do
   `max_fee_per_blob_gas` (EIP-4844), but only the effective fee is debited,
   so BALANCE of the sender during execution already excludes the unspent
   fee cap (execution-specs `process_transaction`).
+
+  `config`'s `disable_balance_check` and `disable_base_fee` simulation
+  switches skip the matching check. With the balance check off, the sender
+  keeps at least `tx.value` and pays the gas charge only as far as its
+  balance allows, as revm's `CfgEnv` does.
   """
-  @spec charge_upfront(Database.t(), TxEnv.t(), BlockEnv.t()) ::
+  @spec charge_upfront(Database.t(), TxEnv.t(), BlockEnv.t(), Config.t()) ::
           {:ok, Database.t()} | {:error, atom()}
-  def charge_upfront(%Database{} = db, %TxEnv{} = tx, %BlockEnv{} = block) do
+  def charge_upfront(%Database{} = db, %TxEnv{} = tx, %BlockEnv{} = block, %Config{} = config) do
     sender_balance = Database.get_balance(db, tx.origin)
     effective_price = effective_gas_price(tx, block)
+    gas_charge = tx.gas_limit * effective_price + blob_gas_fee(tx, block)
 
     cond do
-      sender_balance < max_fee(tx) + tx.value ->
+      sender_balance < max_fee(tx) + tx.value and not config.disable_balance_check ->
         {:error, :insufficient_balance}
 
-      effective_price < block.base_fee ->
+      effective_price < block.base_fee and not config.disable_base_fee ->
         {:error, :effective_gas_price_below_basefee}
 
+      config.disable_balance_check ->
+        {:ok, Database.set_balance(db, tx.origin, max(sender_balance - gas_charge, tx.value))}
+
       true ->
-        gas_charge = tx.gas_limit * effective_price + blob_gas_fee(tx, block)
         {:ok, Database.set_balance(db, tx.origin, sender_balance - gas_charge)}
     end
   end
