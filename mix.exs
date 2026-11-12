@@ -96,7 +96,6 @@ defmodule EEVM.MixProject do
       source_ref: "main",
       extras: [
         "README.md",
-        "guides/database_adapters.md",
         {"bench/README.md", filename: "benchmarks", title: "Benchmarks"},
         "LICENSE"
       ],

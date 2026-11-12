@@ -6,7 +6,8 @@ defmodule EEVM.DatabaseTest do
   alias EEVM.Database.InMemory
   alias EEVM.Transaction.{Legacy, Signer}
 
-  doctest Database
+  # EEVM.Database's doctests run in test/docs/snippets_test.exs: its adapter
+  # example defines a module, which two async doctest runs would redefine.
   doctest InMemory
 
   # A read-only backend over a map that can't commit or enumerate. A `:fail`

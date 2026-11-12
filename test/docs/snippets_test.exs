@@ -2,10 +2,10 @@ defmodule EEVM.Docs.SnippetsTest do
   @moduledoc """
   Runs the code a user copies out of the docs.
 
-  - Every `iex>` example in the guides and in the public modules' docs runs
-    as a doctest. (The README's run from `test/eevm_test.exs`.)
-  - Every other ```` ```elixir ```` block in the README and guides runs, in
-    order, in one environment per file, so later blocks can use the
+  - Every `iex>` example in the public modules' docs runs as a doctest.
+    (The README's run from `test/eevm_test.exs`.)
+  - Every other ```` ```elixir ```` block in the README runs, in order, in
+    one environment, so later blocks can use the
     variables, aliases, and modules of earlier ones. A `#=> value` line
     after an expression asserts that the expression's value matches
     `value` as a pattern, with `...` standing for the omitted fields.
@@ -29,10 +29,6 @@ defmodule EEVM.Docs.SnippetsTest do
         String.ends_with?(path, ".md"),
         path != "bench/README.md",
         do: path
-
-  for page <- pages, page != "README.md" do
-    doctest_file(page)
-  end
 
   {:ok, modules} = :application.get_key(:eevm, :modules)
 

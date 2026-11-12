@@ -32,8 +32,27 @@ defmodule EEVM.Database do
   until the module overrides them, so a read-only backend implements only
   the four reads.
 
-  `EEVM.Database.InMemory` implements every callback. See the "Writing a
-  database adapter" guide to write your own.
+  `EEVM.Database.InMemory` implements every callback. This read-only
+  backend serves a fixed map of accounts, so a call's writes stay in the
+  overlay and `commit/1` reports that the backend can't commit:
+
+      iex> defmodule MyApp.FixedDatabase do
+      ...>   use EEVM.Database
+      ...>   @impl true
+      ...>   def account(accounts, address), do: {:ok, Map.get(accounts, address)}
+      ...>   @impl true
+      ...>   def code(_accounts, _code_hash), do: {:ok, <<>>}
+      ...>   @impl true
+      ...>   def storage(_accounts, _address, _slot), do: {:ok, 0}
+      ...>   @impl true
+      ...>   def block_hash(_accounts, _number), do: {:ok, nil}
+      ...> end
+      iex> db = EEVM.Database.new(MyApp.FixedDatabase, %{0xA11CE => %{balance: 100, nonce: 0, code: <<>>}})
+      iex> {:ok, result} = EEVM.call(db, 0xB0B, <<>>, caller: 0xA11CE, value: 40)
+      iex> {EEVM.Database.get_balance(result.db, 0xA11CE), EEVM.Database.get_balance(result.db, 0xB0B)}
+      {60, 40}
+      iex> EEVM.Database.commit(result.db)
+      {:error, :commit_not_supported}
 
   ## Read errors
 
@@ -51,8 +70,8 @@ defmodule EEVM.Database do
     `{:error, :unsupported}`, and a bare enumerable from `c:accounts/1` or
     `c:storage_slots/2` is accepted.
   - A `c:commit/2`, `c:accounts/1`, or `c:storage_slots/2` that returns
-    `{:error, :not_supported}`, as the adapter guide's RPC example once
-    did, is treated as returning `{:error, :unsupported}`.
+    `{:error, :not_supported}`, the atom earlier docs used, is treated as
+    returning `{:error, :unsupported}`.
   - A module that implements only the pre-1.0 write and query callbacks
     (`get_account/2`, `set_balance/3`, `storage_store/4`, and so on) is
     wrapped in `EEVM.Database.Legacy` by `new/2`.
@@ -211,8 +230,8 @@ defmodule EEVM.Database do
 
   The defaults are ordinary compiled functions, so the module still states
   what it supports in code. `@behaviour EEVM.Database` with all seven
-  callbacks keeps working unchanged. The "Writing a database adapter" guide
-  runs a complete read-only adapter.
+  callbacks keeps working unchanged. The `EEVM.Database` module docs run a
+  complete read-only adapter.
   """
   defmacro __using__(_opts) do
     quote do
@@ -594,7 +613,7 @@ defmodule EEVM.Database do
   # Deprecated: before #204, commit/2, accounts/1 and storage_slots/2 were
   # optional callbacks. A backend that leaves one out still works for one minor
   # version, as if it returned `{:error, :unsupported}`. So does one that
-  # returns `{:error, :not_supported}`, the atom the adapter guide once used.
+  # returns `{:error, :not_supported}`, the atom earlier docs used.
   defp capability(impl, callback, fun) do
     case fun.() do
       {:error, :not_supported} -> {:error, :unsupported}

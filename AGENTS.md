@@ -71,7 +71,6 @@ minor version) before removing anything (#150).
 | Transactions (structs, envelopes, signing, validation) | `lib/eevm/transaction.ex`, `lib/eevm/transaction/` |
 | Blocks, receipts, bloom, withdrawals | `lib/eevm/block/` |
 | System contracts (EIP-4788, EIP-2935, EIP-7002, EIP-7251) and their genesis accounts | `lib/eevm/system_contracts.ex`, `lib/eevm/system_contracts/` |
-| Usage examples (a path-dependent Mix app, public API only) | `examples/devx/` |
 | State and tries | `lib/eevm/database.ex` (read-only behaviour, write overlay), `database/in_memory.ex`, `mpt/`, `state_root.ex` |
 
 Gate every fork-dependent rule on an `:eip_NNNN` flag in `@eip_activation`
@@ -92,7 +91,6 @@ mix credo --strict
 mix dialyzer
 mix test --warnings-as-errors   # test a deprecated function via apply/3, which skips the warning
 mix docs --warnings-as-errors
-(cd examples/devx && mix deps.get && mix test --warnings-as-errors)
 ```
 
 `mix quality` runs the first five. CI also tests Elixir 1.19 / OTP 28; the
@@ -113,7 +111,7 @@ commit's CI run passes.
   submodule is the legacy suite. CI's Conformance jobs fail on any failure a
   `known_failures*.txt` list doesn't cover; commit regenerated lists with the
   fix that changes them.
-- `test/docs/` runs every README, guide, and public-module example (a
+- `test/docs/` runs every README and public-module example (a
   `#=> value` line asserts a match; skip a block with
   `<!-- docs-check: skip -->`) and lints that public docs avoid Internals and
   deprecated API and document every struct field.

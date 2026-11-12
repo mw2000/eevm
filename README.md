@@ -274,9 +274,8 @@ write in its own overlay. Results carry the writes as `changes`, an
 when the adapter implements `commit/2`; `EEVM.run/2` never does.
 `EEVM.Database.InMemory` is the built-in adapter. `use EEVM.Database` in your
 own, and it needs only those four reads; it defaults `commit/2`, `accounts/1`,
-and `storage_slots/2` to `{:error, :unsupported}` until you define them. The
-[database adapter guide](guides/database_adapters.md) shows minimal, ETS-backed,
-and RPC-backed adapters.
+and `storage_slots/2` to `{:error, :unsupported}` until you define them.
+`EEVM.Database`'s docs show a minimal read-only adapter.
 
 ```elixir
 iex> code = <<0x60, 5, 0x60, 0, 0x55, 0x00>>  # PUSH1 5, PUSH1 0, SSTORE, STOP
@@ -368,15 +367,6 @@ mix eevm.blockchain_tests 'test/fixtures/state_tests/ethereum-tests/BlockchainTe
 
 After fixing failures, regenerate a known-failures list with the command in its
 header.
-
-## Examples
-
-[`examples/devx`](https://github.com/mw2000/eevm/tree/main/examples/devx) is a Mix project that depends on eevm by
-path and does seven everyday tasks with the public API only: run bytecode,
-deploy and call a solc-compiled ERC-20, sign and send legacy and EIP-1559
-transactions, trace, back the state with ETS, build and execute a block, and
-handle reverts and invalid transactions. Its tests assert every result, and CI
-runs them.
 
 ## Performance
 

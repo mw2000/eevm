@@ -2,7 +2,7 @@ defmodule EEVM.Docs.SurfaceTest do
   @moduledoc """
   Lints the public docs surface: the pages in the public docs groups of
   `mix.exs` (Getting started, Transactions, Blocks, State, Extending) and the
-  user-facing ExDoc extras (README, guides) must never tell a user to call an
+  user-facing ExDoc extras (the README) must never tell a user to call an
   internal or deprecated function or to use a deprecated module, and every
   public struct must document its fields.
 
