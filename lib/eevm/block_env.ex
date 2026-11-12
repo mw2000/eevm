@@ -24,6 +24,7 @@ defmodule EEVM.BlockEnv do
   alias EEVM.Gas.Blob, as: BlobGas
   alias EEVM.Handler.Validation
   alias EEVM.HardforkConfig
+  require EEVM.HardforkConfig
 
   @type t :: %__MODULE__{
           number: non_neg_integer(),

@@ -10,6 +10,7 @@ defmodule EEVM.Transaction.IntrinsicGas do
   alias EEVM.Gas.Intrinsic, as: Intrinsic
   alias EEVM.HardforkConfig
   alias EEVM.TxEnv
+  require EEVM.HardforkConfig
 
   @tx_base_cost 21_000
   @tx_create_cost 32_000

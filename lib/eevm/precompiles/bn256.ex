@@ -39,6 +39,7 @@ defmodule EEVM.Precompiles.BN256 do
 
   alias EEVM.HardforkConfig
   alias EEVM.Precompiles.BN256.Curve
+  require EEVM.HardforkConfig
 
   @field_modulus 21_888_242_871_839_275_222_246_405_745_257_275_088_696_311_157_297_823_662_689_037_894_645_226_208_583
   @byzantium_gas %{add: 500, mul: 40_000, pairing_base: 100_000, pairing_per_pair: 80_000}

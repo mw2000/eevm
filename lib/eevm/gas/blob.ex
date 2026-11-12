@@ -15,6 +15,7 @@ defmodule EEVM.Gas.Blob do
   """
 
   alias EEVM.HardforkConfig
+  require EEVM.HardforkConfig
 
   @gas_per_blob 131_072
   @min_base_fee_per_blob_gas 1

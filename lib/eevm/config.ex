@@ -64,6 +64,7 @@ defmodule EEVM.Config do
   """
 
   alias EEVM.HardforkConfig
+  require EEVM.HardforkConfig
 
   @type t :: %__MODULE__{
           hardfork: HardforkConfig.t(),
@@ -126,10 +127,20 @@ defmodule EEVM.Config do
   `:eip_7702`) is active in `config`'s hardfork.
 
   Unknown flags are inactive.
+
+  ## Examples
+
+      iex> config = EEVM.Config.new(:prague)
+      iex> EEVM.Config.enabled?(config, :eip_7702)
+      true
+      iex> EEVM.Config.enabled?(config, :eip_7939)
+      false
+      iex> EEVM.Config.enabled?(config, :eip_9999)
+      false
   """
   @spec enabled?(t(), atom()) :: boolean()
   def enabled?(%__MODULE__{hardfork: hardfork}, eip_flag),
-    do: HardforkConfig.enabled?(hardfork, eip_flag)
+    do: HardforkConfig.flag?(eip_flag) and HardforkConfig.enabled?(hardfork, eip_flag)
 
   @doc """
   Returns every supported hardfork, oldest first.

@@ -35,6 +35,7 @@ defmodule EEVM.Interpreter.Instructions.System.Calls do
   alias EEVM.Interpreter.Instructions.Helpers
   alias EEVM.Interpreter.{Journal, MachineState, Memory, Stack}
   alias EEVM.Precompiles
+  require EEVM.HardforkConfig
 
   @max_call_depth 1024
 

@@ -74,7 +74,9 @@ minor version) before removing anything (#150).
 | Usage examples (a path-dependent Mix app, public API only) | `examples/devx/` |
 | State and tries | `lib/eevm/database.ex` (read-only behaviour, write overlay), `database/in_memory.ex`, `mpt/`, `state_root.ex` |
 
-Gate every fork-dependent rule on an `:eip_NNNN` flag in `@eip_activation`;
+Gate every fork-dependent rule on an `:eip_NNNN` flag in `@eip_activation`
+with the `HardforkConfig.enabled?/2` macro (`require EEVM.HardforkConfig`)
+and a literal flag, so an undeclared or misspelled flag fails to compile;
 never compare fork names directly. The `developing-eevm` skill
 (`.agents/skills/developing-eevm/`) has the steps for opcodes, precompiles,
 EIPs, conformance lists, and benchmarking.

@@ -17,6 +17,7 @@ defmodule EEVM.Interpreter.Instructions.Helpers do
 
   alias EEVM.{Database, HardforkConfig}
   alias EEVM.Interpreter.{MachineState, Stack}
+  require EEVM.HardforkConfig
 
   @max_uint256 (1 <<< 256) - 1
   @address_mask (1 <<< 160) - 1

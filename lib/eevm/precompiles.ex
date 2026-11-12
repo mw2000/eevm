@@ -57,6 +57,8 @@ defmodule EEVM.Precompiles do
     SHA256
   }
 
+  require EEVM.HardforkConfig
+
   @typedoc """
   How a precompile runs: `apply(module, function, [input, gas_limit | extra_args])`.
   """

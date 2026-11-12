@@ -32,6 +32,7 @@ defmodule EEVM.Interpreter.MachineState do
   alias EEVM.Precompiles
   alias EEVM.Tracer
   alias EEVM.TxEnv
+  require EEVM.HardforkConfig
 
   @type status :: :running | :stopped | :reverted | :invalid | :out_of_gas | {:error, atom()}
 

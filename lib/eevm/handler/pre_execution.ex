@@ -26,6 +26,7 @@ defmodule EEVM.Handler.PreExecution do
   alias EEVM.Gas.Blob
   alias EEVM.HardforkConfig
   alias EEVM.Transaction.{Authorization, IntrinsicGas, Signer}
+  require EEVM.HardforkConfig
 
   # EIP-7702: refund for an authority that already exists, since the
   # intrinsic charge assumed a new account (25,000 - 12,500).

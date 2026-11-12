@@ -23,6 +23,7 @@ defmodule EEVM.Block.Requests do
   alias EEVM.Context.Contract
   alias EEVM.Crypto.SHA256
   alias EEVM.Interpreter.MachineState
+  require EEVM.HardforkConfig
 
   @typedoc "A type byte followed by the request payload."
   @type request :: binary()
@@ -87,11 +88,14 @@ defmodule EEVM.Block.Requests do
         %Config{} = config,
         deposit_contract
       ) do
+    withdrawals? = HardforkConfig.enabled?(config.hardfork, :eip_7002)
+    consolidations? = HardforkConfig.enabled?(config.hardfork, :eip_7251)
+
     with {:ok, deposits} <- deposits(receipts, deposit_contract, config.hardfork),
          {:ok, withdrawals, db} <-
-           system_call(db, block, config, :eip_7002, @withdrawal_request_contract),
+           system_call(withdrawals?, db, block, config, @withdrawal_request_contract),
          {:ok, consolidations, db} <-
-           system_call(db, block, config, :eip_7251, @consolidation_request_contract) do
+           system_call(consolidations?, db, block, config, @consolidation_request_contract) do
       requests =
         for {type, payload} <- [{0x00, deposits}, {0x01, withdrawals}, {0x02, consolidations}],
             payload != <<>>,
@@ -136,9 +140,9 @@ defmodule EEVM.Block.Requests do
   # A checked system call (Prague `process_checked_system_transaction`): the
   # contract must have code and the call must succeed, or the block is
   # invalid. Like a transaction it starts with no warm addresses.
-  defp system_call(db, block, config, flag, address) do
+  defp system_call(enabled?, db, block, config, address) do
     cond do
-      not HardforkConfig.enabled?(config.hardfork, flag) ->
+      not enabled? ->
         {:ok, <<>>, db}
 
       Database.get_code(db, address) == <<>> ->

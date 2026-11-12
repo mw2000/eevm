@@ -11,6 +11,7 @@ defmodule EEVM.Gas.Intrinsic do
   """
 
   alias EEVM.HardforkConfig
+  require EEVM.HardforkConfig
 
   @tx_base_gas 21_000
   # EIP-2028 (Istanbul): non-zero calldata reduced from 68 → 16 gas.

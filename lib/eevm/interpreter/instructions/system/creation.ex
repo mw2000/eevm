@@ -37,6 +37,7 @@ defmodule EEVM.Interpreter.Instructions.System.Creation do
   alias EEVM.HardforkConfig
   alias EEVM.Interpreter
   alias EEVM.Interpreter.{Journal, MachineState, Memory, Stack}
+  require EEVM.HardforkConfig
 
   @doc """
   Executes CREATE (0xF0) or CREATE2 (0xF5) against the current frame.

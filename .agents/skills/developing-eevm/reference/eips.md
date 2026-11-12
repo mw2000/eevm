@@ -7,7 +7,7 @@ Read the commit of a similar change before starting: `git show f5e161f` (CLZ, EI
 Every rule that starts at a hardfork needs a flag, including a new opcode or precompile.
 
 1. Add `eip_NNNN: :fork` to `@eip_activation` in `lib/eevm/hardfork_config.ex`, with a comment that names the EIP and what it does. Add the EIP to the fork's row of the moduledoc table.
-2. Branch with `HardforkConfig.enabled?(hardfork, :eip_NNNN)`. Interpreter code reaches the hardfork through `state.env.config.hardfork`.
+2. Branch with `HardforkConfig.enabled?(hardfork, :eip_NNNN)`, a macro: `require EEVM.HardforkConfig` in the module. Pass the flag as a literal atom, so an undeclared flag is a compile error; for a flag kept in a table, write the check per entry (`tx_type_enabled?/2` in `Transaction.Validator`) or read the table only at compile time, as `InstructionTable` and `Precompiles` do. Interpreter code reaches the hardfork through `state.env.config.hardfork`.
 3. In `test/hardfork_config_test.exs`, assert that the flag is enabled at the fork and disabled at the fork before it.
 
 ## An opcode

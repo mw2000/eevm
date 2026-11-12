@@ -35,6 +35,7 @@ defmodule EEVM.SystemContracts.BeaconRoots do
   alias EEVM.Interpreter
   alias EEVM.Interpreter.MachineState
   alias EEVM.TxEnv
+  require EEVM.HardforkConfig
 
   @address 0x000F3DF6D732807EF1319FB7B8BB8522D0BEAC02
   @system_address 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFE

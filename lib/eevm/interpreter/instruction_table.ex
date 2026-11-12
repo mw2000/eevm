@@ -33,6 +33,7 @@ defmodule EEVM.Interpreter.InstructionTable do
   alias EEVM.HardforkConfig
   alias EEVM.Interpreter.Instructions.Registry
   alias EEVM.Interpreter.Stack
+  require EEVM.HardforkConfig
 
   @typedoc "An opcode, or one of the fused PUSH+JUMP(I) instructions of a program."
   @type opcode :: non_neg_integer() | :jump_to | :jumpi_to

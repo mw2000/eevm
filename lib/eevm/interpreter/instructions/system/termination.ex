@@ -18,6 +18,7 @@ defmodule EEVM.Interpreter.Instructions.System.Termination do
   alias EEVM.HardforkConfig
   alias EEVM.Interpreter.Instructions.Helpers
   alias EEVM.Interpreter.{MachineState, Memory, Stack}
+  require EEVM.HardforkConfig
 
   @cold_account_access_cost 2_600
 

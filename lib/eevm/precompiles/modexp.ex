@@ -68,6 +68,7 @@ defmodule EEVM.Precompiles.ModExp do
   """
 
   alias EEVM.HardforkConfig
+  require EEVM.HardforkConfig
 
   # EIP-7823: maximum base, exponent, and modulus length in bytes.
   @max_input_length 1024

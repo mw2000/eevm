@@ -3,8 +3,9 @@ defmodule EEVM.HardforkConfig do
   Hardfork configuration controlling which EIP rules are active during execution.
 
   Internal: callers use `EEVM.Config.new/2`, `EEVM.Config.enabled?/2`, and
-  `EEVM.Config.hardforks/0`. eevm's own code gates rules with `enabled?/2`
-  here, and new flags go in `@eip_activation`.
+  `EEVM.Config.hardforks/0`. eevm's own code gates rules with the
+  `enabled?/2` macro here, which rejects undeclared flags at compile time,
+  and new flags go in `@eip_activation`.
 
   The `spec_id` atom identifies the target hardfork, and `enabled?/2` answers
   whether a given EIP is active under that spec.
@@ -211,30 +212,89 @@ defmodule EEVM.HardforkConfig do
   end
 
   @doc """
-  Returns `true` if the given EIP feature flag is active in this hardfork config.
+  Returns whether the EIP feature flag `flag` is active in `hardfork`.
+
+  A macro, so `require EEVM.HardforkConfig` first. With a literal flag, as
+  eevm's own code always passes, the flag is looked up when the caller
+  compiles: a flag missing from `@eip_activation`, such as a misspelling, is
+  a compile error rather than a rule that is silently off, and the check
+  compiles to one integer comparison. A flag held in a variable must be
+  declared too, or the check raises `ArgumentError`; tables of flags, like
+  the opcode registry's, are read when the per-fork tables are built at
+  compile time, so a bad entry fails that compilation.
+
+  `EEVM.Config.enabled?/2` is the public runtime check, for which unknown
+  flags are inactive.
 
   ## Examples
 
-      iex> config = EEVM.HardforkConfig.new(:cancun)
-      iex> EEVM.HardforkConfig.enabled?(config, :eip_6780)
+      iex> require EEVM.HardforkConfig
+      iex> EEVM.HardforkConfig.enabled?(EEVM.HardforkConfig.new(:cancun), :eip_6780)
       true
-
-      iex> config = EEVM.HardforkConfig.new(:london)
-      iex> EEVM.HardforkConfig.enabled?(config, :eip_6780)
+      iex> EEVM.HardforkConfig.enabled?(EEVM.HardforkConfig.new(:london), :eip_6780)
       false
-
-      iex> config = EEVM.HardforkConfig.new(:berlin)
-      iex> EEVM.HardforkConfig.enabled?(config, :eip_2929)
+      iex> flag = :eip_2929
+      iex> EEVM.HardforkConfig.enabled?(EEVM.HardforkConfig.new(:berlin), flag)
       true
   """
-  @spec enabled?(t(), atom()) :: boolean()
-  def enabled?(%__MODULE__{spec_id: spec_id}, eip_flag) do
-    case Map.fetch(@eip_activation, eip_flag) do
-      {:ok, activation_fork} ->
-        Map.fetch!(@spec_order, spec_id) >= Map.fetch!(@spec_order, activation_fork)
+  defmacro enabled?(hardfork, flag) when is_atom(flag) do
+    case @eip_activation do
+      %{^flag => fork} ->
+        quote do: EEVM.HardforkConfig.ordinal(unquote(hardfork)) >= unquote(@spec_order[fork])
 
-      :error ->
-        false
+      _ ->
+        raise CompileError,
+          file: __CALLER__.file,
+          line: __CALLER__.line,
+          description:
+            "unknown EIP flag #{inspect(flag)}: declare it in EEVM.HardforkConfig's @eip_activation"
+    end
+  end
+
+  defmacro enabled?(hardfork, flag) do
+    quote do
+      EEVM.HardforkConfig.ordinal(unquote(hardfork)) >=
+        EEVM.HardforkConfig.activation_ordinal!(unquote(flag))
+    end
+  end
+
+  @doc """
+  Returns whether `flag` is declared in `@eip_activation`.
+
+  ## Examples
+
+      iex> EEVM.HardforkConfig.flag?(:eip_1559)
+      true
+      iex> EEVM.HardforkConfig.flag?(:eip_1595)
+      false
+  """
+  @spec flag?(atom()) :: boolean()
+  def flag?(flag), do: is_map_key(@eip_activation, flag)
+
+  @doc """
+  Returns the position of `hardfork`'s spec in the fork order, from 0 for
+  Frontier; `enabled?/2` compares it with a flag's activation.
+  """
+  @spec ordinal(t()) :: non_neg_integer()
+  def ordinal(hardfork)
+
+  for {spec_id, ordinal} <- @spec_order do
+    def ordinal(%__MODULE__{spec_id: unquote(spec_id)}), do: unquote(ordinal)
+  end
+
+  @doc """
+  Returns the `ordinal/1` of the fork that activates `flag`. Raises
+  `ArgumentError` when `flag` isn't declared in `@eip_activation`.
+  """
+  @spec activation_ordinal!(atom()) :: non_neg_integer()
+  def activation_ordinal!(flag) do
+    case @eip_activation do
+      %{^flag => fork} ->
+        Map.fetch!(@spec_order, fork)
+
+      _ ->
+        raise ArgumentError,
+              "unknown EIP flag #{inspect(flag)}: declare it in EEVM.HardforkConfig's @eip_activation"
     end
   end
 

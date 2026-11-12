@@ -7,6 +7,9 @@ defmodule EEVM.HardforkConfigTest do
   alias EEVM.Database
   alias EEVM.Database.InMemory
   alias EEVM.HardforkConfig
+  require EEVM.HardforkConfig
+
+  doctest HardforkConfig
 
   # ---------------------------------------------------------------------------
   # HardforkConfig.enabled?/2 unit tests
@@ -124,8 +127,31 @@ defmodule EEVM.HardforkConfigTest do
       refute HardforkConfig.enabled?(HardforkConfig.new(:berlin), :eip_3541)
     end
 
-    test "unknown EIP feature flag returns false" do
-      refute HardforkConfig.enabled?(HardforkConfig.new(:cancun), :eip_9999)
+    # A misspelled flag, :eip_2939 for EIP-2929, must not compile into a rule
+    # that is silently off on every fork.
+    test "an undeclared literal flag is a compile error naming the flag and line" do
+      code = """
+      defmodule EEVM.HardforkConfigTest.Misspelled do
+        require EEVM.HardforkConfig
+        def cold_access?(hardfork), do: EEVM.HardforkConfig.enabled?(hardfork, :eip_2939)
+      end
+      """
+
+      error = assert_raise CompileError, fn -> Code.compile_string(code, "misspelled.ex") end
+      assert Exception.message(error) =~ "misspelled.ex:3: unknown EIP flag :eip_2939"
+      refute Code.ensure_loaded?(EEVM.HardforkConfigTest.Misspelled)
+    end
+
+    test "an undeclared flag in a variable raises; Config.enabled?/2 treats it as inactive" do
+      flag = :eip_2939
+
+      assert_raise ArgumentError, ~r/unknown EIP flag :eip_2939/, fn ->
+        HardforkConfig.enabled?(HardforkConfig.new(:cancun), flag)
+      end
+
+      refute EEVM.Config.enabled?(EEVM.Config.new(:cancun), flag)
+      assert EEVM.Config.enabled?(EEVM.Config.new(:cancun), :eip_2929)
+      refute EEVM.Config.enabled?(EEVM.Config.new(:istanbul), :eip_2929)
     end
 
     test "EIP-2537 (BLS12-381 precompiles) is enabled from Prague onward" do

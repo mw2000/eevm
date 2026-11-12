@@ -72,6 +72,7 @@ defmodule EEVM do
   alias EEVM.Interpreter
   alias EEVM.Interpreter.{MachineState, Stack}
   alias EEVM.Tracer
+  require EEVM.HardforkConfig
 
   @address_limit 2 ** 160
 

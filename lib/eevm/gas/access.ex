@@ -31,6 +31,7 @@ defmodule EEVM.Gas.Access do
 
   alias EEVM.HardforkConfig
   alias EEVM.Interpreter.MachineState
+  require EEVM.HardforkConfig
 
   # EIP-2929: first access to an account address
   @cold_account_access_cost 2600

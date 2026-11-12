@@ -44,6 +44,7 @@ defmodule EEVM.Gas.Static do
   """
 
   alias EEVM.HardforkConfig
+  require EEVM.HardforkConfig
 
   # Yellow Paper Appendix G — gas cost tiers
   @gas_zero 0

@@ -14,6 +14,7 @@ defmodule EEVM.Transaction.Validator do
   alias EEVM.Gas.Blob
   alias EEVM.HardforkConfig
   alias EEVM.Transaction.IntrinsicGas
+  require EEVM.HardforkConfig
 
   import Bitwise
 
@@ -76,21 +77,19 @@ defmodule EEVM.Transaction.Validator do
     end
   end
 
+  defp validate_tx_type(%TxEnv{type: type}, %HardforkConfig{} = hardfork) do
+    if tx_type_enabled?(type, hardfork),
+      do: :ok,
+      else: {:error, :tx_type_not_supported, %{type: type, hardfork: hardfork.spec_id}}
+  end
+
   # Each EIP-2718 transaction type is valid from the fork of the EIP that
   # introduced it.
-  @tx_type_eips %{eip2930: :eip_2930, eip1559: :eip_1559, eip4844: :eip_4844, eip7702: :eip_7702}
-
-  defp validate_tx_type(%TxEnv{type: type}, %HardforkConfig{} = hardfork) do
-    case @tx_type_eips do
-      %{^type => eip} ->
-        if HardforkConfig.enabled?(hardfork, eip),
-          do: :ok,
-          else: {:error, :tx_type_not_supported, %{type: type, hardfork: hardfork.spec_id}}
-
-      _legacy ->
-        :ok
-    end
-  end
+  defp tx_type_enabled?(:eip2930, hardfork), do: HardforkConfig.enabled?(hardfork, :eip_2930)
+  defp tx_type_enabled?(:eip1559, hardfork), do: HardforkConfig.enabled?(hardfork, :eip_1559)
+  defp tx_type_enabled?(:eip4844, hardfork), do: HardforkConfig.enabled?(hardfork, :eip_4844)
+  defp tx_type_enabled?(:eip7702, hardfork), do: HardforkConfig.enabled?(hardfork, :eip_7702)
+  defp tx_type_enabled?(_legacy, _hardfork), do: true
 
   defp validate_set_code_tx(%TxEnv{type: :eip7702} = tx) do
     cond do

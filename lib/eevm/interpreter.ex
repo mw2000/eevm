@@ -27,6 +27,7 @@ defmodule EEVM.Interpreter do
   alias EEVM.Tracer
   alias EEVM.Tracer.TraceStep
   alias EEVM.Transaction.IntrinsicGas
+  require EEVM.HardforkConfig
 
   # The `gas` register holds at most `@gas_window`, the largest integer the BEAM
   # keeps unboxed on 64-bit machines; any gas above it waits in `frame.gas`. A

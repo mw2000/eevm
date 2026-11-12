@@ -23,6 +23,7 @@ defmodule EEVM.SystemContracts do
 
   alias EEVM.{Config, Database, HardforkConfig}
   alias EEVM.SystemContracts.{BeaconRoots, BlockHashes}
+  require EEVM.HardforkConfig
 
   @withdrawal_request_address 0x00000961EF480EB55E80D19AD83579A64C007002
   @consolidation_request_address 0x0000BBDDC7CE488642FB579F8B00F3A590007251
@@ -96,9 +97,7 @@ defmodule EEVM.SystemContracts do
   def genesis_accounts(fork) do
     hardfork = hardfork(fork)
 
-    for {flag, address, code} <- contracts(),
-        HardforkConfig.enabled?(hardfork, flag),
-        into: %{} do
+    for {true, address, code} <- contracts(hardfork), into: %{} do
       {address, %{balance: 0, nonce: 1, code: code}}
     end
   end
@@ -123,12 +122,16 @@ defmodule EEVM.SystemContracts do
   defp hardfork(%Config{hardfork: hardfork}), do: hardfork
   defp hardfork(spec_id) when is_atom(spec_id), do: HardforkConfig.new(spec_id)
 
-  defp contracts do
+  defp contracts(hardfork) do
     [
-      {:eip_4788, BeaconRoots.address(), BeaconRoots.deployed_bytecode()},
-      {:eip_2935, BlockHashes.address(), BlockHashes.deployed_bytecode()},
-      {:eip_7002, @withdrawal_request_address, @withdrawal_request_code},
-      {:eip_7251, @consolidation_request_address, @consolidation_request_code}
+      {HardforkConfig.enabled?(hardfork, :eip_4788), BeaconRoots.address(),
+       BeaconRoots.deployed_bytecode()},
+      {HardforkConfig.enabled?(hardfork, :eip_2935), BlockHashes.address(),
+       BlockHashes.deployed_bytecode()},
+      {HardforkConfig.enabled?(hardfork, :eip_7002), @withdrawal_request_address,
+       @withdrawal_request_code},
+      {HardforkConfig.enabled?(hardfork, :eip_7251), @consolidation_request_address,
+       @consolidation_request_code}
     ]
   end
 end

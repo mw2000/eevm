@@ -29,6 +29,7 @@ defmodule EEVM.Handler.Execution do
   alias EEVM.Interpreter.Instructions.Helpers
   alias EEVM.Interpreter.Instructions.System.Creation
   alias EEVM.Interpreter.MachineState
+  require EEVM.HardforkConfig
 
   @max_code_size 24_576
   @code_deposit_gas_per_byte 200

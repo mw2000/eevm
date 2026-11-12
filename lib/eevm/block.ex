@@ -61,6 +61,7 @@ defmodule EEVM.Block do
   alias EEVM.MPT.Trie
   alias EEVM.SystemContracts.{BeaconRoots, BlockHashes}
   alias EEVM.Transaction.{AccessList, Blob, Envelope, FeeMarket, Legacy, SetCode}
+  import EEVM.HardforkConfig, only: [enabled?: 2]
 
   # EIP-7934: MAX_BLOCK_SIZE (10 MiB) minus a 2 MiB beacon-block SAFETY_MARGIN.
   @max_rlp_block_size 10_485_760 - 2_097_152
@@ -393,9 +394,11 @@ defmodule EEVM.Block do
       unwrap_system_call(BlockHashes.commit(db, ctx, header.parent_hash))
     end
 
-    [{:eip_4788, beacon_root}, {:eip_2935, block_hash}]
-    |> Enum.filter(fn {flag, _call} -> enabled?(hardfork, flag) end)
-    |> Enum.map(fn {_flag, call} -> call end)
+    for {true, call} <- [
+          {enabled?(hardfork, :eip_4788), beacon_root},
+          {enabled?(hardfork, :eip_2935), block_hash}
+        ],
+        do: call
   end
 
   # The canonical system contracts never revert; if one does, the block keeps
@@ -487,8 +490,6 @@ defmodule EEVM.Block do
       _tx, acc -> acc
     end)
   end
-
-  defp enabled?(hardfork, flag), do: HardforkConfig.enabled?(hardfork, flag)
 
   # ---------------------------------------------------------------------------
   # RLP

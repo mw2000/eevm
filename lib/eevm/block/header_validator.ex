@@ -40,21 +40,12 @@ defmodule EEVM.Block.HeaderValidator do
   alias EEVM.Block.Header
   alias EEVM.Gas.Blob
   alias EEVM.HardforkConfig
+  require EEVM.HardforkConfig
 
   @max_extra_data_size 32
   @max_gas_limit_uint64_signed Bitwise.bsl(1, 63) - 1
   @min_gas_limit 5_000
   @gas_limit_divisor 1_024
-
-  # Fork-dependent header fields and the flag that introduces each.
-  @fork_fields [
-    base_fee_per_gas: :eip_1559,
-    withdrawals_root: :eip_4895,
-    blob_gas_used: :eip_4844,
-    excess_blob_gas: :eip_4844,
-    parent_beacon_block_root: :eip_4788,
-    requests_hash: :eip_7685
-  ]
 
   @typedoc "Reason returned when a header fails validation; see `EEVM.Error`."
   @type error :: EEVM.Error.header_validation_error()
@@ -133,9 +124,19 @@ defmodule EEVM.Block.HeaderValidator do
     end
   end
 
+  # Fork-dependent header fields, each present exactly from the fork of the
+  # EIP that introduces it.
   defp check_fork_fields(%Header{} = child, hardfork) do
-    Enum.reduce_while(@fork_fields, :ok, fn {field, flag}, :ok ->
-      case {HardforkConfig.enabled?(hardfork, flag), Map.fetch!(child, field)} do
+    [
+      base_fee_per_gas: HardforkConfig.enabled?(hardfork, :eip_1559),
+      withdrawals_root: HardforkConfig.enabled?(hardfork, :eip_4895),
+      blob_gas_used: HardforkConfig.enabled?(hardfork, :eip_4844),
+      excess_blob_gas: HardforkConfig.enabled?(hardfork, :eip_4844),
+      parent_beacon_block_root: HardforkConfig.enabled?(hardfork, :eip_4788),
+      requests_hash: HardforkConfig.enabled?(hardfork, :eip_7685)
+    ]
+    |> Enum.reduce_while(:ok, fn {field, enabled?}, :ok ->
+      case {enabled?, Map.fetch!(child, field)} do
         {true, nil} -> {:halt, {:error, :missing_header_fields}}
         {false, value} when value != nil -> {:halt, {:error, :unexpected_header_fields}}
         _ -> {:cont, :ok}

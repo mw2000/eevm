@@ -27,6 +27,7 @@ defmodule EEVM.Interpreter.Instructions.StackMemoryStorage.StorageOps do
   alias EEVM.Gas.{Access, Dynamic}
   alias EEVM.HardforkConfig
   alias EEVM.Interpreter.{MachineState, Stack}
+  require EEVM.HardforkConfig
 
   @sstore_sentry_gas 2_300
 

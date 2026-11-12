@@ -35,6 +35,7 @@ defmodule EEVM.Gas.Dynamic do
   import Bitwise
 
   alias EEVM.HardforkConfig
+  require EEVM.HardforkConfig
 
   # EXP: gas per byte of exponent, raised from 10 to 50 by EIP-160
   @gas_exp_byte 50
