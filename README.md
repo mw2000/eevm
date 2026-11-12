@@ -16,14 +16,16 @@ eevm runs EVM bytecode, transactions, and blocks in pure Elixir, for every fork 
 
 ## Installation
 
-eevm isn't on Hex yet. Add it from GitHub; it needs Elixir 1.18 and OTP 27 or later.
+Add `eevm` to your dependencies in `mix.exs`; it needs Elixir 1.18 and OTP 27 or later.
 
 <!-- docs-check: skip -->
 ```elixir
 def deps do
-  [{:eevm, github: "mw2000/eevm"}]
+  [{:eevm, "~> 0.1.0"}]
 end
 ```
+
+The [changelog](CHANGELOG.md) lists what each release adds and changes.
 
 ## Quick start
 
@@ -85,7 +87,7 @@ Database.get_balance(result.db, 0xB0B)
 #=> 1000
 ```
 
-The [API documentation](https://mw2000.github.io/eevm/) covers the rest: building and executing blocks with `EEVM.Block`, your own state backend with `EEVM.Database`, tracing, simulation from any address, and every error. It moves to HexDocs once eevm is on Hex.
+The [API documentation](https://hexdocs.pm/eevm) covers the rest: building and executing blocks with `EEVM.Block`, your own state backend with `EEVM.Database`, tracing, simulation from any address, and every error.
 
 ## Hardforks and EIPs
 

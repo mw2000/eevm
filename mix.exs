@@ -10,7 +10,10 @@ defmodule EEVM.MixProject do
       name: "eevm",
       version: @version,
       elixir: "~> 1.18",
-      description: "Ethereum Virtual Machine implementation in Elixir.",
+      description:
+        "An Ethereum Virtual Machine in pure Elixir: bytecode, transactions, and blocks " <>
+          "from Frontier to Osaka, with no native code.",
+      package: package(),
       source_url: @source_url,
       homepage_url: @source_url,
       start_permanent: Mix.env() == :prod,
@@ -43,6 +46,17 @@ defmodule EEVM.MixProject do
   def application do
     [
       extra_applications: [:logger]
+    ]
+  end
+
+  defp package do
+    [
+      licenses: ["MIT"],
+      links: %{
+        "GitHub" => @source_url,
+        "Changelog" => "#{@source_url}/blob/v#{@version}/CHANGELOG.md"
+      },
+      files: ~w(lib mix.exs README.md CHANGELOG.md LICENSE .formatter.exs)
     ]
   end
 
@@ -93,9 +107,10 @@ defmodule EEVM.MixProject do
     [
       main: "EEVM",
       source_url: @source_url,
-      source_ref: "main",
+      source_ref: "v#{@version}",
       extras: [
         "README.md",
+        "CHANGELOG.md",
         {"bench/README.md", filename: "benchmarks", title: "Benchmarks"},
         "LICENSE"
       ],
