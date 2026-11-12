@@ -126,6 +126,7 @@ defmodule EEVM.Error do
   | Error | Meaning |
   |-------|---------|
   | `:invalid_block_encoding` | The bytes aren't a canonical RLP block |
+  | `:simulation_config` | The `EEVM.Config` sets a simulation switch (`disable_*`), which blocks never run under |
   | `:rlp_block_size_exceeded` | The encoded block is over 8,388,608 bytes (EIP-7934, from Osaka) |
   | `:invalid_transactions_root` | `transactions_root` doesn't commit to the block's transactions |
   | `:invalid_withdrawals_root` | `withdrawals_root` doesn't commit to the withdrawals, or withdrawals are present before Shanghai or missing after |
@@ -253,6 +254,7 @@ defmodule EEVM.Error do
 
   @type block_error ::
           :invalid_block_encoding
+          | :simulation_config
           | :rlp_block_size_exceeded
           | header_validation_error()
           | :invalid_transactions_root
@@ -347,6 +349,8 @@ defmodule EEVM.Error do
     invalid_blob_gas_used: "wrong blob gas used",
     invalid_excess_blob_gas: "wrong excess blob gas",
     invalid_block_encoding: "invalid block encoding",
+    simulation_config:
+      "config sets a simulation switch (disable_*); blocks never run with relaxed rules",
     rlp_block_size_exceeded: "block larger than the RLP size limit",
     invalid_transactions_root: "wrong transactions root",
     invalid_withdrawals_root: "wrong withdrawals root",

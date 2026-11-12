@@ -32,6 +32,13 @@ defmodule EEVM.Handler.PostExecution do
   The database argument is the state after upfront charging, the nonce
   bump, and EIP-7702 authorizations; settlement starts from it when
   execution failed.
+
+  `gas_paid` is the wei the sender actually paid upfront for gas, without
+  the blob fee. The refund of unused gas, and then the coinbase's tip, are
+  capped by it, so settlement never pays out more than was paid in. For a
+  transaction under consensus rules it is `gas_limit * effective_price` and
+  the caps never bind; under the `disable_balance_check` simulation switch
+  the sender may have paid less.
   """
   @spec finalize(
           MachineState.t(),
@@ -39,7 +46,8 @@ defmodule EEVM.Handler.PostExecution do
           TxEnv.t(),
           non_neg_integer(),
           Database.t(),
-          BlockEnv.t()
+          BlockEnv.t(),
+          non_neg_integer()
         ) :: {:ok, TransactionResult.t()}
   def finalize(
         %MachineState{} = final_state,
@@ -47,17 +55,19 @@ defmodule EEVM.Handler.PostExecution do
         %TxEnv{} = tx,
         sender,
         %Database{} = db_nonce_bumped,
-        %BlockEnv{} = block
+        %BlockEnv{} = block,
+        gas_paid
       ) do
     gas_used = tx.gas_limit - final_state.frame.gas
     effective_price = PreExecution.effective_gas_price(tx, block)
+    refund = min((tx.gas_limit - gas_used) * effective_price, gas_paid)
 
-    settled_db = settle_state(final_state, db_nonce_bumped, tx, gas_used, effective_price)
+    settled_db = settle_state(final_state, db_nonce_bumped, tx, refund)
 
     coinbase_credited_db =
       settled_db
       |> Helpers.touch_account(block.coinbase, final_state.env.config.hardfork)
-      |> credit_coinbase(block, tx, gas_used, effective_price)
+      |> credit_coinbase(block, tx, gas_used, gas_paid - refund)
 
     status = status(final_state.status)
     logs = if status == :success, do: Enum.reverse(final_state.substate.logs), else: []
@@ -108,22 +118,20 @@ defmodule EEVM.Handler.PostExecution do
   def status(:out_of_gas), do: {:halt, :out_of_gas}
   def status({:error, reason}), do: {:halt, reason}
 
-  defp settle_state(%MachineState{status: status}, db_nonce_bumped, tx, gas_used, effective_price)
-       when status in [:reverted, :invalid, :out_of_gas] or is_tuple(status) do
-    refund_amount = (tx.gas_limit - gas_used) * effective_price
-    credit_sender(db_nonce_bumped, tx.origin, refund_amount)
-  end
+  defp settle_state(%MachineState{status: status}, db_nonce_bumped, tx, refund)
+       when status in [:reverted, :invalid, :out_of_gas] or is_tuple(status),
+       do: credit_sender(db_nonce_bumped, tx.origin, refund)
 
-  defp settle_state(%MachineState{} = state, _db_nonce_bumped, tx, gas_used, effective_price) do
-    refund_amount = (tx.gas_limit - gas_used) * effective_price
-    credit_sender(state.db, tx.origin, refund_amount)
-  end
+  defp settle_state(%MachineState{} = state, _db_nonce_bumped, tx, refund),
+    do: credit_sender(state.db, tx.origin, refund)
 
-  defp credit_coinbase(%Database{} = db, %BlockEnv{}, _tx, 0, _price), do: db
+  # `kept` is the gas fee the sender paid and was not refunded; the tip comes
+  # out of it, and the rest is burned.
+  defp credit_coinbase(%Database{} = db, %BlockEnv{}, _tx, 0, _kept), do: db
 
-  defp credit_coinbase(%Database{} = db, %BlockEnv{} = block, %TxEnv{} = tx, gas_used, _price) do
+  defp credit_coinbase(%Database{} = db, %BlockEnv{} = block, %TxEnv{} = tx, gas_used, kept) do
     priority_per_gas = max(PreExecution.effective_gas_price(tx, block) - block.base_fee, 0)
-    reward = priority_per_gas * gas_used
+    reward = min(priority_per_gas * gas_used, kept)
 
     if reward == 0 do
       db

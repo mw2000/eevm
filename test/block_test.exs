@@ -193,6 +193,36 @@ defmodule EEVM.BlockTest do
     end
   end
 
+  describe "simulation configs" do
+    test "validate/3, execute/4, and build/4 refuse a config with any simulation switch" do
+      {:ok, block, _} = build([signed_transfer()])
+      assert Block.validate(block, parent()) == :ok
+      assert {:ok, _} = Block.execute(block, parent(), db())
+
+      for switch <- [
+            :disable_nonce_check,
+            :disable_balance_check,
+            :disable_base_fee,
+            :disable_block_gas_limit,
+            :disable_eip3607
+          ] do
+        config = EEVM.Config.new(:cancun, [{switch, true}])
+        assert Block.validate(block, parent(), config: config) == {:error, :simulation_config}
+
+        assert Block.execute(block, parent(), db(), config: config) ==
+                 {:error, :simulation_config}
+
+        assert build([signed_transfer()], config: config) == {:error, :simulation_config}
+      end
+
+      # The same config still relaxes a single transaction.
+      config = EEVM.Config.new(:cancun, disable_nonce_check: true)
+
+      assert {:ok, %{status: :success}} =
+               EEVM.transact(signed_transfer(nonce: 5), EEVM.BlockEnv.new(), db(), config: config)
+    end
+  end
+
   describe "proof-of-work block reward" do
     # Yellow Paper section 11.3, EIP-649 (Byzantium), EIP-1234
     # (Constantinople); none from Paris (EIP-3675). An empty block pays no fees.

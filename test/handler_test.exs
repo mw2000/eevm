@@ -221,11 +221,41 @@ defmodule EEVM.HandlerTest do
       assert simulate(tx, db) == {:error, :insufficient_balance}
 
       assert {:ok, result} = simulate(tx, db, simple_block(), disable_balance_check: true)
-      # max(300,000 - 300,000, 100,000) = 100,000 after the gas charge; the value
-      # leaves, then the 9,000 unused gas is refunded at 10 wei.
+      # max(300,000 - 300,000, 100,000) = 100,000 after the gas charge, so the
+      # sender paid 200,000 for gas. The value leaves, the 9,000 unused gas is
+      # refunded at 10 wei (90,000), and the coinbase's tip of 21,000 * 10 is
+      # capped at the 110,000 left: no wei is created.
       assert result.status == :success
       assert Database.get_balance(result.db, @recipient) == 100_000
       assert Database.get_balance(result.db, @impersonated) == 90_000
+      assert Database.get_balance(result.db, @coinbase) == 110_000
+    end
+
+    test "disable_balance_check never refunds or tips more than the sender paid" do
+      # An empty sender pays nothing, so it gets no refund (revm would credit
+      # 9,000 * 10) and the coinbase no tip.
+      tx = unsigned(gas_limit: 30_000, value: 0)
+
+      assert {:ok, result} =
+               simulate(tx, impersonated_db(balance: 0), simple_block(),
+                 disable_balance_check: true
+               )
+
+      assert {result.status, result.gas_used} == {:success, 21_000}
+      assert Database.get_balance(result.db, @impersonated) == 0
+      assert Database.get_balance(result.db, @coinbase) == 0
+
+      # A sender that can afford the gas is settled exactly as without the switch.
+      db = impersonated_db(balance: 10 ** 18)
+      {:ok, relaxed} = simulate(tx, db, simple_block(), disable_balance_check: true)
+      {:ok, strict} = simulate(tx, db)
+
+      for address <- [@impersonated, @coinbase] do
+        assert Database.get_balance(relaxed.db, address) ==
+                 Database.get_balance(strict.db, address)
+      end
+
+      assert Database.get_balance(strict.db, @impersonated) == 10 ** 18 - 21_000 * 10
     end
 
     test "disable_base_fee accepts a fee cap below the base fee; the coinbase gets no tip" do

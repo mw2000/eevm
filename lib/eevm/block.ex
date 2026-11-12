@@ -152,20 +152,24 @@ defmodule EEVM.Block do
   @doc """
   Checks `block` against `parent` without touching state, in this order:
 
-  1. From Osaka, the encoded block is at most `max_rlp_block_size/0` bytes
+  1. The config sets no simulation switch (`EEVM.Config.simulation?/1`),
+     else `:simulation_config`: blocks never run with relaxed rules.
+  2. From Osaka, the encoded block is at most `max_rlp_block_size/0` bytes
      (EIP-7934), else `:rlp_block_size_exceeded`.
-  2. The header is a valid child of `parent` (`EEVM.Block.HeaderValidator`;
+  3. The header is a valid child of `parent` (`EEVM.Block.HeaderValidator`;
      the checks and their errors are listed in `EEVM.Error`).
-  3. The body matches the header: `ommers_hash`, `transactions_root`,
+  4. The body matches the header: `ommers_hash`, `transactions_root`,
      `withdrawals_root` (withdrawals are present exactly from Shanghai), and
      from Cancun the total blob gas of the transactions equals
      `blob_gas_used`.
   """
   @spec validate(t(), Header.t(), opts()) :: :ok | {:error, EEVM.Error.block_error()}
   def validate(%__MODULE__{} = block, %Header{} = parent, opts \\ []) do
-    hardfork = Validation.resolve_config(opts).hardfork
+    config = Validation.resolve_config(opts)
+    hardfork = config.hardfork
 
-    with :ok <- check_size(block, hardfork),
+    with :ok <- check_consensus_config(config),
+         :ok <- check_size(block, hardfork),
          :ok <- HeaderValidator.validate(block.header, parent, hardfork),
          :ok <- check_ommers(block),
          :ok <- check_transactions_root(block),
@@ -221,7 +225,9 @@ defmodule EEVM.Block do
   `:prev_randao`, `:extra_data`, `:parent_beacon_block_root`, and
   `:withdrawals` (from Shanghai).
 
-  Returns `{:ok, block, result}` or the first error `execute/4` would report.
+  Returns `{:ok, block, result}` or the first error `execute/4` would report,
+  including `{:error, :simulation_config}` for a config with a simulation
+  switch set.
 
   From Prague the state must hold the EIP-7002 and EIP-7251 request contracts,
   as on mainnet; give a new chain its system contracts with
@@ -260,11 +266,18 @@ defmodule EEVM.Block do
     block = %__MODULE__{header: header, transactions: transactions, withdrawals: withdrawals}
 
     Database.catch_read_errors(fn ->
-      with {:ok, result} <- run(block, db, config, opts),
+      with :ok <- check_consensus_config(config),
+           {:ok, result} <- run(block, db, config, opts),
            {:ok, result} <- finish(result) do
         {:ok, seal(block, header, result), result}
       end
     end)
+  end
+
+  # The simulation switches relax transaction rules for tooling; a block that
+  # ran under them would not be a valid Ethereum block.
+  defp check_consensus_config(config) do
+    if Config.simulation?(config), do: {:error, :simulation_config}, else: :ok
   end
 
   defp seal(block, header, result) do

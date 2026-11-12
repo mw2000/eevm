@@ -201,8 +201,11 @@ unsigned `EEVM.TxEnv`, whose `origin` is the sender, and still applies every
 transaction rule. `EEVM.Config`'s simulation switches, `disable_nonce_check`,
 `disable_balance_check`, `disable_base_fee`, `disable_block_gas_limit`, and
 `disable_eip3607`, relax them one at a time, as revm's `CfgEnv` does. They
-default to off, and are for simulation only: never set them to validate or
-build real blocks.
+default to off, and are for simulation only: `EEVM.Block.validate/3`,
+`execute/4`, and `build/4` refuse a config that sets one with
+`{:error, :simulation_config}`. Unlike revm, a sender let through without
+the balance check is refunded, and the coinbase tipped, only out of what it
+actually paid, so a simulation never mints ether through gas.
 
 ```elixir
 # Send 1,000 wei from a contract, such as a multisig, whose key nobody holds.

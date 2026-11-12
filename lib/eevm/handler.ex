@@ -102,6 +102,7 @@ defmodule EEVM.Handler do
          # GASPRICE (0x3A) reads the price per gas the sender pays (EIP-1559).
          tx_ctx = %{tx_ctx | gas_price: PreExecution.effective_gas_price(tx_ctx, block)},
          {:ok, db_after_upfront} <- PreExecution.charge_upfront(db, tx_ctx, block, config),
+         gas_paid = gas_paid(db, db_after_upfront, tx_ctx, block),
          {:ok, db_nonce_bumped, execution_gas} <-
            PreExecution.prepare_execution(db_after_upfront, tx_ctx, config.hardfork) do
       {db_authorized, authorization} =
@@ -124,9 +125,19 @@ defmodule EEVM.Handler do
         tx_ctx,
         tx_ctx.origin,
         db_authorized,
-        block
+        block,
+        gas_paid
       )
     end
+  end
+
+  # What the sender paid upfront for gas, the blob fee aside: gas_limit times
+  # the effective price, or less when the disable_balance_check simulation
+  # switch let a sender that couldn't afford it through. Settlement refunds
+  # and tips no more than this, so a simulation never mints ether.
+  defp gas_paid(db_before, db_after, %TxEnv{origin: origin} = tx, block) do
+    paid = Database.get_balance(db_before, origin) - Database.get_balance(db_after, origin)
+    max(paid - PreExecution.blob_gas_fee(tx, block), 0)
   end
 
   # An unsigned TxEnv is impersonation: its origin is the sender as given.

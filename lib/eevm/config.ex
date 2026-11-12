@@ -41,9 +41,11 @@ defmodule EEVM.Config do
     comes from the account's nonce.
   - `disable_balance_check` skips the upfront balance check. The sender's
     balance is first raised to at least the transaction's `value`, then
-    charged for gas as far as it can pay while keeping `value`; unused gas is
-    refunded as usual, so a sender that could not afford the fee may end
-    with more than it started with.
+    charged for gas as far as it can pay while keeping `value`. Unlike
+    revm, eevm refunds unused gas, and pays the coinbase its tip, only out
+    of what the sender actually paid, so gas settlement never mints ether
+    and the sender never ends with more than it started with. (Raising the
+    balance to `value` does create that ether, so the transfer can happen.)
   - `disable_base_fee` accepts a `max_fee_per_gas` (or legacy `gas_price`)
     below the block's base fee. The sender then pays its fee cap per gas,
     and the coinbase earns no tip.
@@ -51,6 +53,10 @@ defmodule EEVM.Config do
     block's. The EIP-7825 cap from Osaka still applies.
   - `disable_eip3607` lets a sender with code, such as a contract or a
     multisig, send a transaction.
+
+  Only single transactions run relaxed: `EEVM.Block.validate/3`,
+  `execute/4`, and `build/4` return `{:error, :simulation_config}` for a
+  config with any switch set (see `simulation?/1`).
 
   Together with an unsigned `EEVM.TxEnv`, which `EEVM.transact/4` accepts
   in place of a signed transaction, they let a tool run a transaction from
@@ -141,6 +147,20 @@ defmodule EEVM.Config do
   @spec enabled?(t(), atom()) :: boolean()
   def enabled?(%__MODULE__{hardfork: hardfork}, eip_flag),
     do: HardforkConfig.flag?(eip_flag) and HardforkConfig.enabled?(hardfork, eip_flag)
+
+  @doc """
+  Returns whether `config` sets any simulation switch (`disable_*`).
+
+  ## Example
+
+      iex> EEVM.Config.simulation?(EEVM.Config.new(:cancun))
+      false
+      iex> EEVM.Config.simulation?(EEVM.Config.new(:cancun, disable_base_fee: true))
+      true
+  """
+  @spec simulation?(t()) :: boolean()
+  def simulation?(%__MODULE__{} = config),
+    do: Enum.any?(Keyword.keys(@switches), &Map.fetch!(config, &1))
 
   @doc """
   Returns every supported hardfork, oldest first.
