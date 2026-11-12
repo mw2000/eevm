@@ -44,5 +44,5 @@ defmodule Devx do
   def funded_db, do: EEVM.Database.InMemory.new(accounts: %{sender() => %{balance: 10 ** 18}})
 
   @doc "The token's initcode with its constructor argument, the initial supply, appended."
-  def token_initcode(supply), do: @token_initcode <> <<supply::256>>
+  def token_initcode(supply), do: @token_initcode <> EEVM.ABI.encode(["uint256"], [supply])
 end

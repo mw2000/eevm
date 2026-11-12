@@ -18,10 +18,11 @@ defmodule Devx.ErrorsTest do
   end
 
   test "a custom error reverts with its selector and arguments", %{token: t, db: db} do
-    assert {:revert, {:custom, selector, <<0x999::256>>}, _gas} =
+    assert {:revert, {:custom, selector, args}, _gas} =
              Errors.call(db, t, 0x999, "mint(uint256)", [1])
 
     assert selector == EEVM.selector("Unauthorized(address)")
+    assert EEVM.ABI.decode(["address"], args) == {:ok, [0x999]}
   end
 
   test "division by zero panics with code 0x12", %{token: t, db: db, me: me} do

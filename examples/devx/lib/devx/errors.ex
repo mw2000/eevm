@@ -8,9 +8,9 @@ defmodule Devx.Errors do
 
   alias EEVM.Transaction.{FeeMarket, Signer}
 
-  @doc "Calls `signature` on `token` with `args` (ABI words) from `from`; returns `{status, revert_reason}`."
+  @doc "Calls `signature` on `token` with `args` from `from`; returns `{status, revert_reason, gas_used}`."
   def call(db, token, from, signature, args, opts \\ []) do
-    calldata = EEVM.selector(signature) <> Enum.map_join(args, &<<&1::256>>)
+    calldata = EEVM.ABI.encode_call(signature, args)
     {:ok, result} = EEVM.call(db, token, calldata, Keyword.merge([caller: from], opts))
     {result.status, EEVM.revert_reason(result), result.gas_used}
   end
@@ -24,7 +24,7 @@ defmodule Devx.Errors do
           max_priority_fee_per_gas: Devx.gwei(),
           gas_limit: 100_000,
           to: to,
-          data: EEVM.selector(signature) <> Enum.map_join(args, &<<&1::256>>)
+          data: EEVM.ABI.encode_call(signature, args)
         },
         overrides
       )

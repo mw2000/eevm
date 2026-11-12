@@ -20,6 +20,8 @@ defmodule Devx.Erc20Test do
     assert Erc20.transfers(logs) == [{0, @alice, 1_000_000}]
     assert Erc20.balance_of(db, token, @alice) == 1_000_000
     assert Erc20.balance_of(db, token, @bob) == 0
+    # Token.sol: `string public name = "Dev Token"`, a dynamic return value.
+    assert Erc20.name(db, token) == "Dev Token"
   end
 
   test "transfer moves tokens, returns true, and emits Transfer" do
@@ -28,7 +30,7 @@ defmodule Devx.Erc20Test do
     {:ok, result} = Erc20.transfer(db, token, @alice, @bob, 250)
 
     assert result.status == :success
-    assert result.return_data == <<1::256>>
+    assert EEVM.ABI.decode(["bool"], result.return_data) == {:ok, [true]}
     assert Erc20.transfers(result.logs) == [{@alice, @bob, 250}]
     assert Erc20.balance_of(result.db, token, @alice) == 999_750
     assert Erc20.balance_of(result.db, token, @bob) == 250

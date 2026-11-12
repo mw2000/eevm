@@ -11,8 +11,12 @@ defmodule Devx.TracingTest do
                    0x00>>
 
   # Solidity stores mapping entry `key` of the mapping in `slot` at
-  # keccak256(key . slot); balanceOf is the token's slot 1, after `name`.
-  defp balance_slot(owner), do: :binary.decode_unsigned(EEVM.keccak256(<<owner::256, 1::256>>))
+  # keccak256(abi.encode(key, slot)); balanceOf is the token's slot 1, after `name`.
+  defp balance_slot(owner) do
+    EEVM.ABI.encode(["address", "uint256"], [owner, 1])
+    |> EEVM.keccak256()
+    |> :binary.decode_unsigned()
+  end
 
   setup do
     {:ok, token, db, _logs} = Erc20.deploy(EEVM.Database.InMemory.new(), @alice, 1_000)

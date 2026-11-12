@@ -166,17 +166,32 @@ contract), and hashes and roots are 32-byte binaries. `EEVM.address/1` and
 points take bytes and raise (or, for a raw transaction, return
 `{:error, :hex_string}`) when given a `0x` hex string. `EEVM.transact/4`
 also accepts raw signed transaction bytes.
-`EEVM.Transaction.Signer.address/1` turns a private key into its address, and
-`EEVM.keccak256/1`, `EEVM.selector/1`, and `EEVM.event_topic/1` build calldata
-and match logs:
+`EEVM.Transaction.Signer.address/1` turns a private key into its address.
+
+`EEVM.ABI` encodes calldata and decodes return data and event logs from
+Solidity signatures, in pure Elixir: integers for `uint`, `int`, and
+`address`, binaries for `bytes` and `string`, lists for arrays, and tuples
+for structs. Decoding returns `{:error, :invalid_abi_data}` for data that
+doesn't match its types.
 
 ```elixir
-iex> calldata = EEVM.selector("balanceOf(address)") <> <<0xA11CE::256>>
+iex> calldata = EEVM.ABI.encode_call("balanceOf(address)", [0xA11CE])
 iex> EEVM.hex(calldata)
 "0x70a08231" <> String.duplicate("0", 59) <> "a11ce"
-iex> EEVM.event_topic("Transfer(address,address,uint256)") == 0xDDF252AD1BE2C89B69C2B068FC378DAA952BA7F163C4A11628F55A4DF523B3EF
-true
+iex> return_data = EEVM.ABI.encode(["uint256", "string"], [42, "eevm"])
+iex> EEVM.ABI.decode(["uint256", "string"], return_data)
+{:ok, [42, "eevm"]}
+iex> log = %{
+...>   address: 0x7070,
+...>   topics: [EEVM.event_topic("Transfer(address,address,uint256)"), 0xA11CE, 0xB0B],
+...>   data: EEVM.ABI.encode(["uint256"], [250])
+...> }
+iex> EEVM.ABI.decode_log("Transfer(address indexed from, address indexed to, uint256 value)", log)
+{:ok, [0xA11CE, 0xB0B, 250]}
 ```
+
+`EEVM.keccak256/1`, `EEVM.selector/1`, and `EEVM.event_topic/1` give the
+hashes underneath, for matching logs or selectors yourself.
 
 ### Build, encode, and execute a block
 

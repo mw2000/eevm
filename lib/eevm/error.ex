@@ -151,6 +151,13 @@ defmodule EEVM.Error do
   |-------|--------|---------|
   | `:commit_not_supported` | `EEVM.Database.commit/1` | The backend's `commit/2` returned `{:error, :unsupported}`; apply `changes/1` yourself |
 
+  ## ABI Errors
+
+  | Error | Source | Meaning |
+  |-------|--------|---------|
+  | `:invalid_abi_data` | `EEVM.ABI.decode/2`, `EEVM.ABI.decode_log/2` | The data doesn't hold valid values of the given types |
+  | `:event_mismatch` | `EEVM.ABI.decode_log/2` | The log's first topic or topic count doesn't match the event signature |
+
   ## Registry Errors
 
   | Error | Source | Meaning |
@@ -270,6 +277,8 @@ defmodule EEVM.Error do
           | precompile_error()
           | :unknown_opcode
           | :commit_not_supported
+          | :invalid_abi_data
+          | :event_mismatch
           | decode_error()
           | transaction_validation_error()
           | block_error()
@@ -351,6 +360,8 @@ defmodule EEVM.Error do
     system_contract_call_failed: "request system contract call failed",
     invalid_requests_hash: "wrong requests hash",
     commit_not_supported: "the database backend does not support commit",
+    invalid_abi_data: "data doesn't match its ABI types",
+    event_mismatch: "log isn't the given event",
     gas_allowance_exceeded: "transaction gas limit above the gas left in the block"
   }
 

@@ -25,6 +25,7 @@ defmodule EEVM do
     (`transact/4`), decode revert reasons, and the hashing and hex helpers
     that calls need (`keccak256/1`, `selector/1`, `event_topic/1`,
     `address/1`, `hex/1`)
+  - `EEVM.ABI` — Solidity ABI encoding: calldata, return data, and event logs
   - `EEVM.Config` — the hardfork, chain id, and custom precompiles
   - `EEVM.BlockEnv` and `EEVM.TxEnv` — the block and transaction environment
     code executes in
@@ -52,7 +53,18 @@ defmodule EEVM do
   """
 
   alias EEVM.Block.Bloom
-  alias EEVM.{BlockEnv, CallResult, Database, Handler, HardforkConfig, TransactionResult, TxEnv}
+
+  alias EEVM.{
+    ABI,
+    BlockEnv,
+    CallResult,
+    Database,
+    Handler,
+    HardforkConfig,
+    TransactionResult,
+    TxEnv
+  }
+
   alias EEVM.Context.Contract
   alias EEVM.Crypto.Keccak
   alias EEVM.Database.InMemory
@@ -385,13 +397,14 @@ defmodule EEVM do
       as `0x01` for a failed `assert`, `0x11` for arithmetic overflow, and
       `0x12` for division by zero
     - `{:custom, selector, args}` for any other payload of four bytes or
-      more, such as a Solidity custom error or a malformed `Error(string)`
+      more, such as a Solidity custom error (decode its `args` with
+      `EEVM.ABI.decode/2`) or a malformed `Error(string)`
     - `{:raw, data}` for one to three bytes
     - `nil` for no data, or for a result whose `status` isn't `:revert`
 
   ## Examples
 
-      iex> data = <<0x08C379A0::32, 32::256, 5::256, "nope!", 0::27*8>>
+      iex> data = EEVM.ABI.encode_call("Error(string)", ["nope!"])
       iex> EEVM.revert_reason(data)
       {:error_string, "nope!"}
 
@@ -419,9 +432,9 @@ defmodule EEVM do
   def revert_reason(<<@panic_selector, code::256>>), do: {:panic, code}
 
   def revert_reason(<<@error_string_selector, args::binary>> = data) do
-    case abi_bytes(args) do
-      {:ok, message} -> {:error_string, message}
-      :error -> revert_reason_custom(data)
+    case ABI.decode(["string"], args) do
+      {:ok, [message]} -> {:error_string, message}
+      {:error, :invalid_abi_data} -> revert_reason_custom(data)
     end
   end
 
@@ -431,18 +444,6 @@ defmodule EEVM do
     do: {:custom, selector, args}
 
   defp revert_reason_custom(data), do: {:raw, data}
-
-  # The ABI encoding of a lone `string`/`bytes` argument: a head word with
-  # the offset of the tail, then the length and the bytes (Solidity ABI spec).
-  defp abi_bytes(<<offset::256, _::binary>> = args) when offset <= byte_size(args) - 32 do
-    <<_::binary-size(offset), length::256, tail::binary>> = args
-
-    if length <= byte_size(tail),
-      do: {:ok, binary_part(tail, 0, length)},
-      else: :error
-  end
-
-  defp abi_bytes(_args), do: :error
 
   @doc """
   Returns the 32-byte Keccak-256 hash of `data`, Ethereum's hash function
@@ -461,7 +462,8 @@ defmodule EEVM do
   bytes of its Keccak-256 hash. Write the signature in canonical form, with
   no spaces or parameter names and full type names (`uint256`, not `uint`).
 
-  Prepend it to the ABI-encoded arguments to build calldata.
+  Prepend it to the ABI-encoded arguments to build calldata, or let
+  `EEVM.ABI.encode_call/2` do both.
 
   ## Example
 
@@ -475,7 +477,7 @@ defmodule EEVM do
   @doc """
   Returns the first log topic of an event signature, its Keccak-256 hash, as
   an integer, which is how `result.logs` carries topics. Anonymous events
-  have no such topic.
+  have no such topic. `EEVM.ABI.decode_log/2` matches and decodes a whole log.
 
   ## Example
 

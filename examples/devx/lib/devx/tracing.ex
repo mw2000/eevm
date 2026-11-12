@@ -3,7 +3,7 @@ defmodule Devx.Tracing do
 
   @doc "Traces `transfer(to, amount)` on `token` and returns the trace and the call's gas used."
   def transfer(db, token, from, to, amount) do
-    calldata = EEVM.selector("transfer(address,uint256)") <> <<to::256, amount::256>>
+    calldata = EEVM.ABI.encode_call("transfer(address,uint256)", [to, amount])
     {:ok, result} = EEVM.call(db, token, calldata, caller: from, tracer: true)
     {result.trace, result.gas_used}
   end
