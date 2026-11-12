@@ -22,9 +22,11 @@ and built from small, pure functions over immutable state. It includes the
 interpreter, gas accounting, all precompiles through `0x11` plus P256VERIFY
 (`0x100`), typed transactions, block processing, and Merkle-Patricia state roots.
 
-> **Status:** eevm is under active development and does not yet pass the official
-> Ethereum test suites. Do not use it where consensus correctness matters. See
-> [Conformance](#conformance).
+> **Status:** eevm passes every case of the official Ethereum test suites that
+> CI runs, apart from the exceptions listed under [Conformance](#conformance).
+> It is young and its API is not yet stable (1.0 is tracked in
+> [#150](https://github.com/mw2000/eevm/issues/150)), so think twice before
+> using it where consensus correctness matters.
 
 ## Installation
 
@@ -254,57 +256,74 @@ each fork are built at compile time.
 
 | Area | Implemented |
 |------|-------------|
-| Transactions | Legacy with EIP-155, EIP-2718 envelopes, EIP-2930 access lists, EIP-1559 fee market, EIP-4844 blobs, EIP-7702 set code (partial, see [#144](https://github.com/mw2000/eevm/issues/144)), EIP-7623 calldata floor, EIP-7825 gas limit cap |
-| Execution and gas | Full opcode set through Cancun (including PUSH0, TLOAD/TSTORE, MCOPY, BLOBHASH, BLOBBASEFEE), EIP-2929 warm/cold access, EIP-2200 and EIP-3529 SSTORE metering and refunds, EIP-161, EIP-170, EIP-3541, EIP-3651, EIP-3860, EIP-6780 |
+| Transactions | Legacy with EIP-155, EIP-2718 envelopes, EIP-2930 access lists, EIP-1559 fee market, EIP-4844 blobs, EIP-7702 set code, EIP-7623 calldata floor, EIP-7825 gas limit cap, EIP-7594 blob limit |
+| Execution and gas | Full opcode set through Osaka (including PUSH0, TLOAD/TSTORE, MCOPY, BLOBHASH, BLOBBASEFEE, CLZ), EIP-2929 warm/cold access, EIP-2200 and EIP-3529 SSTORE metering and refunds, EIP-161, EIP-170, EIP-3541, EIP-3651, EIP-3860, EIP-6780 |
 | Precompiles | `0x01`–`0x11` and `0x100`: ECRECOVER, SHA256, RIPEMD160, IDENTITY, MODEXP (EIP-198, EIP-2565; EIP-7823 and EIP-7883 from Osaka), alt_bn128 (EIP-196/197), BLAKE2F (EIP-152), KZG point evaluation (EIP-4844), BLS12-381 (EIP-2537), P256VERIFY (EIP-7951, from Osaka) |
 | Blocks | RLP block codec, building, header and body validation, EIP-7934 size limit, EIP-4895 withdrawals, EIP-4788 beacon roots, EIP-2935 block hashes, EIP-7685 requests (EIP-6110 deposits, EIP-7002 withdrawals, EIP-7251 consolidations), receipts, logs bloom, MPT state, transaction, and receipt roots |
 | Tooling | EIP-3155 tracing, disassembler, custom precompile registration |
 
-Osaka support (so far the CLZ opcode, EIP-7823, EIP-7825, EIP-7883, EIP-7918,
-EIP-7934, and EIP-7951) is in progress. The
-[roadmap](https://github.com/mw2000/eevm/issues/153) tracks what remains.
+Osaka's execution-layer EIPs (EIP-7594, EIP-7823, EIP-7825, EIP-7883,
+EIP-7918, EIP-7934, EIP-7939, and EIP-7951) are implemented. The forks that
+only change blob parameters (EIP-7892) are not modelled. Known gaps and
+remaining work, such as the DAO fork's irregular state change
+([#183](https://github.com/mw2000/eevm/issues/183)), are tracked on the
+[roadmap](https://github.com/mw2000/eevm/issues/153).
 
 ## Conformance
 
-eevm is not yet fully conformant with the official test suites; some fixtures
-still fail. Two Mix tasks run state tests and blockchain tests and print pass,
-fail, and crash counts by fork and by test category. Each case runs in its own
-process with a heap cap and a timeout, so a runaway case counts as a crash
-instead of stopping the run. The default `mix test` run covers unit tests,
-spec-derived test vectors, and small checked-in smoke fixtures, not the official
-suites.
-
-The fixtures come from two sources:
+CI runs both official fixture sources on every push, in the Conformance jobs of
+[`ci.yml`](https://github.com/mw2000/eevm/actions/workflows/ci.yml), and fails
+when any case fails that a known-failures list doesn't cover. Each case runs in
+its own process with a heap cap and a timeout, so a runaway case counts as a
+crash instead of stopping the run. The default `mix test` run covers unit
+tests, spec-derived test vectors, and small checked-in smoke fixtures, not
+these suites.
 
 - [execution-spec-tests](https://github.com/ethereum/execution-spec-tests)
-  (EEST), a pinned release fetched by `test/fixtures/eest/fetch.sh`. It is the
-  authoritative suite for current forks: `fixtures_stable` covers mainnet forks
-  through Prague, and the Osaka cases of `fixtures_develop`
-  (`fetch.sh develop`, run with `--fork osaka`) cover Osaka.
-- [`ethereum/tests`](https://github.com/ethereum/tests), a pinned submodule kept
-  as the legacy suite. Its Prague BlockchainTests predate the final
-  EIP-7002/EIP-7251 rule that the request contracts must have code; they are
-  listed in `test/fixtures/blockchain_tests/stale_fixtures.txt`, and the runner
-  reports them as `stale` rather than as failures or passes.
+  (EEST) v5.4.0, fetched by `test/fixtures/eest/fetch.sh`, is the
+  authoritative suite for current forks: `fixtures_stable` covers mainnet
+  forks through Prague, and the Osaka cases of `fixtures_develop` cover Osaka.
+- [`ethereum/tests`](https://github.com/ethereum/tests) at `afed83b`, a pinned
+  submodule, is the legacy suite.
+
+| CI job | Cases passed | Known failures | Stale | Skipped fixtures | Notes |
+|--------|--------------|----------------|-------|------------------|-------|
+| EEST state tests | 44,039 of 44,039 | 0 | 0 | 0 | |
+| EEST blockchain tests | 47,563 of 47,563 | 0 | 0 | 7 | Too slow for the CI timeout ([#224](https://github.com/mw2000/eevm/issues/224)) |
+| EEST Osaka state tests | 19,517 of 19,517 | 0 | 0 | 0 | |
+| EEST Osaka blockchain tests | 21,644 of 21,644 | 0 | 0 | 0 | |
+| ethereum/tests state tests | 41,652 of 41,652 | 0 | 0 | 2 | Too slow for the CI timeout ([#201](https://github.com/mw2000/eevm/issues/201), [#224](https://github.com/mw2000/eevm/issues/224)) |
+| ethereum/tests blockchain tests | 633 of 1,168 | 3 | 532 | 0 | Failures: the DAO fork ([#183](https://github.com/mw2000/eevm/issues/183)). Stale: Prague fixtures filled before the EIP-7002/EIP-7251 request contracts were required |
+
+The case counts are from CI for the pinned fixture versions above; a skipped
+fixture's cases aren't counted. The other columns come from the lists in
+`test/fixtures/`: `known_failures*.txt` (failures CI tolerates),
+`blockchain_tests/stale_fixtures.txt` (cases whose expectations predate a rule
+eevm implements, reported as stale rather than as passes or failures), and
+`*/skip.txt` (fixtures that cannot finish within the per-case timeout).
+`test/docs/conformance_test.exs` fails when those columns or the pinned
+versions disagree with the lists, so a change to them also updates this table.
+The latest exact counts are in each Conformance job's log and its uploaded
+report.
+
+Run the suites locally with the same commands CI uses:
 
 ```bash
 test/fixtures/eest/fetch.sh
 mix eevm.state_tests 'test/fixtures/eest/fixtures/state_tests/**/*.json'
-mix eevm.blockchain_tests 'test/fixtures/eest/fixtures/blockchain_tests/prague/**/*.json'
+mix eevm.blockchain_tests 'test/fixtures/eest/fixtures/blockchain_tests/**/*.json'
 
 test/fixtures/eest/fetch.sh develop
+mix eevm.state_tests 'test/fixtures/eest/fixtures_develop/state_tests/**/*.json' --fork osaka
 mix eevm.blockchain_tests 'test/fixtures/eest/fixtures_develop/blockchain_tests/**/*.json' --fork osaka
 
 git submodule update --init --depth 1 test/fixtures/state_tests/ethereum-tests
 mix eevm.state_tests
-mix eevm.blockchain_tests 'test/fixtures/state_tests/ethereum-tests/BlockchainTests/ValidBlocks/**/*.json'
+mix eevm.blockchain_tests 'test/fixtures/state_tests/ethereum-tests/BlockchainTests/{ValidBlocks,InvalidBlocks,TransitionTests}/**/*.json'
 ```
 
-CI runs every suite against its known-failures list (`test/fixtures/eest/` and
-`test/fixtures/*/known_failures.txt`) and fails only when a case outside the list
-fails. After fixing failures, regenerate a list with the command in its header.
-`test/fixtures/*/skip.txt` lists the few fixtures that are not run at all because
-they abort the VM or cannot finish within the per-case timeout.
+After fixing failures, regenerate a known-failures list with the command in its
+header.
 
 ## Examples
 
