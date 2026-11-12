@@ -15,6 +15,14 @@ defmodule EEVM.ABITest do
     end
   end
 
+  # A uint256[][] of `n` inner arrays whose offsets all point at one inner
+  # array of `n` zero words: about 64n bytes that read about 32n^2 bytes
+  # when decoded, n/2 times the input.
+  defp shared_tail(n) do
+    words([0x20, n]) <>
+      :binary.copy(<<n * 32::256>>, n) <> words([n]) <> :binary.copy(<<0::256>>, n)
+  end
+
   describe "the Solidity ABI spec's worked examples" do
     # https://docs.soliditylang.org/en/latest/abi-spec.html#examples and
     # #use-of-dynamic-types; every expected word is copied from the spec.
@@ -194,6 +202,20 @@ defmodule EEVM.ABITest do
     test "an array length larger than the data can hold is rejected without decoding it" do
       assert ABI.decode(["uint256[]"], words([0x20, 2 ** 255])) == {:error, :invalid_abi_data}
       assert ABI.decode(["string[]"], words([0x20, 2, 0x40])) == {:error, :invalid_abi_data}
+    end
+
+    test "offsets may share a tail until decoding reads 16 times the input" do
+      zeros = List.duplicate(0, 16)
+      assert ABI.decode(["uint256[][]"], shared_tail(16)) == {:ok, [List.duplicate(zeros, 16)]}
+      assert ABI.decode(["uint256[][]"], shared_tail(64)) == {:error, :invalid_abi_data}
+    end
+
+    # Without the cap this 1 MB payload decodes to 256 million words, which
+    # takes minutes and gigabytes; with it, the error comes back in well
+    # under a second.
+    @tag timeout: 5_000
+    test "a payload built to decode quadratically fails fast" do
+      assert ABI.decode(["uint256[][]"], shared_tail(16_000)) == {:error, :invalid_abi_data}
     end
 
     test "bytes after the encoded values are ignored" do

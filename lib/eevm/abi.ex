@@ -42,6 +42,11 @@ defmodule EEVM.ABI do
   address, `bool`, or `bytes<N>` word with bits outside its type, or an
   offset or length past the end of the data, is an error rather than being
   masked or truncated. Bytes after the encoded values are ignored.
+
+  Decoding work is capped at 16 times the size of the data, which is far
+  more than any canonical encoding needs. Crafted offsets that point many
+  values at the same bytes, which would make decoding take time quadratic
+  in the input size, fail with `{:error, :invalid_abi_data}` instead.
   """
 
   import Bitwise
@@ -125,8 +130,8 @@ defmodule EEVM.ABI do
   """
   @spec decode([String.t()], binary()) :: {:ok, [value()]} | {:error, :invalid_abi_data}
   def decode(types, data) when is_list(types) and is_binary(data) do
-    case types |> Enum.map(&parse_type!/1) |> decode_tuple(data) do
-      {:ok, values} -> {:ok, values}
+    case types |> Enum.map(&parse_type!/1) |> decode_tuple(data, decode_budget(data)) do
+      {:ok, values, _budget} -> {:ok, values}
       :error -> {:error, :invalid_abi_data}
     end
   end
@@ -170,7 +175,8 @@ defmodule EEVM.ABI do
     indexed_count = Enum.count(params, fn {_type, indexed} -> indexed end)
 
     with [^topic | indexed_topics] when length(indexed_topics) == indexed_count <- topics,
-         {:ok, data_values} <- decode_tuple(for({type, false} <- params, do: type), data),
+         {:ok, data_values, _budget} <-
+           decode_tuple(for({type, false} <- params, do: type), data, decode_budget(data)),
          {:ok, values} <- merge_log_values(params, indexed_topics, data_values, []) do
       {:ok, values}
     else
@@ -192,7 +198,7 @@ defmodule EEVM.ABI do
   # Value types are stored in their topic; any other indexed value is
   # replaced by the Keccak-256 hash of its encoding (ABI spec, "Events").
   defp decode_topic(type, topic) when is_integer(topic) and topic >= 0 and topic < 1 <<< 256 do
-    if value_type?(type), do: decode_value(type, <<topic::256>>), else: {:ok, <<topic::256>>}
+    if value_type?(type), do: decode_word(type, <<topic::256>>), else: {:ok, <<topic::256>>}
   end
 
   defp decode_topic(_type, _topic), do: :error
@@ -262,72 +268,95 @@ defmodule EEVM.ABI do
 
   # -- Decoding ---------------------------------------------------------------
 
+  # Decoding charges each 32-byte word it reads, and each `bytes` or
+  # `string` payload rounded up to whole words, against a budget of
+  # @max_inflation times the input size. A canonical encoding reads every
+  # word once, so it uses at most 1x. Many offsets that point at the same
+  # tail would make decoding quadratic in the input size; they run out of
+  # budget instead. ethers' Reader caps decoding the same way
+  # (maxInflation).
+  @max_inflation 16
+
+  defp decode_budget(data), do: @max_inflation * byte_size(data)
+
   # Decodes a tuple whose encoding starts at the first byte of `data`;
   # dynamic values' offsets count from there.
-  defp decode_tuple(types, data) do
+  defp decode_tuple(types, data, budget) do
     types
-    |> Enum.reduce_while({[], 0}, fn type, {values, position} ->
-      case decode_at(type, data, position) do
-        {:ok, value} -> {:cont, {[value | values], position + head_size(type)}}
+    |> Enum.reduce_while({[], 0, budget}, fn type, {values, position, budget} ->
+      case decode_at(type, data, position, budget) do
+        {:ok, value, budget} -> {:cont, {[value | values], position + head_size(type), budget}}
         :error -> {:halt, :error}
       end
     end)
     |> case do
-      {values, _position} -> {:ok, Enum.reverse(values)}
+      {values, _position, budget} -> {:ok, Enum.reverse(values), budget}
       :error -> :error
     end
   end
 
-  defp decode_at(type, data, position) do
+  defp decode_at(type, data, position, budget) do
     case data do
       <<_::binary-size(position), head::binary>> ->
-        if dynamic?(type), do: decode_tail(type, data, head), else: decode_value(type, head)
+        if dynamic?(type),
+          do: decode_tail(type, data, head, budget),
+          else: decode_value(type, head, budget)
 
       _data ->
         :error
     end
   end
 
-  defp decode_tail(type, data, <<offset::256, _::binary>>) when offset <= byte_size(data),
-    do: decode_value(type, binary_part(data, offset, byte_size(data) - offset))
+  defp decode_tail(type, data, <<offset::256, _::binary>>, budget)
+       when offset <= byte_size(data) and budget >= 32,
+       do: decode_value(type, binary_part(data, offset, byte_size(data) - offset), budget - 32)
 
-  defp decode_tail(_type, _data, _head), do: :error
+  defp decode_tail(_type, _data, _head, _budget), do: :error
 
-  defp decode_value({:uint, bits}, <<value::256, _::binary>>) when value < 1 <<< bits,
-    do: {:ok, value}
+  defp decode_value(type, <<length::256, rest::binary>>, budget)
+       when type in [:bytes, :string] and length <= byte_size(rest) and
+              32 + div(length + 31, 32) * 32 <= budget,
+       do: {:ok, binary_part(rest, 0, length), budget - 32 - div(length + 31, 32) * 32}
 
-  defp decode_value({:int, bits}, <<value::signed-256, _::binary>>)
+  # Every element reads at least one word, so a length that the data or
+  # the budget can't cover fails before any element is decoded.
+  defp decode_value({:array, type}, <<length::256, rest::binary>>, budget) do
+    if length * head_size(type) <= byte_size(rest) and 32 + length * 32 <= budget,
+      do: decode_tuple(List.duplicate(type, length), rest, budget - 32),
+      else: :error
+  end
+
+  defp decode_value({:array, type, size}, data, budget),
+    do: decode_tuple(List.duplicate(type, size), data, budget)
+
+  defp decode_value({:tuple, types}, data, budget) do
+    with {:ok, values, budget} <- decode_tuple(types, data, budget),
+         do: {:ok, List.to_tuple(values), budget}
+  end
+
+  defp decode_value(type, <<word::binary-size(32), _::binary>>, budget) when budget >= 32 do
+    with {:ok, value} <- decode_word(type, word), do: {:ok, value, budget - 32}
+  end
+
+  defp decode_value(_type, _data, _budget), do: :error
+
+  # A value type's word.
+  defp decode_word({:uint, bits}, <<value::256>>) when value < 1 <<< bits, do: {:ok, value}
+
+  defp decode_word({:int, bits}, <<value::signed-256>>)
        when value >= -(1 <<< (bits - 1)) and value < 1 <<< (bits - 1),
        do: {:ok, value}
 
-  defp decode_value(:address, <<0::96, value::160, _::binary>>), do: {:ok, value}
-  defp decode_value(:bool, <<0::256, _::binary>>), do: {:ok, false}
-  defp decode_value(:bool, <<1::256, _::binary>>), do: {:ok, true}
+  defp decode_word(:address, <<0::96, value::160>>), do: {:ok, value}
+  defp decode_word(:bool, <<0::256>>), do: {:ok, false}
+  defp decode_word(:bool, <<1::256>>), do: {:ok, true}
 
-  defp decode_value({:bytes, size}, <<word::binary-size(32), _::binary>>) do
+  defp decode_word({:bytes, size}, word) do
     <<value::binary-size(size), padding::binary>> = word
     if padding == <<0::size(byte_size(padding) * 8)>>, do: {:ok, value}, else: :error
   end
 
-  defp decode_value(type, <<length::256, rest::binary>>)
-       when type in [:bytes, :string] and length <= byte_size(rest),
-       do: {:ok, binary_part(rest, 0, length)}
-
-  # The length check bounds the work: each element needs at least its head.
-  defp decode_value({:array, type}, <<length::256, rest::binary>>) do
-    if length * head_size(type) <= byte_size(rest),
-      do: decode_tuple(List.duplicate(type, length), rest),
-      else: :error
-  end
-
-  defp decode_value({:array, type, size}, data),
-    do: decode_tuple(List.duplicate(type, size), data)
-
-  defp decode_value({:tuple, types}, data) do
-    with {:ok, values} <- decode_tuple(types, data), do: {:ok, List.to_tuple(values)}
-  end
-
-  defp decode_value(_type, _data), do: :error
+  defp decode_word(_type, _word), do: :error
 
   # -- Types ------------------------------------------------------------------
 
