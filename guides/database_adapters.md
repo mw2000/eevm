@@ -5,7 +5,7 @@ to it while executing. Every write lands in an overlay inside the
 `%EEVM.Database{}` value. When a transaction or block finishes, the overlay
 becomes an `EEVM.StateChanges`, and your adapter decides what to do with it.
 
-An adapter has four required callbacks, all reads:
+An adapter `use`s `EEVM.Database` and implements four callbacks, all reads:
 
 | Callback | Returns |
 |----------|---------|
@@ -14,9 +14,11 @@ An adapter has four required callbacks, all reads:
 | `storage(state, address, slot)` | `{:ok, word}`, 0 when the slot is unset |
 | `block_hash(state, number)` | `{:ok, <<_::256>>}`, or `{:ok, nil}` when unknown; asked only for hashes the `EEVM.BlockEnv` doesn't carry |
 
-Three more callbacks are required too, but a backend that can't do what
-they ask returns `{:error, :unsupported}`. eevm never checks which functions
-a module exports, so what an adapter supports is stated in its code:
+Three more callbacks let eevm commit and enumerate state. `use
+EEVM.Database` defines them to return `{:error, :unsupported}`, so a
+read-only adapter leaves them out, and an adapter that can do more
+overrides them. eevm never checks which functions a module exports, so what
+an adapter supports is stated in its code:
 
 - `commit(state, changes)` applies an `EEVM.StateChanges` and returns
   `{:ok, new_state}`. With it, `EEVM.transact/4` and `EEVM.Block.execute/4`
@@ -37,6 +39,32 @@ Addresses and storage words are integers; hashes are 32-byte binaries.
 A callback that returns `{:error, reason}` stops execution, and the entry
 point returns `{:error, {:database, reason}}`.
 
+## A minimal read-only adapter
+
+This adapter serves a fixed map of accounts. It implements only the four
+reads, so it can't commit: a call's writes stay in `result.db`'s overlay,
+and `EEVM.Database.commit/1` reports that the backend doesn't support it.
+
+```elixir
+iex> defmodule MyApp.FixedDatabase do
+...>   use EEVM.Database
+...>   @impl true
+...>   def account(accounts, address), do: {:ok, Map.get(accounts, address)}
+...>   @impl true
+...>   def code(_accounts, _code_hash), do: {:ok, <<>>}
+...>   @impl true
+...>   def storage(_accounts, _address, _slot), do: {:ok, 0}
+...>   @impl true
+...>   def block_hash(_accounts, _number), do: {:ok, nil}
+...> end
+iex> db = EEVM.Database.new(MyApp.FixedDatabase, %{0xA11CE => %{balance: 100, nonce: 0, code: <<>>}})
+iex> {:ok, result} = EEVM.call(db, 0xB0B, <<>>, caller: 0xA11CE, value: 40)
+iex> {EEVM.Database.get_balance(result.db, 0xA11CE), EEVM.Database.get_balance(result.db, 0xB0B)}
+{60, 40}
+iex> EEVM.Database.commit(result.db)
+{:error, :commit_not_supported}
+```
+
 ## An ETS-backed adapter
 
 This adapter keeps state in an ETS table, so it persists across calls and can
@@ -45,7 +73,7 @@ unchanged.
 
 ```elixir
 defmodule MyApp.EtsDatabase do
-  @behaviour EEVM.Database
+  use EEVM.Database
 
   # Keys: {:account, address}, {:code, hash}, {:storage, address, slot},
   # and {:block_hash, number}.
@@ -147,13 +175,13 @@ An adapter can also read state from a node's JSON-RPC at a fixed block, which
 lets you run transactions against mainnet state without a local copy. This
 sketch takes the RPC client as a function, `rpc.(method, params)`, that
 returns `{:ok, result}` or `{:error, reason}`. It can't commit or enumerate,
-so `commit/2`, `accounts/1` and `storage_slots/2` return
-`{:error, :unsupported}`, and `EEVM.transact/4` returns the writes in
-`result.changes` and leaves the node alone.
+so it keeps `use EEVM.Database`'s `{:error, :unsupported}` defaults for
+`commit/2`, `accounts/1` and `storage_slots/2`, and `EEVM.transact/4`
+returns the writes in `result.changes` and leaves the node alone.
 
 ```elixir
 defmodule MyApp.RpcDatabase do
-  @behaviour EEVM.Database
+  use EEVM.Database
 
   # The state is {rpc, block_tag}, such as {&MyRpc.call/2, "0x1234567"}.
   def new(rpc, block_tag), do: EEVM.Database.new(__MODULE__, {rpc, block_tag})
@@ -189,15 +217,6 @@ defmodule MyApp.RpcDatabase do
     end
   end
 
-  @impl true
-  def commit(_state, _changes), do: {:error, :unsupported}
-
-  @impl true
-  def accounts(_state), do: {:error, :unsupported}
-
-  @impl true
-  def storage_slots(_state, _address), do: {:error, :unsupported}
-
   defp call(rpc, method, params) do
     with {:ok, "0x" <> hex} <- rpc.(method, params) do
       {:ok, if(hex == "", do: 0, else: String.to_integer(hex, 16))}
@@ -221,5 +240,7 @@ callbacks above before then.
 Adapters written for the first read-only behaviour, where `commit/2`,
 `accounts/1` and `storage_slots/2` were optional and the enumerations
 returned a bare list, also keep working for one minor version: a missing
-callback counts as `{:error, :unsupported}`. Add the three callbacks to
-silence the compiler's missing-callback warning.
+callback counts as `{:error, :unsupported}`. Replace `@behaviour
+EEVM.Database` with `use EEVM.Database` to silence the compiler's
+missing-callback warning; it defines the three callbacks the adapter
+leaves out.

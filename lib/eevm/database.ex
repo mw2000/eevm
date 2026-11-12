@@ -27,6 +27,10 @@ defmodule EEVM.Database do
 
   Every callback is required, so what a backend can do is stated in its
   code: eevm never asks the code server which functions a module exports.
+  `use EEVM.Database` declares the behaviour and defines `c:commit/2`,
+  `c:accounts/1`, and `c:storage_slots/2` to return `{:error, :unsupported}`
+  until the module overrides them, so a read-only backend implements only
+  the four reads.
 
   `EEVM.Database.InMemory` implements every callback. See the "Writing a
   database adapter" guide to write your own.
@@ -187,6 +191,45 @@ defmodule EEVM.Database do
   """
   @callback storage_slots(state :: term(), address()) ::
               {:ok, Enumerable.t()} | {:error, :unsupported | term()}
+
+  @doc """
+  Declares the `EEVM.Database` behaviour and defines `c:commit/2`,
+  `c:accounts/1`, and `c:storage_slots/2` to return `{:error, :unsupported}`.
+
+  A module that `use`s it implements only the read callbacks, `c:account/2`,
+  `c:code/2`, `c:storage/3`, and `c:block_hash/2`, and overrides a default
+  by defining the callback itself:
+
+      defmodule MyApp.RpcDatabase do
+        use EEVM.Database
+
+        @impl true
+        def account(state, address), do: ...
+        # code/2, storage/3, and block_hash/2 likewise; no commit/2,
+        # accounts/1, or storage_slots/2.
+      end
+
+  The defaults are ordinary compiled functions, so the module still states
+  what it supports in code. `@behaviour EEVM.Database` with all seven
+  callbacks keeps working unchanged. The "Writing a database adapter" guide
+  runs a complete read-only adapter.
+  """
+  defmacro __using__(_opts) do
+    quote do
+      @behaviour EEVM.Database
+
+      @doc false
+      def commit(_state, _changes), do: {:error, :unsupported}
+
+      @doc false
+      def accounts(_state), do: {:error, :unsupported}
+
+      @doc false
+      def storage_slots(_state, _address), do: {:error, :unsupported}
+
+      defoverridable commit: 2, accounts: 1, storage_slots: 2
+    end
+  end
 
   # ---------------------------------------------------------------------------
   # Constructor and commit

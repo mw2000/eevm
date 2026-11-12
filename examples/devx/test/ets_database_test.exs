@@ -1,7 +1,7 @@
 defmodule Devx.EtsDatabaseTest do
   use ExUnit.Case, async: true
 
-  alias Devx.{EtsDatabase, Transactions}
+  alias Devx.{EtsDatabase, ReadOnlyDatabase, Transactions}
 
   @recipient 0xB0B
 
@@ -28,6 +28,21 @@ defmodule Devx.EtsDatabaseTest do
 
     # A fresh wrapper over the same table sees the committed state.
     assert Transactions.balance(EtsDatabase.new(table), @recipient) == 1_001
+  end
+
+  test "a read-only adapter defines only the reads; results keep the writes" do
+    table = :ets.new(:state, [:set, :public])
+    EtsDatabase.seed(table, Devx.sender(), %{balance: 10 ** 18, nonce: 0, code: <<>>})
+
+    {:ok, legacy} = Transactions.legacy(0, @recipient, 1_000)
+    {:ok, result} = Transactions.execute(legacy, ReadOnlyDatabase.new(table))
+
+    assert result.status == :success
+    assert Transactions.balance(result.db, @recipient) == 1_000
+    assert result.changes.accounts[@recipient].balance == 1_000
+    assert EEVM.Database.commit(result.db) == {:error, :commit_not_supported}
+    # The table holds only the seed.
+    assert :ets.lookup(table, {:account, @recipient}) == []
   end
 
   test "contract storage lands in the table" do

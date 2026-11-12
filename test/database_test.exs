@@ -10,9 +10,10 @@ defmodule EEVM.DatabaseTest do
   doctest InMemory
 
   # A read-only backend over a map that can't commit or enumerate. A `:fail`
-  # entry makes that read return an error.
+  # entry makes that read return an error. It keeps `use EEVM.Database`'s
+  # commit/2 and accounts/1, and overrides storage_slots/2.
   defmodule ReadOnly do
-    @behaviour EEVM.Database
+    use EEVM.Database
 
     @impl true
     def account(state, address), do: lookup(state, {:account, address}, nil)
@@ -22,10 +23,6 @@ defmodule EEVM.DatabaseTest do
     def storage(state, address, slot), do: lookup(state, {:storage, address, slot}, 0)
     @impl true
     def block_hash(state, number), do: lookup(state, {:block_hash, number}, nil)
-    @impl true
-    def commit(_state, _changes), do: {:error, :unsupported}
-    @impl true
-    def accounts(_state), do: {:error, :unsupported}
     @impl true
     def storage_slots(state, address), do: lookup(state, {:storage_slots, address}, :unsupported)
 
@@ -369,6 +366,7 @@ defmodule EEVM.DatabaseTest do
 
       assert_raise Database.ReadError, fn -> Database.storage_load(db, 0xA, 0) end
 
+      # ReadOnly's own storage_slots/2 runs, not use EEVM.Database's default.
       failing_slots = Database.new(ReadOnly, %{{:storage_slots, 0xA} => :fail})
       assert_raise Database.ReadError, fn -> Database.storage_slots(failing_slots, 0xA) end
     end

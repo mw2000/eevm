@@ -12,7 +12,7 @@ eevm.
 | 2. Deploy a solc-compiled ERC-20, then call `transfer` and `balanceOf` | `Devx.Erc20` |
 | 3. Sign and execute legacy and EIP-1559 transactions | `Devx.Transactions` |
 | 4. Trace an execution opcode by opcode | `Devx.Tracing` |
-| 5. Write a custom `EEVM.Database` backend | `Devx.EtsDatabase` |
+| 5. Write a custom `EEVM.Database` backend | `Devx.EtsDatabase`, and the read-only `Devx.ReadOnlyDatabase` |
 | 6. Build, encode, validate, and execute a block | `Devx.Blocks` |
 | 7. Handle reverts, out-of-gas halts, and invalid transactions | `Devx.Errors` |
 

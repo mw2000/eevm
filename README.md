@@ -269,9 +269,11 @@ State lives behind the read-only `EEVM.Database` behaviour: an adapter answers
 write in its own overlay. Results carry the writes as `changes`, an
 `EEVM.StateChanges`. `EEVM.transact/4` and `EEVM.Block.execute/4` commit them
 when the adapter implements `commit/2`; `EEVM.run/2` never does.
-`EEVM.Database.InMemory` is the built-in adapter, and the
-[database adapter guide](guides/database_adapters.md) shows ETS- and RPC-backed
-ones.
+`EEVM.Database.InMemory` is the built-in adapter. `use EEVM.Database` in your
+own, and it needs only those four reads; it defaults `commit/2`, `accounts/1`,
+and `storage_slots/2` to `{:error, :unsupported}` until you define them. The
+[database adapter guide](guides/database_adapters.md) shows minimal, ETS-backed,
+and RPC-backed adapters.
 
 ```elixir
 iex> code = <<0x60, 5, 0x60, 0, 0x55, 0x00>>  # PUSH1 5, PUSH1 0, SSTORE, STOP
